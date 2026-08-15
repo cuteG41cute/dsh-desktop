@@ -16,3 +16,7 @@ DeepSeek Harness 检查点*.zip
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# 共享插件/技能发布目录（harness 生成，dsh-api / dsh-desktop-detach 等）
+share/
+
