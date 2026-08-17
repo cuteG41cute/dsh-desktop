@@ -42,6 +42,14 @@
 
 ---
 
+## Linux 版（deepin / Ubuntu / Debian）
+
+Windows 版的完整功能已移植到 Linux（GTK + WebKitGTK 原生窗口）：
+
+- 源码与说明：`linux/` 目录（`dsh-desktop` 启动器 + `dsh-desktop.py` 窗口 + `install.sh` 免 root 安装）；
+- 安装包：Release 附件中的 `dsh-desktop_1.1.0_amd64.deb`（apt 安装）与 `dsh-desktop-linux-1.1.0.tar.gz`（免 root）；
+- 功能对照与已知差异见 `linux/README.md`；
+- 已修复：软链启动路径、Deepin 密钥环弹窗（ephemeral WebContext）。
 ## MSI 安装包（推荐分发方式）
 
 **`DeepSeek Harness 桌面版 1.1.0.msi`**（文件名带版本号；安装向导欢迎页亦显示版本，旧版本双击新包即自动升级） 是标准 Windows 安装程序（per-user 安装，无需管理员权限）。

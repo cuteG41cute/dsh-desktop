@@ -20,3 +20,6 @@ Desktop.ini
 # 共享插件/技能发布目录（harness 生成，dsh-api / dsh-desktop-detach 等）
 share/
 
+# 独立子项目（各自是独立 git 仓库）
+dsh-time-stamp/
+
