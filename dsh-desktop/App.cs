@@ -62,6 +62,10 @@ namespace DshDesktop
         [STAThread]
         private static void Main(string[] args)
         {
+            // Per-Monitor V2 DPI awareness is declared in app.manifest
+            // (win32) and DSH Desktop.exe.config (WinForms); keeps the
+            // WebView2 rendering crisp under any display scaling.
+
             bool createdNew = false;
             try
             {

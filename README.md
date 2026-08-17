@@ -1,4 +1,4 @@
-# DeepSeek Harness 桌面版
+﻿# DeepSeek Harness 桌面版
 
 > 把 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 WebUI 变成真正的桌面应用程序：
 > 无浏览器、无控制台，双击即用，支持多会话分离窗口、系统托盘、自适应安装包（MSI）。
@@ -124,7 +124,7 @@
 powershell -NoProfile -ExecutionPolicy Bypass -File make-icon.ps1 -Source <新PNG路径>
 cd /d "dsh-desktop"
 "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x64 /optimize+ ^
-  /out:"DSH Desktop.exe" /win32icon:app.ico ^
+  /out:"DSH Desktop.exe" /win32icon:app.ico /win32manifest:app.manifest ^
   /r:System.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll ^
   /r:Microsoft.Web.WebView2.Core.dll /r:Microsoft.Web.WebView2.WinForms.dll ^
   App.cs
@@ -154,7 +154,7 @@ cd /d "dsh-desktop"
 ```bat
 cd /d "dsh-desktop"
 "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x64 /optimize+ ^
-  /out:"DSH Desktop.exe" /win32icon:app.ico ^
+  /out:"DSH Desktop.exe" /win32icon:app.ico /win32manifest:app.manifest ^
   /r:System.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll ^
   /r:Microsoft.Web.WebView2.Core.dll /r:Microsoft.Web.WebView2.WinForms.dll ^
   App.cs
