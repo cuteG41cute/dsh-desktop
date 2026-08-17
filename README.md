@@ -44,7 +44,7 @@
 
 ## MSI 安装包（推荐分发方式）
 
-**`DeepSeek Harness 桌面版.msi`** 是标准 Windows 安装程序（per-user 安装，无需管理员权限）。
+**`DeepSeek Harness 桌面版 1.1.0.msi`**（文件名带版本号；安装向导欢迎页亦显示版本，旧版本双击新包即自动升级） 是标准 Windows 安装程序（per-user 安装，无需管理员权限）。
 双击即进入**安装向导**：
 
 1. **欢迎** → **选择安装目录**（默认 `%LOCALAPPDATA%\Programs\DSH Desktop\`）；
@@ -59,7 +59,7 @@
 安装内容与便携版一致（启动器 + 两个入口 vbs + WebView2 桌面程序），并创建
 桌面/开始菜单快捷方式（带自定义图标）和控制面板卸载入口。
 
-- **卸载**：控制面板 → 程序 → 卸载「DeepSeek Harness 桌面版」（或 `msiexec /x {CADF2A90-C0B4-4611-B356-592CE6D86E76}`）；
+- **卸载**：控制面板 → 程序 → 卸载「DeepSeek Harness 桌面版」（或 `msiexec /x {A4B2060C-55E7-4F8F-870A-3C8725054A4E}`，随版本变化，以控制面板为准）；
 - **升级**：直接运行新版 MSI 即可覆盖安装；
 - 安装前请先**退出正在运行的 DeepSeek Harness 桌面版窗口**（否则程序文件被占用会导致安装失败）；
 - 向导的自定义操作使用 VBScript（Windows 11 24H2+ 若已停用 VBScript 需在"可选功能"中启用）。
