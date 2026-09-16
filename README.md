@@ -53,6 +53,7 @@ Windows 版的完整功能已移植到 Linux（GTK + WebKitGTK 原生窗口）�
 ## MSI 安装包（推荐分发方式）
 
 **`DeepSeek Harness 桌面版 1.2.0.msi`**（文件名带版本号；安装向导欢迎页亦显示版本，旧版本双击新包即自动升级） 是标准 Windows 安装程序（per-user 安装，无需管理员权限）。
+> Release 附件中的同一个安装包写作 ASCII 名 **`DeepSeek-Harness-Desktop-1.2.0.msi`**（GitHub 会改写含中文/空格的附件名）。
 双击即进入**安装向导**：
 
 1. **欢迎** → **选择安装目录**（默认 `%LOCALAPPDATA%\Programs\DSH Desktop\`）；
