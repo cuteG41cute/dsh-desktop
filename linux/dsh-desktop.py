@@ -28,6 +28,13 @@ if len(sys.argv) > 1 and sys.argv[1]:
 
 ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dsh-desktop.png')
 
+# dsh ≥0.1.5 的 Web 认证：启动器签发并验证好的会话 cookie（name=value）。
+# WebKitGTK 没有可移植的 cookie 写入接口（要 Soup 类型库），因此窗口在发现
+# 「未认证页面」时用 JS 把 cookie 写进当前来源，再刷新一次即可通过认证。
+AUTH_COOKIE = os.environ.get('DSH_DESKTOP_AUTH_COOKIE', '')
+AUTH_MAXAGE = os.environ.get('DSH_DESKTOP_AUTH_COOKIE_MAXAGE', '2592000')
+UNAUTH_MARKER = 'dsh web authentication required'
+
 # 共享的内存态 WebContext（ephemeral）：
 # - 不访问系统密钥环（避免 Deepin「解锁登录密钥环」弹窗）
 # - 多窗口（拖拽分离）共享同一 session/cookie
@@ -182,8 +189,55 @@ class DshWindow(Gtk.Window):
         self.web = DshWebView(url, self)
         self.web.connect('notify::title', self._on_title)
         self.web.connect('create', self._on_create)
+        self.web.connect('load-changed', self._on_load_changed)
+        self._auth_done = False
         self.add(self.web)
         self.connect('destroy', self._on_destroy)
+
+    # ---- Web 认证：页面加载完成后，若看到「需要认证」的页面就写入 cookie 并刷新 ----
+    def _on_load_changed(self, webview, event):
+        if event != WebKit2.LoadEvent.FINISHED or self._auth_done or not AUTH_COOKIE:
+            return
+        value = '%s; path=/; max-age=%s; SameSite=Strict' % (AUTH_COOKIE, AUTH_MAXAGE)
+        script = (
+            "(function () { try {"
+            "  var text = document.body ? (document.body.innerText || '') : '';"
+            "  if (text.indexOf(%s) < 0) { return 'skip'; }"
+            "  document.cookie = %s;"
+            "  location.reload();"
+            "  return 'injected';"
+            "} catch (e) { return 'error'; } })()"
+            % (json.dumps(UNAUTH_MARKER), json.dumps(value))
+        )
+        if not self._run_js(script, self._on_auth_js):
+            self._auth_done = True
+
+    def _run_js(self, script, callback):
+        """兼容 WebKit2GTK 4.0（run_javascript）与 4.1（evaluate_javascript）。"""
+        try:
+            self.web.run_javascript(script, None, callback, None)
+            return True
+        except Exception:
+            pass
+        try:
+            self.web.evaluate_javascript(script, -1, None, None, None, callback, None)
+            return True
+        except Exception:
+            return False
+
+    def _on_auth_js(self, webview, result, user_data):
+        text = ''
+        for finish in ('run_javascript_finish', 'evaluate_javascript_finish'):
+            fn = getattr(webview, finish, None)
+            if fn is None:
+                continue
+            try:
+                text = fn(result).get_js_value().to_string()
+                break
+            except Exception:
+                continue
+        if text == 'injected':
+            self._auth_done = True
 
     def _on_title(self, webview, pspec):
         title = webview.get_title()

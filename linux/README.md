@@ -11,7 +11,7 @@
 ### 方式一：deb 安装包（推荐，deepin 可直接双击）
 
 ```bash
-sudo apt install ./dsh-desktop_1.1.0_amd64.deb
+sudo apt install ./dsh-desktop_1.2.0_amd64.deb
 ```
 
 安装后：
@@ -22,7 +22,7 @@ sudo apt install ./dsh-desktop_1.1.0_amd64.deb
 ### 方式二：通用 tarball（免 root，任意发行版）
 
 ```bash
-tar xzf dsh-desktop-linux-1.1.0.tar.gz
+tar xzf dsh-desktop-linux-1.2.0.tar.gz
 cd dsh-desktop-linux
 ./install.sh          # 安装到 ~/.local/share/dsh-desktop
 dsh-desktop           # 启动（或从应用菜单打开）
@@ -51,6 +51,33 @@ dsh-desktop           # 启动（或从应用菜单打开）
 - 关闭窗口：若服务是本启动器拉起的，会自动停止；
 - 自定义端口：`DSH_WEB_URL=http://127.0.0.1:8080 dsh-desktop`
 
+## dsh 版本与 Web 认证（dsh ≥ 0.1.5）
+
+从 **dsh 0.1.5** 起，WebUI 增加了浏览器认证：
+
+- 未认证访问 `http://127.0.0.1:3080/` 返回 **401**（正文提示 `dsh web authentication required`）；
+- `dsh web` 启动时会打印一条带一次性 token 的地址（`http://127.0.0.1:3080/?token=…`），
+  用它访问一次即可换取一枚最长 30 天有效的签名 cookie；
+- `dsh web` 默认还会打开系统浏览器，桌面版启动时必须加 `--no-open`。
+
+本启动器已适配这套认证，**不需要用户手动做任何事**：
+
+1. 服务没在运行时用 `dsh web --no-open` 启动；
+2. 探测服务时把「200」和「401 + dsh 认证提示」都视为“服务已在运行”；
+3. 取得认证凭据，按可靠性依次尝试：
+   - **自行签发 cookie**：签名密钥是持久的（`$DSH_HOME/.credentials.yaml` 的
+     `client-connection/browser-session` 记录），启动器按 dsh 的格式签发一枚 cookie，
+     再用真实 HTTP 请求确认服务端接受它，然后把 cookie 交给窗口注入 ——
+     因此**即使 WebUI 是你在别处手动启动的（读不到 token 日志）也能正常认证**；
+   - 退回**认证 URL**：从启动日志里取 `dsh web: http://…?token=…`，直接用该地址开窗；
+   - 都没有：照旧打开原地址（配置里已有有效 cookie 时仍可正常显示）。
+4. 窗口发现页面是「需要认证」时会写入 cookie 并自动刷新一次（WebKitGTK 没有可移植的
+   cookie 写入接口，因此用 JS 方式，逻辑见 `dsh-desktop.py`）。
+
+> 说明：认证参数由 dsh 决定。若将来 dsh 改了密钥存放或 cookie 格式，验证会失败并自动
+> 退回认证 URL 方式；再不行窗口会显示 401 页面，此时按页面提示用 `dsh web` 打印的
+> 带 token 地址打开一次即可。
+
 ## 与 Windows 版的功能对照
 
 | 功能 | 状态 |
@@ -58,6 +85,7 @@ dsh-desktop           # 启动（或从应用菜单打开）
 | 多会话拖拽分离窗口（拖出侧边栏开新窗口） | ✅ 已支持（注入脚本 + WebKit 消息通道，逻辑与 Windows 版一致） |
 | 单实例 | ✅（重复启动直接退出；Windows 版会唤起窗口，Linux 无此行为） |
 | 手动指定 dsh 路径 | ✅ `DSH_BIN=/path/to/dsh/lib/bin.js dsh-desktop` |
+| dsh ≥0.1.5 Web 认证自动完成 | ✅（自行签发并验证 cookie，见上文；Windows 版同） |
 | 系统托盘（X=最小化到托盘） | ⚠️ 无托盘（平台差异：Linux 关闭窗口即退出，服务随启动器停止） |
 | 自动安装依赖与 dsh | ✅ 首次启动引导（见上文） |
 | 图标/标题镜像/窗口内导航/端口跟随/日志 | ✅ 全部一致 |
@@ -69,13 +97,16 @@ dsh-desktop           # 启动（或从应用菜单打开）
 
 ```
 dsh-desktop.py      WebKitGTK 窗口程序
-dsh-desktop         bash 启动器（服务检测/启动/清理）
+dsh-desktop         bash 启动器（依赖引导/服务检测/启动/认证/清理）
 install.sh          免 root 安装脚本
 uninstall.sh        卸载脚本（安装时生成）
 dsh-desktop.png     应用图标
 ```
 
+日志：`~/.local/state/dsh-desktop/logs/{server.out.log,server.err.log}`
+
 ## 已知问题
 
-- **Deepin 密钥环弹窗**：首次启动时 WebKit 进程可能触发系统「解锁登录密钥环」提示，点解锁/继续即可，不影响使用；
+- 窗口使用**内存态** WebContext（不落盘、不访问系统密钥环），因此 cookie 只在本进程内有效：
+  每次启动都会重新认证（启动器自动完成）。这样也避免了 Deepin 的「解锁登录密钥环」弹窗。
 - 交互类操作（关窗停服务/单实例/拖拽分离等）请在真实桌面环境验证。

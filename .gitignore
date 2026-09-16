@@ -23,3 +23,6 @@ share/
 # 独立子项目（各自是独立 git 仓库）
 dsh-time-stamp/
 
+# Python cache
+__pycache__/
+*.pyc

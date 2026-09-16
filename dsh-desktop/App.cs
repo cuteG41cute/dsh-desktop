@@ -24,10 +24,21 @@
 //   drag, so releasing outside the window works without relying on page
 //   coordinates.
 //
+// - dsh >= 0.1.5 browser authentication: the WebUI answers 401 unless the
+//   request carries the signed session cookie. The launcher resolves that
+//   cookie (from the token URL dsh prints, or by signing it with the harness
+//   home's durable browser-session secret) and passes it in
+//   DSH_DESKTOP_AUTH_COOKIE=name=value (optional DSH_DESKTOP_AUTH_COOKIE_MAXAGE
+//   in seconds); this app injects it into the shared WebView2 profile before
+//   the first navigation, so windows authenticate even when the WebUI service
+//   was started outside the launcher. Without it the window simply loads the
+//   URL as before.
+//
 // Test seams (harmless in normal use):
 // - env DSH_DESKTOP_AUTOCLOSE=exit: the main window's X closes instead of tray.
 // - env DSH_DETACH_DEBUG=1: host appends detach-open events to
 //   %TEMP%\dsh-detach-opened.log (used by automated tests).
+// - env DSH_DESKTOP_MUTEX_SUFFIX: run a test instance beside the user's window.
 
 using System;
 using System.Collections.Generic;
@@ -623,6 +634,75 @@ namespace DshDesktop
         }
 
         // ------------------------------------------------------------------
+        // dsh >= 0.1.5 Web authentication
+        // ------------------------------------------------------------------
+        // The WebUI answers 401 to an unauthenticated root request; only a URL
+        // carrying the process launch token mints the persistent signed session
+        // cookie. The launcher resolves that cookie for this origin and hands it
+        // over in the environment, which authenticates windows whose service was
+        // started elsewhere (no token URL left in any log).
+        private static async System.Threading.Tasks.Task ApplyLauncherAuthCookieAsync(CoreWebView2 core, string url)
+        {
+            string raw = Environment.GetEnvironmentVariable("DSH_DESKTOP_AUTH_COOKIE");
+            if (string.IsNullOrEmpty(raw)) return;
+            int at = raw.IndexOf('=');
+            if (at <= 0) return;
+            string name = raw.Substring(0, at).Trim();
+            string value = raw.Substring(at + 1).Trim();
+            if (name.Length == 0 || value.Length == 0) return;
+
+            string host;
+            try { host = new Uri(url).Host; } catch { return; }
+
+            double maxAgeDays = 30.0;
+            try
+            {
+                string rawMaxAge = Environment.GetEnvironmentVariable("DSH_DESKTOP_AUTH_COOKIE_MAXAGE");
+                double seconds;
+                if (!string.IsNullOrEmpty(rawMaxAge) &&
+                    double.TryParse(rawMaxAge, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out seconds) &&
+                    seconds > 0)
+                {
+                    maxAgeDays = seconds / 86400.0;
+                }
+            }
+            catch { }
+
+            bool applied = false;
+            try
+            {
+                CoreWebView2Cookie cookie = core.CookieManager.CreateCookie(name, value, host, "/");
+                cookie.IsHttpOnly = true;
+                // A concrete expiry keeps the cookie persistent (not session-only).
+                cookie.Expires = DateTime.Now.AddDays(maxAgeDays);
+                core.CookieManager.AddOrUpdateCookie(cookie);
+
+                // Read back: proves this profile really holds the cookie.
+                var stored = await core.CookieManager.GetCookiesAsync(url);
+                foreach (CoreWebView2Cookie c in stored)
+                {
+                    if (c.Name == name) { applied = true; break; }
+                }
+            }
+            catch { }
+
+            if (DetachDebug)
+            {
+                try
+                {
+                    File.AppendAllText(
+                        Path.Combine(Path.GetTempPath(), "dsh-detach-opened.log"),
+                        DateTime.Now.ToString("HH:mm:ss.fff") + " auth-cookie name=" + name +
+                        " host=" + host + " maxAgeDays=" + maxAgeDays.ToString("0.##") +
+                        " applied=" + applied + "\r\n",
+                        System.Text.Encoding.UTF8);
+                }
+                catch { }
+            }
+        }
+
+        // ------------------------------------------------------------------
         // Form lifecycle
         // ------------------------------------------------------------------
         protected override void OnFormClosed(FormClosedEventArgs e)
@@ -651,6 +731,9 @@ namespace DshDesktop
                     _sharedEnv = await CoreWebView2Environment.CreateAsync(null, userData, null);
                 }
                 await _web.EnsureCoreWebView2Async(_sharedEnv);
+
+                // Authenticate this window before the first navigation (dsh >= 0.1.5).
+                await ApplyLauncherAuthCookieAsync(_web.CoreWebView2, _url);
 
                 // Inject the session-detach script before the first navigation.
                 await _web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(InjectScript());

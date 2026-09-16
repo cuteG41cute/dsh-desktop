@@ -1,4 +1,4 @@
-﻿# DeepSeek Harness 桌面版
+# DeepSeek Harness 桌面版
 
 > 把 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 WebUI 变成真正的桌面应用程序：
 > 无浏览器、无控制台，双击即用，支持多会话分离窗口、系统托盘、自适应安装包（MSI）。
@@ -47,12 +47,12 @@
 Windows 版的完整功能已移植到 Linux（GTK + WebKitGTK 原生窗口）：
 
 - 源码与说明：`linux/` 目录（`dsh-desktop` 启动器 + `dsh-desktop.py` 窗口 + `install.sh` 免 root 安装）；
-- 安装包：Release 附件中的 `dsh-desktop_1.1.0_amd64.deb`（apt 安装）与 `dsh-desktop-linux-1.1.0.tar.gz`（免 root）；
+- 安装包：Release 附件中的 `dsh-desktop_1.2.0_amd64.deb`（apt 安装）与 `dsh-desktop-linux-1.2.0.tar.gz`（免 root）；
 - 功能对照与已知差异见 `linux/README.md`；
 - 已修复：软链启动路径、Deepin 密钥环弹窗（ephemeral WebContext）。
 ## MSI 安装包（推荐分发方式）
 
-**`DeepSeek Harness 桌面版 1.1.0.msi`**（文件名带版本号；安装向导欢迎页亦显示版本，旧版本双击新包即自动升级） 是标准 Windows 安装程序（per-user 安装，无需管理员权限）。
+**`DeepSeek Harness 桌面版 1.2.0.msi`**（文件名带版本号；安装向导欢迎页亦显示版本，旧版本双击新包即自动升级） 是标准 Windows 安装程序（per-user 安装，无需管理员权限）。
 双击即进入**安装向导**：
 
 1. **欢迎** → **选择安装目录**（默认 `%LOCALAPPDATA%\Programs\DSH Desktop\`）；
@@ -108,7 +108,7 @@ Windows 版的完整功能已移植到 Linux（GTK + WebKitGTK 原生窗口）�
 | `installer.ps1` | 安装程序逻辑（GUI 对话框；`-SilentInstall` / `-SilentUninstall` 供测试/静默部署） |
 | `启动 DeepSeek Harness.vbs` | 启动入口（推荐：无任何控制台窗口；中文名） |
 | `Start DeepSeek Harness.vbs` | 启动入口（英文名，内容相同） |
-| `launcher.ps1` | 核心启动脚本：检测/启动服务、等待就绪、打开窗口、退出清理（自适应扫描） |
+| `launcher.ps1` | 核心启动脚本：检测/启动服务、等待就绪、完成 Web 认证（dsh ≥0.1.5）、打开窗口、退出清理（自适应扫描） |
 | `dsh-desktop\DSH Desktop.exe` | WebView2 桌面包装程序（真正的“应用程序窗口”，已嵌入自定义图标） |
 | `dsh-desktop\app.ico` | 程序图标（由 `favicon.png` 生成的 7 尺寸 .ico） |
 | `dsh-desktop\icon-source.png` | 图标源图副本（可用自己的 PNG 替换后重新生成图标） |
@@ -131,7 +131,7 @@ Windows 版的完整功能已移植到 Linux（GTK + WebKitGTK 原生窗口）�
 ```bat
 powershell -NoProfile -ExecutionPolicy Bypass -File make-icon.ps1 -Source <新PNG路径>
 cd /d "dsh-desktop"
-"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x64 /optimize+ ^
+"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x64 /optimize+ /codepage:65001 ^
   /out:"DSH Desktop.exe" /win32icon:app.ico /win32manifest:app.manifest ^
   /r:System.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll ^
   /r:Microsoft.Web.WebView2.Core.dll /r:Microsoft.Web.WebView2.WinForms.dll ^
@@ -141,11 +141,41 @@ cd /d "dsh-desktop"
 > 生成脚本已修正 ICO 的 DIB 行序（GDI+ 内存行序与 ICO 文件要求相反），
 > 生成的图标不会再上下颠倒。
 
+## dsh 版本与 Web 认证（dsh ≥ 0.1.5）
+
+从 **dsh 0.1.5** 起，WebUI 增加了浏览器认证，**桌面版已自动适配，用户不需要任何额外操作**：
+
+| 变化 | 说明 |
+| --- | --- |
+| 未认证访问返回 **401** | 直接打开 `http://127.0.0.1:3080/` 会看到 `dsh web authentication required`，而不是页面 |
+| 一次性 token 换 cookie | `dsh web` 会打印 `dsh web: http://127.0.0.1:3080/?token=…`，用它访问一次即可换取一枚最长 30 天有效的签名 cookie（cookie 与「主机:端口」绑定） |
+| 默认会打开系统浏览器 | `dsh web` 默认自行弹出浏览器；桌面版启动服务时加了 `--no-open`，改由桌面窗口显示 |
+
+启动器（`launcher.ps1`）的处理顺序：
+
+1. 探测服务时把「200 + `__DSH_BOOT__`」和「401 + dsh 认证提示」**都视为服务已在运行**（后者是新版的正常响应）；
+2. 取得认证凭据，按可靠性依次尝试：
+   - **自行签发并验证 cookie**：签名密钥是持久的（`%USERPROFILE%\.dsh\.credentials.yaml` 里的
+     `client-connection/browser-session` 记录），启动器按 dsh 的格式算出 cookie，再用一次真实
+     HTTP 请求确认服务端接受它，然后通过 `DSH_DESKTOP_AUTH_COOKIE` 交给窗口注入 WebView2 ——
+     **因此即使 WebUI 是你在别处手动启动的（读不到 token 日志）也能正常认证**；
+   - 退回**认证 URL**：从启动日志取 `dsh web: http://…?token=…`，直接用该地址开窗；
+   - 都没有：照旧打开原地址（若 WebView2 配置里已有有效 cookie 仍可正常显示）。
+3. 窗口地址始终是干净地址（不带 token），token 不会留在窗口标题/历史里。
+
+> 若将来 dsh 改了密钥存放或 cookie 格式，验证会失败并自动退回认证 URL 方式；两者都不可用时，
+> 窗口会显示 401 提示页，按页面提示用 `dsh web` 打印的带 token 地址打开一次即可（cookie 可管 30 天）。
+
 ## 工作原理
 
 - 服务地址固定为 `http://127.0.0.1:3080`（与 `dsh web` 的默认端口一致）。
-- 启动器先探测该地址是否已返回 Harness 页面（包含 `__DSH_BOOT__` 特征），未运行才启动服务；
+- 启动器先探测该地址是否已在提供 Harness 页面（含 `__DSH_BOOT__` 特征），未运行才启动服务；
+  dsh ≥0.1.5 未认证时返回的 401（正文含 dsh 认证提示）同样算「服务已在运行」，
   这样重复双击不会拉起第二个服务实例。
+- 启动服务时使用 `dsh web --no-open`：新版 dsh 默认会自己弹出系统浏览器，桌面版必须禁用，
+  否则会同时出现浏览器标签页和桌面窗口。
+- Web 认证（dsh ≥0.1.5）由启动器完成：签发并验证 cookie → 通过环境变量交给窗口 →
+  `DSH Desktop.exe` 在首次导航前把它写入 WebView2 配置（详见上一节）。
 - 桌面窗口是用 **WebView2**（Windows 10/11 自带或随 Edge 安装）嵌入的本地窗口，
   与浏览器完全隔离：独立的用户数据目录、无标签页、无地址栏。
 - **单实例**由 `DSH Desktop.exe` 用命名互斥体实现：重复启动时向现有实例发送"显示"信号并以
@@ -161,7 +191,7 @@ cd /d "dsh-desktop"
 
 ```bat
 cd /d "dsh-desktop"
-"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x64 /optimize+ ^
+"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x64 /optimize+ /codepage:65001 ^
   /out:"DSH Desktop.exe" /win32icon:app.ico /win32manifest:app.manifest ^
   /r:System.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll ^
   /r:Microsoft.Web.WebView2.Core.dll /r:Microsoft.Web.WebView2.WinForms.dll ^
