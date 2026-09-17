@@ -931,7 +931,8 @@ export function apply(ctx, config = {}) {
     const now = Date.now()
     if (now - lastSweep < SWEEP_INTERVAL_MS) return
     lastSweep = now
-    ctx.setTimeout(() => {
+    // ctx.timeout()（而非已 deprecated 的 ctx.setTimeout）：回调随插件 fiber 自动 dispose。
+    ctx.timeout(() => {
       sweepProject(root, config).catch((error) => {
         console.error(`[${PLUGIN}] sweep failed: ${error && error.message ? error.message : error}`)
       })
@@ -1093,7 +1094,7 @@ export function apply(ctx, config = {}) {
     console.log(`[${PLUGIN}] settings changed: enabled=${next.enabled !== false} generations=${next.maxGenerations}`)
   })
 
-  ctx.setTimeout(async () => {
+  ctx.timeout(async () => {
     try {
       const cwd = process.cwd()
       const metaDir = metaDirFor(cwd)

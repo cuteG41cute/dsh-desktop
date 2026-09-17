@@ -41,10 +41,24 @@ harness 原生只有 `dsh-atomic-write`（写入原子）和 `dsh-fs-observation
 | `lib/index.js` | 插件本体：`tools/pre-execute` 备份 + `file_history` 工具 + 系统提示公告 + 保留策略 |
 | `package.json` | 插件清单（`type: module`，依赖 `@deepseek-ai/cordis`、`@deepseek-ai/schemastery`） |
 | `install.ps1` | 安装/卸载到指定 dsh profile（写 `node_modules` + 登记 `cordis.patch.yml`，自动备份原文件） |
-| `selftest.mjs` | 离线自测：假 ctx 直接驱动插件，36 项断言（无需启动 harness） |
+| `selftest.mjs` | 离线自测：假 ctx 驱动已安装副本，43 项断言（含宿主加载路径与 schema 契约） |
+| `host-contract-check.mjs` | **真依赖**契约检查：在 profile 内加载真实 schemastery/timer 语义，9 项断言 |
 | `after-restart-check.ps1` | 重启后体检：插件是否已加载、备份目录是否已创建 |
 | `verify.ps1` | 端到端验证：起一个独立 headless dsh，让真实 agent 改坏再还原 |
 | `e2e/patch.yml` | 端到端验证用的临时 patch |
+
+## 宿主接口契约（踩过坑，务必按这个写）
+
+这两条是 2026-09-17 两次真实加载失败的根因，已写进 `host-contract-check.mjs` 做回归：
+
+1. **`ctx.settings.register(ns, schema, options)` 的 `schema` 必须是 schemastery Schema，不能是工厂函数。**
+   宿主 `dsh-settings` 的 `resolve()` 是 `schema(mergeLayers(base, section))` —— 把合并后的配置对象
+   **当参数调用 schema**。写成 `(s) => s.object({...})` 时 `s` 就是那个普通配置对象，
+   于是 `s.boolean()` 不存在 → `TypeError: s.boolean is not a function`（插件一加载就炸）。
+   正确写法（与 `dsh-memory-db` 一致）：`import s from '@deepseek-ai/schemastery'` + `s.object({...})`。
+2. **用到 `ctx.setTimeout` / `ctx.timeout` 就必须 `inject: ['tools','settings','timer']`。**
+   这些方法由 `cordis-plugin-timer` 通过 `ctx.mixin` 混入，没 inject 会报
+   `cannot get property "timer" without inject`；另外 `ctx.setTimeout` 已 deprecated，统一用 `ctx.timeout`。
 
 ## 安装
 
@@ -62,8 +76,10 @@ powershell -ExecutionPolicy Bypass -File install.ps1 -Profile web -Force
 ## 自测与验证
 
 ```powershell
-# 离线，秒级，36 项断言
+# 离线，秒级，43 项断言（假 ctx，不需要真依赖）
 node selftest.mjs
+# 真依赖契约检查（必须在 profile 内运行，否则找不到 @deepseek-ai/schemastery）
+node "$env:USERPROFILE\.dsh\profiles\web\node_modules\dsh-file-history\host-contract-check.mjs"
 # 重启后的体检
 powershell -ExecutionPolicy Bypass -File after-restart-check.ps1
 # 端到端，起独立实例，不动正在运行的 3080 服务
@@ -95,8 +111,12 @@ file-history:
    同一文件多代时回退到**本轮最早那代**（即本轮开始时的样子）。
 4. **备份逐字节保存**：不做行尾/编码转换，`restore` 是原样写回。
 5. **代数上限就地执行**：每次备份后立刻把该源文件收敛到最近 N 代（不是只靠小时级 sweep），短时间连改也不会堆积。
-6. **自身免疫 + git 卫生**：`.dsh-backup/` 内的文件不再被备份；项目有 `.git` 时自动写入 `.gitignore` 一行。
+6. **自身免疫 + git 卫生**：`.dsh-backup/` 内的文件不再被备份；从工作区向上找**最近的 git 根**
+   （工作区常是仓库的子目录），把带相对路径的条目追加进那个 `.gitignore`。
 7. **项目外文件不污染无关目录**：落到用户主目录的兜底区，由同一个 `file_history` 工具统一索引。
+8. **按宿主真实契约写**：见上文「宿主接口契约」——schema 用 `s.object(...)` 而不是工厂函数，
+   定时器用 `ctx.timeout` 且声明 `inject: ['tools','settings','timer']`。离线自测只覆盖调用约定，
+   真依赖语义由 `host-contract-check.mjs` 在 profile 内保证。
 
 ## 技能与排查
 

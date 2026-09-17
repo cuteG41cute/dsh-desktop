@@ -1,6 +1,9 @@
-// dsh-file-history 离线自测：用假 ctx/exec 直接驱动插件（不经过 harness 进程）。
-// 覆盖：项目内备份落点与命名、sidecar/状态标志/manifest、5 代保留、file_history 四个动作、
-//       新建不备份、子目录镜像、项目外兜底、只读大文件指纹、开关、系统提示公告。
+// dsh-file-history 离线自测：用假 ctx/exec 直接驱动**已安装的**插件副本（不经过 harness 进程）。
+// 覆盖：宿主加载路径与 schema 契约、项目内备份落点与命名、sidecar/状态标志/manifest、5 代保留、
+//       file_history 四个动作、新建不备份、子目录镜像、项目外兜底、只读大文件指纹、开关、系统提示公告。
+//
+// 注意：这里用的是替身解析，只能验证到「宿主调用约定」这一层；真依赖（schemastery / timer）
+// 的契约由 host-contract-check.mjs 在 profile 内验证。
 
 import { mkdtemp, writeFile, readFile, readdir, mkdir, rm, stat } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
@@ -31,15 +34,50 @@ const settingsValue = {
 const registered = {}
 const listeners = {}
 const promptSections = []
+// 复刻宿主的调用约定：dsh-settings 的 resolve() 是 `schema(mergeLayers(base, section))`——
+// 把合并后的配置对象**当参数调用 schema**。所以这里把 schema 记下来并真的调用一次，
+// 这样「schema 必须是一个可调用、能解析默认值的 schemastery Schema」这条契约就能被测试覆盖到。
+let capturedSchema
+let capturedNs
 const ctx = {
-  settings: { register: () => ({ get: () => settingsValue, watch: () => () => {} }) },
+  settings: {
+    register: (ns, schema, options) => {
+      capturedNs = ns
+      capturedSchema = schema
+      // 宿主真实行为：schema(值) → 解析后的设置对象（含默认值）。这里直接透传给插件用。
+      const resolve = (input) => schema(input)
+      return { get: () => resolve(settingsValue), watch: () => () => {} }
+    },
+  },
   tools: { register: (definition) => { registered[definition.name] = definition } },
   on: (event, handler) => { listeners[event] = handler },
   get: (key) => (key === 'systemPrompt' ? { section: (section) => promptSections.push(section) } : undefined),
-  setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms || 0, 5)),
+  // timer 服务混入的 ctx.timeout（取代已 deprecated 的 ctx.setTimeout）
+  timeout: (fn, ms) => setTimeout(fn, Math.min(ms || 0, 5)),
   logger: { debug: () => {} },
 }
-mod.apply(ctx, {})
+let applyError
+try {
+  mod.apply(ctx, {})
+} catch (error) {
+  // 宿主加载插件时就是在这里炸的：apply() 内的 settings.register 会调用 schema。
+  // 把异常记录成断言失败而不是让整个自测崩掉，改动带来这类回归时能一眼看出原因。
+  applyError = error
+}
+ok('apply() 不抛异常（宿主加载路径）', !applyError, applyError ? `${applyError.constructor.name}: ${applyError.message}` : '')
+ok('注入声明包含 tools/settings/timer', Array.isArray(mod.inject) && ['tools', 'settings', 'timer'].every((name) => mod.inject.includes(name)), JSON.stringify(mod.inject))
+ok('设置命名空间注册为 file-history', capturedNs === 'file-history', String(capturedNs))
+ok(
+  'schema 是遵循宿主约定的可调用 Schema（本 bug 的回归测试）',
+  typeof capturedSchema === 'function' && typeof mod.fileHistorySettingsSchema === 'function' && typeof mod.fileHistorySettingsSchema.default === 'function',
+  `typeof schema=${typeof capturedSchema}`,
+)
+const resolvedDefaults = typeof capturedSchema === 'function' ? capturedSchema({}) : {}
+ok(
+  'schema 能解析出全部默认值',
+  resolvedDefaults.enabled === true && resolvedDefaults.maxGenerations === 5 && resolvedDefaults.maxFileBytes === 2 * 1024 * 1024 && resolvedDefaults.gitignoreBackups === true,
+  JSON.stringify(resolvedDefaults),
+)
 ok('注册了 tools/pre-execute 监听', typeof listeners['tools/pre-execute'] === 'function')
 ok('注册了 file_history 工具', Boolean(registered.file_history))
 ok('注册了系统提示段（告知 agent 备份系统存在）', promptSections.length === 1 && promptSections[0].name === 'file-history:usage')

@@ -10,7 +10,6 @@ param(
     [string]$Profile = 'rescue',
     [string]$Patch = (Join-Path $PSScriptRoot 'e2e\patch.yml'),
     [string]$WorkDir = (Join-Path $PSScriptRoot 'e2e\ws'),
-    [string]$HistoryDir = (Join-Path $env:USERPROFILE '.dsh\file-history'),
     [switch]$Keep
 )
 
