@@ -1,0 +1,5 @@
+# 临时 patch：只用于端到端验证 dsh-file-history（headless 测试），不要常驻。
+- insert:
+    - id: dsh-file-history
+      name: 'dsh-file-history'
+      inject: [tools, settings]

@@ -1,0 +1,5 @@
+# dsh-file-history 运行产物 / 临时目录
+e2e/ws/
+*.backup-*/
+.backup-*/
+node_modules/

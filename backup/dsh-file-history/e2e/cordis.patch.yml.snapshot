@@ -1,0 +1,50 @@
+# Your patch layer for this dsh profile, applied after every bundle layer:
+# a top-level YAML array of loader patch entries (id-targeted config
+# overrides, disables, and insert lists; `!!js` expressions allowed).
+
+# ── dsh-api: DeepSeek Harness external agent HTTP API ───────────────────────
+# Lets other agents call this harness over HTTP: POST /api/v1/tasks to submit
+# a prompt, GET /api/v1/tasks/:taskId to fetch the reply, DELETE to cancel.
+# Docs: skills/dsh-api/SKILL.md in the harness workspace.
+#
+# apiKey defaults to $DSH_API_KEY or the demo key below. Change it for any
+# deployment that is reachable beyond loopback. Set apiKey to an empty string
+# to disable authentication entirely (not recommended).
+- insert:
+    - id: dsh-api
+      name: dsh-api
+      inject: [webServer]
+      config:
+        prefix: /api/v1
+        apiKey: !!js process.env.DSH_API_KEY ?? 'dsh-api-demo-key'
+        defaultPreset: standard
+        defaultCwd: !!js process.cwd()
+        defaultTimeoutMs: 1200000
+        maxTimeoutMs: 7200000
+        retentionMs: 600000
+        maxConcurrent: 8
+
+# ── dsh-time-stamp: 时间戳注入插件（静态常驻版）──────────────────────────
+# 每个用户提问进入模型前注入一条持久化的时钟上下文消息；按项目可开关。
+# 包体位于 <workspace>/dsh-time-stamp/static（已安装到本 profile 的
+# node_modules/dsh-time-stamp）。配置持久化在 settings.yaml 的 time-stamp 段。
+    - id: dsh-time-stamp
+      name: 'dsh-time-stamp'
+
+
+# ═══ dsh-memory-db: 项目记忆库插件（静态常驻版）═══
+# 每项目独立记忆库，三态分类器(recall/continue/shift)智能注入；配置持久化在 settings.yaml 的 memory-db 段。
+- insert:
+    - id: dsh-memory-db
+      name: 'dsh-memory-db'
+      inject: [tools]
+
+
+# ═══ dsh-file-history: 改前自动快照（静态常驻版）═══
+# 任何 write/edit 覆盖已存在文件前，自动把原文快照到 ~/.dsh/file-history；
+# 模型侧只需 file_history 工具即可 list/show/restore/revert_turn。
+# 配置持久化在 settings.yaml 的 file-history 段（保留天数、容量上限等）。
+- insert:
+    - id: dsh-file-history
+      name: 'dsh-file-history'
+      inject: [tools, settings]
