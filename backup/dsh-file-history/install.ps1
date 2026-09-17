@@ -75,7 +75,8 @@ if ((Test-Path $target) -and -not $Force) {
 New-Item -ItemType Directory -Force -Path (Join-Path $target 'lib') | Out-Null
 Copy-Item (Join-Path $here 'package.json') (Join-Path $target 'package.json') -Force
 Copy-Item (Join-Path $here 'lib\index.js') (Join-Path $target 'lib\index.js') -Force
-Write-Host "[install] 插件已写入 $target"
+Copy-Item (Join-Path $here 'lib\client.js') (Join-Path $target 'lib\client.js') -Force
+Write-Host "[install] 插件已写入 $target（宿主 index.js + 客户端 client.js）"
 
 if (-not (Test-Path $patchFile)) { New-Item -ItemType File -Path $patchFile | Out-Null }
 $patchText = Get-Content $patchFile -Raw -Encoding utf8

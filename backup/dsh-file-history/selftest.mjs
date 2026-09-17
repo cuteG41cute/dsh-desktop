@@ -34,11 +34,34 @@ const settingsValue = {
 const registered = {}
 const listeners = {}
 const promptSections = []
+let capturedRoute = null
+let capturedSchema
+let capturedNs
+// ── 用假 http 请求/响应驱动宿主 RPC 路由（右上角状态芯片就是调它） ──
+function stripHtml(value) {
+  return String(value || '').replace(/<[^>]*>/g, '')
+}
+async function callRoute(method, args) {
+  if (!capturedRoute) return { ok: false, reason: 'route-not-registered' }
+  const req = {
+    method: 'POST',
+    async *[Symbol.asyncIterator]() {
+      yield Buffer.from(JSON.stringify({ method, args }))
+    },
+  }
+  const chunks = []
+  const res = {
+    writeHead(code, headers) { this.code = code; this.headers = headers },
+    end(text) { chunks.push(text) },
+  }
+  await capturedRoute.handler(req, res)
+  return { httpStatus: res.code, ...JSON.parse(chunks.join('')) }
+}
 // 复刻宿主的调用约定：dsh-settings 的 resolve() 是 `schema(mergeLayers(base, section))`——
 // 把合并后的配置对象**当参数调用 schema**。所以这里把 schema 记下来并真的调用一次，
 // 这样「schema 必须是一个可调用、能解析默认值的 schemastery Schema」这条契约就能被测试覆盖到。
-let capturedSchema
-let capturedNs
+/** 宿主 agents 服务的替身：按会话 id 返回当前会话头（项目创建后会被赋值）。 */
+let routeHeader
 const ctx = {
   settings: {
     register: (ns, schema, options) => {
@@ -46,14 +69,25 @@ const ctx = {
       capturedSchema = schema
       // 宿主真实行为：schema(值) → 解析后的设置对象（含默认值）。这里直接透传给插件用。
       const resolve = (input) => schema(input)
-      return { get: () => resolve(settingsValue), watch: () => () => {} }
+      return {
+        get: () => resolve(settingsValue),
+        watch: () => () => {},
+        update: async (patch) => { Object.assign(settingsValue, patch) },
+      }
     },
   },
   tools: { register: (definition) => { registered[definition.name] = definition } },
   on: (event, handler) => { listeners[event] = handler },
-  get: (key) => (key === 'systemPrompt' ? { section: (section) => promptSections.push(section) } : undefined),
+  get: (key) => {
+    if (key === 'systemPrompt') return { section: (section) => promptSections.push(section) }
+    // 宿主侧服务：agents（会话→项目目录）、webServer（注册 RPC 路由）
+    if (key === 'agents') return { get: (sessionId) => (routeHeader && sessionId === routeHeader.id ? { session: { header: routeHeader } } : undefined) }
+    if (key === 'webServer') return { register: (route) => { capturedRoute = route; return () => {} } }
+    return undefined
+  },
   // timer 服务混入的 ctx.timeout（取代已 deprecated 的 ctx.setTimeout）
   timeout: (fn, ms) => setTimeout(fn, Math.min(ms || 0, 5)),
+  effect: (dispose) => dispose,
   logger: { debug: () => {} },
 }
 let applyError
@@ -65,7 +99,12 @@ try {
   applyError = error
 }
 ok('apply() 不抛异常（宿主加载路径）', !applyError, applyError ? `${applyError.constructor.name}: ${applyError.message}` : '')
-ok('注入声明包含 tools/settings/timer', Array.isArray(mod.inject) && ['tools', 'settings', 'timer'].every((name) => mod.inject.includes(name)), JSON.stringify(mod.inject))
+ok(
+  '注入声明包含 tools/settings/timer/agents',
+  Array.isArray(mod.inject) && ['tools', 'settings', 'timer', 'agents'].every((name) => mod.inject.includes(name)),
+  JSON.stringify(mod.inject),
+)
+ok('注册了客户端面板 RPC 路由', Boolean(capturedRoute) && capturedRoute.path === '/dsh-file-history/api', capturedRoute && capturedRoute.path)
 ok('设置命名空间注册为 file-history', capturedNs === 'file-history', String(capturedNs))
 ok(
   'schema 是遵循宿主约定的可调用 Schema（本 bug 的回归测试）',
@@ -89,6 +128,7 @@ const metaDir = mod.metaDirFor(project)
 const outsideDir = await mkdtemp(path.join(tmpdir(), 'fh-outside-'))
 
 const header = { id: 'session-selftest', cwd: project, title: 'self test' }
+routeHeader = header
 const execFor = (name, filePath, callId, rootCallId) => ({
   name,
   callId,
@@ -325,6 +365,28 @@ ok('系统提示写明每文件保留代数', announcement.includes('最近几�
 settingsValue.announceInPrompt = false
 ok('announceInPrompt=false 时不注入该段', promptSections[0].text({ agent: { session: { header } } }) === '')
 settingsValue.announceInPrompt = true
+
+// 12) 右上角状态芯片的 RPC：state 要给出项目、状态标志、统计与实时流水
+const stateResponse = await callRoute('state', { sessionId: header.id })
+ok(
+  'RPC state 返回当前项目与状态标志',
+  stateResponse.ok === true && norm(stateResponse.projectDir) === norm(project) && stateResponse.statusPath.endsWith('status.json'),
+  `${stateResponse.ok} / ${stateResponse.projectName}`,
+)
+ok('RPC state 含备份统计与代数设置', stateResponse.stat.count >= 1 && stateResponse.settings.maxGenerations === 5, JSON.stringify(stateResponse.stat))
+ok(
+  'RPC state 含实时流水（时间/动作/文件）',
+  Array.isArray(stateResponse.events) && stateResponse.events.length >= 1 && Boolean(stateResponse.events[0].kind) && Boolean(stateResponse.events[0].file),
+  JSON.stringify(stateResponse.events[0] || {}),
+)
+const flipped = await callRoute('set-enabled', { enabled: false })
+ok('RPC set-enabled 写入设置', flipped.ok === true && flipped.enabled === false && settingsValue.enabled === false, JSON.stringify(flipped))
+await callRoute('set-enabled', { enabled: true })
+ok('RPC set-enabled 可恢复', settingsValue.enabled === true)
+const badRoute = await callRoute('set-enabled', { enabled: 'yes' })
+ok('RPC 参数非法时返回错误而不是抛异常', badRoute.ok === false && badRoute.reason === 'bad-args', JSON.stringify(badRoute))
+const getOnly = await capturedRoute.handler({ method: 'GET', async *[Symbol.asyncIterator]() {} }, { writeHead() {}, end() {} })
+ok('RPC 路由只接受 POST', getOnly === undefined)
 
 // 清理
 await rm(project, { recursive: true, force: true }).catch(() => {})

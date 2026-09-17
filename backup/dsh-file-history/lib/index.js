@@ -888,12 +888,79 @@ async function handleRevertTurn(args, exec) {
   return { action: 'revert_turn', status: restored.length ? 'restored' : 'noop', message, count: restored.length, entries: entriesToValue(restored) }
 }
 
+// ─────────────────────────── 客户端观测面板的 RPC ───────────────────────────
+
+/** 供右上角状态芯片读取的最近流水条数。 */
+const RECENT_EVENT_LIMIT = 30
+
+function statusPathOf(cwd) {
+  const metaDir = metaDirFor(cwd)
+  return metaDir ? path.join(metaDir, 'status.json') : undefined
+}
+
+function manifestPathOf(cwd) {
+  const metaDir = metaDirFor(cwd)
+  return metaDir ? path.join(metaDir, 'manifest.jsonl') : undefined
+}
+
+async function readStatusFile(cwd) {
+  const statusPath = statusPathOf(cwd)
+  if (!statusPath) return undefined
+  try {
+    return JSON.parse(await readFile(statusPath, 'utf8'))
+  } catch {
+    return undefined
+  }
+}
+
+/** 读 manifest 尾部若干条（只解析最后 256KB，避免大流水拖慢面板）。 */
+async function readRecentEvents(cwd, limit = RECENT_EVENT_LIMIT) {
+  const manifestPath = manifestPathOf(cwd)
+  if (!manifestPath) return []
+  let text
+  try {
+    const raw = await readFile(manifestPath)
+    // 只看尾部：从后往前找足够多的换行，避免整份流水都做 JSON.parse。
+    const tail = raw.length > 256 * 1024 ? raw.subarray(raw.length - 256 * 1024) : raw
+    text = tail.toString('utf8')
+    if (raw.length > 256 * 1024) {
+      // 截断处可能落在半行上，丢掉第一个不完整行。
+      const firstBreak = text.indexOf('\n')
+      if (firstBreak >= 0) text = text.slice(firstBreak + 1)
+    }
+  } catch (error) {
+    // 不留痕的空 catch 曾经把「读不到流水」藏了半天，这里至少吵一声。
+    console.error(`[${PLUGIN}] 读取 manifest 失败: ${error && error.message ? error.message : error}`)
+    return []
+  }
+  const lines = text.split(/\r?\n/).filter(Boolean)
+  const events = []
+  for (const line of lines.slice(-limit).reverse()) {
+    try {
+      const row = JSON.parse(line)
+      events.push({
+        at: row.at || '',
+        kind: row.kind || '',
+        file: row.source ? path.basename(row.source) : '',
+        source: row.source || '',
+        backup: row.backup || '',
+      })
+    } catch {
+      /* 半行或损坏行跳过 */
+    }
+  }
+  return events
+}
+
 // ─────────────────────────── 插件入口 ───────────────────────────
 
 export const name = 'file-history'
 
-/** 依赖：tools（拦截 + 注册工具）、settings（持久开关）、timer（延迟清理）。systemPrompt 按需取用。 */
-export const inject = ['tools', 'settings', 'timer']
+/** 依赖：tools（拦截 + 注册工具）、settings（持久开关）、timer（延迟清理）、agents（按会话解析项目目录）。 */
+export const inject = ['tools', 'settings', 'timer', 'agents']
+
+/** 客户端观测面板（右上角状态芯片）使用的 RPC 路由。 */
+export const CLIENT_ROUTE = '/dsh-file-history/api'
 
 export function apply(ctx, config = {}) {
   const settings = ctx.settings.register(SETTINGS_NS, fileHistorySettingsSchema, { base: config })
@@ -1088,6 +1155,98 @@ export function apply(ctx, config = {}) {
         }
       },
     })
+  }
+
+  // 4) 右上角状态芯片的 RPC：把 status.json + manifest 尾部 + 开关打包给客户端。
+  const agents = ctx.get('agents')
+  const webServer = ctx.get('webServer')
+  if (webServer) {
+    const projectOf = (sessionId) => {
+      const agent = sessionId && agents ? agents.get(sessionId) : undefined
+      const header = agent && agent.session ? agent.session.header : undefined
+      if (header && header.cwd) return { cwd: header.cwd, sessionId: header.id ? String(header.id) : String(sessionId || '') }
+      return { cwd: process.cwd(), sessionId: String(sessionId || '') }
+    }
+
+    const dispatch = async (method, args) => {
+      const config = currentSettings()
+      if (method === 'set-enabled') {
+        const wanted = typeof args.enabled === 'boolean' ? args.enabled : undefined
+        if (wanted === undefined) return { ok: false, reason: 'bad-args' }
+        await settings.update({ enabled: wanted })
+        return { ok: true, enabled: wanted }
+      }
+      const { cwd } = projectOf(typeof args.sessionId === 'string' ? args.sessionId : undefined)
+      const status = await readStatusFile(cwd)
+      const events = await readRecentEvents(cwd)
+      const stat = await (async () => {
+        const backupRoot = backupRootFor(cwd)
+        let count = 0
+        let bytes = 0
+        const metaDir = metaDirFor(cwd)
+        if (!metaDir) return { count: 0, bytes: 0 }
+        for (const name of await readdir(metaDir).catch(() => [])) {
+          if (!name.endsWith('.json') || name === 'status.json') continue
+          count += 1
+          try {
+            const meta = JSON.parse(await readFile(path.join(metaDir, name), 'utf8'))
+            bytes += Number(meta.size) || 0
+          } catch {
+            /* 忽略坏 sidecar */
+          }
+        }
+        void backupRoot
+        return { count, bytes }
+      })()
+      return {
+        ok: true,
+        projectDir: cwd,
+        projectName: path.basename(cwd),
+        status: status || null,
+        statusPath: statusPathOf(cwd),
+        manifestPath: manifestPathOf(cwd),
+        backupDir: backupRootFor(cwd),
+        events,
+        stat,
+        settings: { enabled: config.enabled, maxGenerations: config.maxGenerations, maxFileBytes: config.maxFileBytes },
+        refreshedAt: Date.now(),
+      }
+    }
+
+    const disposeRoute = webServer.register({
+      kind: 'exact',
+      path: CLIENT_ROUTE,
+      handler: async (req, res) => {
+        const send = (statusCode, body) => {
+          res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' })
+          res.end(JSON.stringify(body))
+        }
+        if ((req.method || 'GET') !== 'POST') return send(405, { ok: false, reason: 'method-not-allowed' })
+        let raw = ''
+        try {
+          for await (const chunk of req) raw += chunk
+        } catch {
+          return send(400, { ok: false, reason: 'read-failed' })
+        }
+        let request
+        try {
+          request = JSON.parse(raw)
+        } catch {
+          return send(400, { ok: false, reason: 'bad-json' })
+        }
+        const method = request && typeof request.method === 'string' ? request.method : ''
+        const args = request && typeof request.args === 'object' && request.args !== null ? request.args : {}
+        try {
+          send(200, await dispatch(method, args))
+        } catch (error) {
+          send(200, { ok: false, reason: error instanceof Error ? error.message : String(error) })
+        }
+      },
+    })
+    ctx.effect(() => disposeRoute)
+    console.log(`[${PLUGIN}] client panel route registered at ${CLIENT_ROUTE}`)
+  } else {
+    console.warn(`[${PLUGIN}] webServer 不可用：右上角状态面板不会工作（不影响备份本身）`)
   }
 
   settings.watch((next) => {

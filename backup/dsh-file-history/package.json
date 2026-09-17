@@ -1,11 +1,12 @@
 {
   "name": "dsh-file-history",
-  "version": "0.1.0",
-  "description": "DeepSeek Harness static plugin: snapshot-before-write file history — every `write`/`edit` that would overwrite an existing file is copied to ~/.dsh/file-history first, with a `file_history` tool to list, diff and restore (single file or a whole turn).",
+  "version": "0.3.0",
+  "description": "DeepSeek Harness static plugin: snapshot-before-write file history — every `write`/`edit` that would overwrite an existing file is copied into the project's .dsh-backup/ first (filename + timestamp, last N generations kept), with a `file_history` tool to list, diff and restore, plus a top-bar status chip panel for observation.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -26,5 +27,15 @@
   "dependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
   }
 }
