@@ -167,16 +167,23 @@ window.__ModuleLoader__.load({
               : (state && state.status && state.status.atMs && now - state.status.atMs < 120000)
                 ? '#16a34a'
                 : 'var(--dsw-static-deepseek-500, #4d6bfe)'
-          const enabled = state && state.settings ? state.settings.enabled !== false : true
+          const projectSettings = (state && state.settings) || {}
+          const enabled = projectSettings.enabled !== false
+          const scope = projectSettings.scope === 'project' ? 'project' : 'inherit'
           const chipText = primaryError ? '备份异常' : (enabled ? '备份 ' + (state && state.status ? state.status.snapshots || 0 : 0) : '备份 关')
           const title = primaryError
             ? '改前自动备份：' + primaryError + '（点击查看）'
-            : '改前自动备份：' + (enabled ? '已启用' : '已关闭') + '；覆盖已存在文件时自动备份到项目 .dsh-backup/。（点击查看实时状态）'
+            : '改前自动备份（本项目：' + (enabled ? '开启' : '关闭') + (scope === 'project' ? '，项目单独设置' : '，继承全局默认') + '）。（点击查看实时状态与项目级开关）'
 
-          const flip = () => {
-            if (!state) return
-            const next = !enabled
-            rpc('set-enabled', { sessionId: sessionId, enabled: next }).then((result) => {
+          // 开关是项目级的：scope=project 只改当前项目；scope=global 改全局默认。
+          const setEnabled = (wanted, targetScope) => {
+            rpc('set-enabled', { sessionId: sessionId, enabled: wanted, scope: targetScope || 'project' }).then((result) => {
+              if (result && result.ok === true) pull()
+              else setError((result && result.reason) || '写入失败')
+            })
+          }
+          const resetProject = () => {
+            rpc('reset-project', { sessionId: sessionId }).then((result) => {
               if (result && result.ok === true) pull()
               else setError((result && result.reason) || '写入失败')
             })
@@ -206,6 +213,7 @@ window.__ModuleLoader__.load({
               body.push(react.createElement('div', { key: 'head', style: { fontWeight: 600, marginBottom: 8 } },
                 '改前自动备份 · ' + (state.projectName || state.projectDir || '')))
               body.push(row('状态', primaryError ? '异常' : (enabled ? '运行中' : '已关闭')))
+              body.push(row('开关范围', scope === 'project' ? '仅本项目（项目级单独设置）' : '跟随全局默认（' + (projectSettings.globalEnabled === false ? '全局关' : '全局开') + '）'))
               body.push(row('最后活动', (status.at || '(无)') + '（' + ageText(now - (status.atMs || 0)) + '）'))
               body.push(row('备份次数', String(status.snapshots || 0)))
               body.push(row('保留代数', '每个源文件最近 ' + (status.retainedPerFile || state.settings.maxGenerations || 5) + ' 代'))
@@ -215,11 +223,34 @@ window.__ModuleLoader__.load({
               if (status.lastError) body.push(react.createElement('div', { key: 'err', style: { color: 'var(--dsw-alias-state-error-primary, #d92d20)', marginTop: 6 } },
                 '最近错误：' + String(status.lastError.reason || '') + '（该次写入已被拦下）'))
               body.push(react.createElement('div', { key: 'dir', style: { ...labelStyle, marginTop: 6, wordBreak: 'break-all' } }, status.backupDir || ''))
-              body.push(react.createElement('button', {
-                key: 'toggle',
-                onClick: flip,
-                style: { ...chipStyle, marginTop: 8, cursor: 'pointer' },
-              }, '点击' + (enabled ? '关闭' : '开启') + '改前自动备份'))
+
+              // ── 项目级开关 ──
+              body.push(react.createElement('div', { key: 'sw-title', style: { ...labelStyle, marginTop: 8, marginBottom: 4 } },
+                '本项目开关（只影响 ' + (state.projectName || '当前项目') + '）'))
+              body.push(react.createElement('div', { key: 'sw-row', style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, [
+                react.createElement('button', {
+                  key: 'proj',
+                  onClick: () => setEnabled(!enabled, 'project'),
+                  style: { ...chipStyle, cursor: 'pointer' },
+                }, enabled ? '关闭本项目备份' : '开启本项目备份'),
+                scope === 'project'
+                  ? react.createElement('button', {
+                    key: 'reset',
+                    onClick: resetProject,
+                    title: '删除本项目的单独设置，改为跟随全局默认',
+                    style: { ...chipStyle, cursor: 'pointer' },
+                  }, '改为跟随全局默认')
+                  : null,
+              ].filter(Boolean)))
+              body.push(react.createElement('div', { key: 'sw-global', style: { display: 'flex', gap: 6, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' } }, [
+                react.createElement('span', { key: 'l', style: labelStyle }, '全局默认：' + (projectSettings.globalEnabled === false ? '关' : '开')),
+                react.createElement('button', {
+                  key: 'gflip',
+                  onClick: () => setEnabled(projectSettings.globalEnabled === false, 'global'),
+                  title: '只影响没有单独设置过的项目',
+                  style: { ...chipStyle, cursor: 'pointer' },
+                }, '改为「全局' + (projectSettings.globalEnabled === false ? '开' : '关') + '」'),
+              ]))
             }
 
             // 实时流水（最近 12 条），每条一行：时间 · 动作 · 文件名
@@ -265,27 +296,48 @@ window.__ModuleLoader__.load({
         { name: 'settings.general.item', id: 'file-history-settings', order: 40 },
         () => {
           const [state, setState] = react.useState(null)
-          react.useEffect(() => {
-            let alive = true
-            rpc('state', {}).then((result) => { if (alive && result) setState(result) })
-            return () => { alive = false }
-          }, [])
-          const enabled = state && state.settings ? state.settings.enabled !== false : null
-          const text = enabled === null ? '改前自动备份：读取中…' : ('改前自动备份：' + (enabled ? '已开启' : '已关闭'))
+          const pull = () => {
+            rpc('state', {}).then((result) => { if (result) setState(result) })
+          }
+          react.useEffect(() => { pull() }, [])
+          const settings = (state && state.settings) || null
+          const enabled = settings ? settings.enabled !== false : null
+          const scope = settings && settings.scope === 'project' ? 'project' : 'inherit'
+          const text = enabled === null
+            ? '改前自动备份：读取中…'
+            : ('改前自动备份（本项目）：' + (enabled ? '已开启' : '已关闭') + (scope === 'project' ? ' · 项目单独设置' : ' · 跟随全局默认'))
+          const write = (method, payload) => {
+            rpc(method, payload).then((result) => {
+              if (result && result.ok === true) pull()
+            })
+          }
           return react.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, [
             react.createElement('div', { key: 'title', style: { fontWeight: 600 } }, text),
             react.createElement('div', { key: 'desc', style: { ...labelStyle, fontSize: 12 } },
-              '任何 write/edit 覆盖已存在文件之前，自动把原文备份进项目 .dsh-backup/（源文件名+时间戳，每个文件只保留最近若干代）。'),
-            react.createElement('button', {
-              key: 'flip',
-              style: { ...chipStyle, alignSelf: 'flex-start', cursor: 'pointer' },
-              onClick: () => {
-                if (enabled === null) return
-                rpc('set-enabled', { enabled: !enabled }).then((result) => {
-                  if (result && result.ok === true) setState({ ...state, settings: { ...state.settings, enabled: result.enabled } })
-                })
-              },
-            }, enabled === null ? '…' : (enabled ? '点击关闭' : '点击开启')),
+              '开关按项目独立控制：这里切的是「当前项目」，其它项目互不影响。任何 write/edit 覆盖已存在文件之前，自动把原文备份进该项目 .dsh-backup/（源文件名+时间戳，每个文件只保留最近若干代）。'),
+            react.createElement('div', { key: 'row', style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, [
+              react.createElement('button', {
+                key: 'flip',
+                style: { ...chipStyle, cursor: 'pointer' },
+                disabled: enabled === null,
+                onClick: () => { if (enabled !== null) write('set-enabled', { enabled: !enabled, scope: 'project' }) },
+              }, enabled === null ? '…' : (enabled ? '关闭本项目备份' : '开启本项目备份')),
+              scope === 'project'
+                ? react.createElement('button', {
+                  key: 'reset',
+                  style: { ...chipStyle, cursor: 'pointer' },
+                  onClick: () => write('reset-project', {}),
+                }, '改为跟随全局默认')
+                : null,
+              settings
+                ? react.createElement('button', {
+                  key: 'global',
+                  style: { ...chipStyle, cursor: 'pointer' },
+                  title: '只影响没有单独设置过的项目',
+                  onClick: () => write('set-enabled', { enabled: settings.globalEnabled === false, scope: 'global' }),
+                }, '全局默认：' + (settings.globalEnabled === false ? '关' : '开') + ' → 切换')
+                : null,
+            ].filter(Boolean)),
           ])
         },
       ))

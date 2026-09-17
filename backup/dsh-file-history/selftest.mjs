@@ -23,14 +23,6 @@ ok('模块导出 apply/backupFileName/backupRootFor', typeof mod.apply === 'func
 ok('项目内备份目录名为 .dsh-backup', mod.BACKUP_DIR_NAME === '.dsh-backup' && mod.backupRootFor('C:/proj') === path.join(path.resolve('C:/proj'), '.dsh-backup'))
 ok('命名＝源文件名+时间戳+原扩展名', mod.backupFileName('app.ts', new Date(2026, 8, 17, 9, 55, 0)) === 'app.20260917-095500.ts')
 
-const settingsValue = {
-  enabled: true,
-  maxFileBytes: 2 * 1024 * 1024,
-  maxGenerations: 5,
-  maxAgeDays: 30,
-  maxProjectBytes: 512 * 1024 * 1024,
-  announceInPrompt: true,
-}
 const registered = {}
 const listeners = {}
 const promptSections = []
@@ -67,13 +59,40 @@ const ctx = {
     register: (ns, schema, options) => {
       capturedNs = ns
       capturedSchema = schema
-      // 宿主真实行为：schema(值) → 解析后的设置对象（含默认值）。这里直接透传给插件用。
-      const resolve = (input) => schema(input)
-      return {
-        get: () => resolve(settingsValue),
-        watch: () => () => {},
-        update: async (patch) => { Object.assign(settingsValue, patch) },
+      // 复刻宿主：用户段落 + schema 解析。update 是合并，mutate 是按路径编辑（unset 才是删除）。
+      const userSection = {}
+      const applyOps = (ops) => {
+        for (const op of ops) {
+          const path = Array.isArray(op.path) ? op.path.slice() : []
+          let cursor = userSection
+          for (let i = 0; i < path.length - 1; i += 1) {
+            const segment = path[i]
+            if (typeof cursor[segment] !== 'object' || cursor[segment] === null) cursor[segment] = {}
+            cursor = cursor[segment]
+          }
+          const last = path[path.length - 1]
+          if (op.op === 'set') cursor[last] = op.value
+          else if (op.op === 'unset') delete cursor[last]
+        }
       }
+      const resolve = () => schema(JSON.parse(JSON.stringify(userSection)))
+      const scope = {
+        get: () => resolve(),
+        watch: () => () => {},
+        update: async (patch) => { Object.assign(userSection, patch) },
+        mutate: async (_ns, ops) => { applyOps(ops) },
+        replace: async (section) => {
+          for (const key of Object.keys(userSection)) delete userSection[key]
+          Object.assign(userSection, section)
+        },
+      }
+      // 暴露给自测，用来在测试里改设置（走与宿主相同的路径）。
+      ctx.settings.register.__scope = scope
+      // 宿主 SettingsProvider 上直接有 update/mutate/replace：插件用的是这一层。
+      ctx.settings.update = (patch) => scope.update(patch)
+      ctx.settings.mutate = (ns, ops) => scope.mutate(ns, ops)
+      ctx.settings.replace = (ns, section) => scope.replace(section)
+      return scope
     },
   },
   tools: { register: (definition) => { registered[definition.name] = definition } },
@@ -98,6 +117,11 @@ try {
   // 把异常记录成断言失败而不是让整个自测崩掉，改动带来这类回归时能一眼看出原因。
   applyError = error
 }
+
+// 设置变更助手：走宿主真实路径（update 合并 / mutate 路径编辑）。
+const updateSettings = (patch) => ctx.settings.register.__scope.update(patch)
+const setPath = (path, value) => ctx.settings.register.__scope.mutate('file-history', [{ op: 'set', path, value }])
+const unsetPath = (path) => ctx.settings.register.__scope.mutate('file-history', [{ op: 'unset', path }])
 ok('apply() 不抛异常（宿主加载路径）', !applyError, applyError ? `${applyError.constructor.name}: ${applyError.message}` : '')
 ok(
   '注入声明包含 tools/settings/timer/agents',
@@ -278,14 +302,14 @@ ok('项目外文件的备份仍能被 list 看到', value.entries.some((entry) =
 ok('项目外文件也能被 restore 还原', (await registered.file_history.execute({ action: 'restore', path: outside }, execCtx)).status === 'restored')
 
 // 8) 大文件只记指纹
-settingsValue.maxFileBytes = 8
+await updateSettings({ maxFileBytes: 8 })
 const big = path.join(project, 'big.txt')
 await writeFile(big, '0123456789abcdef\n', 'utf8')
 await runTool('write', big, 'call-big')
 const bigMeta = (await backupsFor(big))[0]
 ok('超过 maxFileBytes 只记指纹且无内容副本', bigMeta && bigMeta.stored === false && bigMeta.hashKind === 'size+mtime' && !(await stat(bigMeta.backupPath).then(() => true, () => false)), bigMeta && bigMeta.reason)
 ok('不可还原的条目不会谎报可还原', bigMeta && value.entries.every((entry) => entry.path !== big || entry.restorable === false))
-settingsValue.maxFileBytes = 2 * 1024 * 1024
+await updateSettings({ maxFileBytes: 2 * 1024 * 1024 })
 
 // 9) 备份系统不备份自己
 const selfFile = path.join(backupRoot, 'self.txt')
@@ -294,11 +318,11 @@ outcome = await runTool('write', selfFile, 'call-self')
 ok('.dsh-backup 内的文件不会被再次备份', outcome.nextCalls === 1 && (await backupsFor(selfFile)).length === 0)
 
 // 10) 开关关闭后不再备份
-settingsValue.enabled = false
+await setPath(['enabled'], false)
 const beforeOff = (await backupsFor(target)).length
 await runTool('write', target, 'call-off')
 ok('enabled=false 时不再备份', (await backupsFor(target)).length === beforeOff)
-settingsValue.enabled = true
+await setPath(['enabled'], true)
 
 // 10.5) git 卫生：自动把 .dsh-backup/ 登记进 .gitignore，且不重写已有内容
 const gitProject = await mkdtemp(path.join(tmpdir(), 'fh-git-'))
@@ -319,7 +343,7 @@ await listeners['tools/pre-execute'](
 )
 const gitignoreAgain = await readFile(path.join(gitProject, '.gitignore'), 'utf8')
 ok('.gitignore 不会被重复追加', (gitignoreAgain.match(/\.dsh-backup\//g) || []).length === 1)
-settingsValue.gitignoreBackups = false
+await setPath(['gitignoreBackups'], false)
 const gitFile2 = path.join(gitProject, 'code2.js')
 await writeFile(gitFile2, 'const b = 2\n', 'utf8')
 await writeFile(path.join(gitProject, '.gitignore'), 'node_modules/\n', 'utf8')
@@ -328,7 +352,7 @@ await listeners['tools/pre-execute'](
   async () => ({ kind: 'allow' }),
 )
 ok('gitignoreBackups=false 时不改动 .gitignore', (await readFile(path.join(gitProject, '.gitignore'), 'utf8')) === 'node_modules/\n')
-settingsValue.gitignoreBackups = true
+await setPath(['gitignoreBackups'], true)
 await rm(gitProject, { recursive: true, force: true }).catch(() => {})
 
 // 10.6) 嵌套仓库：工作区是仓库子目录时，条目要带相对路径写到「仓库根」的 .gitignore
@@ -362,9 +386,9 @@ ok(
   `announced=${announcedPaths.length} paths`,
 )
 ok('系统提示写明每文件保留代数', announcement.includes('最近几代') || announcement.includes('保留最近'))
-settingsValue.announceInPrompt = false
+await setPath(['announceInPrompt'], false)
 ok('announceInPrompt=false 时不注入该段', promptSections[0].text({ agent: { session: { header } } }) === '')
-settingsValue.announceInPrompt = true
+await setPath(['announceInPrompt'], true)
 
 // 12) 右上角状态芯片的 RPC：state 要给出项目、状态标志、统计与实时流水
 const stateResponse = await callRoute('state', { sessionId: header.id })
@@ -379,10 +403,38 @@ ok(
   Array.isArray(stateResponse.events) && stateResponse.events.length >= 1 && Boolean(stateResponse.events[0].kind) && Boolean(stateResponse.events[0].file),
   JSON.stringify(stateResponse.events[0] || {}),
 )
-const flipped = await callRoute('set-enabled', { enabled: false })
-ok('RPC set-enabled 写入设置', flipped.ok === true && flipped.enabled === false && settingsValue.enabled === false, JSON.stringify(flipped))
-await callRoute('set-enabled', { enabled: true })
-ok('RPC set-enabled 可恢复', settingsValue.enabled === true)
+
+// 12.5) 项目级开关：只影响当前项目，且能被「改回跟随全局默认」
+const key = mod.projectKeyOf(project)
+ok('默认是继承全局（无项目覆盖）', stateResponse.settings.scope === 'inherit' && stateResponse.settings.globalEnabled === true && stateResponse.settings.enabled === true, JSON.stringify(stateResponse.settings))
+const offProject = await callRoute('set-enabled', { sessionId: header.id, enabled: false, scope: 'project' })
+ok(
+  '关闭只写本项目覆盖，不动全局默认',
+  offProject.ok === true && offProject.scope === 'project' && offProject.enabled === false && offProject.globalEnabled === true,
+  JSON.stringify(offProject),
+)
+ok('覆盖键＝项目目录（小写规范化）', Boolean(key) && key === mod.projectKeyOf(project), String(key))
+const offState = await callRoute('state', { sessionId: header.id })
+ok('本项目已经关掉（生效值 false）', offState.settings.enabled === false && offState.settings.scope === 'project')
+// 关掉本项目后，pre-execute 不该再备份（但也不能拦下写入）
+const backupsBeforeOff = (await backupsFor(target)).length
+outcome = await runTool('write', target, 'call-project-off')
+ok('本项目关闭时不再备份且照常放行', outcome.nextCalls === 1 && (await backupsFor(target)).length === backupsBeforeOff)
+// 全局默认关掉，但本项目有覆盖 → 本项目仍然保持自己的设置
+const globalOff = await callRoute('set-enabled', { sessionId: header.id, enabled: false, scope: 'global' })
+ok('全局默认可单独改写', globalOff.ok === true && globalOff.globalEnabled === false, JSON.stringify(globalOff))
+const stillOff = await callRoute('state', { sessionId: header.id })
+ok('项目覆盖优先于全局默认', stillOff.settings.scope === 'project' && stillOff.settings.enabled === false)
+// 改回跟随全局默认
+const reset = await callRoute('reset-project', { sessionId: header.id })
+ok('reset-project 删除项目覆盖', reset.ok === true && reset.scope === 'inherit', JSON.stringify(reset))
+const inheritOff = await callRoute('state', { sessionId: header.id })
+ok('恢复继承后跟随全局默认（全局关 → 本项目也关）', inheritOff.settings.scope === 'inherit' && inheritOff.settings.enabled === false, JSON.stringify(inheritOff.settings))
+// 恢复默认：全局开、无项目覆盖
+await callRoute('set-enabled', { sessionId: header.id, enabled: true, scope: 'global' })
+const restored = await callRoute('state', { sessionId: header.id })
+ok('回到全部启用', restored.settings.enabled === true && restored.settings.scope === 'inherit')
+
 const badRoute = await callRoute('set-enabled', { enabled: 'yes' })
 ok('RPC 参数非法时返回错误而不是抛异常', badRoute.ok === false && badRoute.reason === 'bad-args', JSON.stringify(badRoute))
 const getOnly = await capturedRoute.handler({ method: 'GET', async *[Symbol.asyncIterator]() {} }, { writeHead() {}, end() {} })

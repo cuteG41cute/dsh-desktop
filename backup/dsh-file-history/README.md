@@ -42,7 +42,7 @@ harness 原生只有 `dsh-atomic-write`（写入原子）和 `dsh-fs-observation
 | `lib/client.js` | **客户端**半边：右上角「备份」状态芯片 + 悬停面板（实时流水 / 统计 / 总开关） |
 | `package.json` | 插件清单（`dsh.client` 段声明浏览器半边，依赖 `@deepseek-ai/cordis`、`@deepseek-ai/schemastery`） |
 | `install.ps1` | 安装/卸载到指定 dsh profile（写 `node_modules` + 登记 `cordis.patch.yml`，自动备份原文件） |
-| `selftest.mjs` | 离线自测：假 ctx 驱动已安装副本，51 项断言（宿主加载路径、schema 契约、客户端 RPC） |
+| `selftest.mjs` | 离线自测：假 ctx 驱动已安装副本，59 项断言（宿主加载路径、schema 契约、客户端 RPC、项目级开关） |
 | `host-contract-check.mjs` | **真依赖**契约检查：在 profile 内加载真实 schemastery/timer 语义，9 项断言 |
 | `monitor.ps1` | 命令行观测面板：一次看清 / `-Watch` 实时盯梢 / `-Scan` 扫全机 |
 | `after-restart-check.ps1` | 重启后体检：插件是否已加载、备份目录是否已创建 |
@@ -116,9 +116,14 @@ $text = [System.IO.File]::ReadAllText($f, [System.Text.Encoding]::UTF8)
 
 ## 配置（`~/.dsh/settings.yaml` → `file-history` 段，改动热生效）
 
+**开关是项目级的**：`enabled` 是全局默认，`projects` 是逐项目覆盖（键＝项目目录绝对路径，小写规范化）。
+生效值 = 项目覆盖 > 全局默认。右上角面板和「设置 → 通用」里都能直接切当前项目，并能在两种状态间来回。
+
 ```yaml
 file-history:
-  enabled: true                  # 总开关
+  enabled: true                  # 全局默认开关（没有单独设置过的项目用它）
+  projects:                      # 逐项目覆盖：{ "<项目目录>": true | false }
+    c:\users\twinblade\documents\my-proj: false
   maxFileBytes: 2097152          # 超过只记指纹（默认 2MB）
   maxGenerations: 5              # 每个源文件保留最近几代（默认 5 轮）
   maxAgeDays: 30                 # 备份保留天数
@@ -126,6 +131,14 @@ file-history:
   announceInPrompt: true         # 把备份系统写进系统提示
   gitignoreBackups: true         # 自动把 .dsh-backup/ 加进项目 .gitignore
 ```
+
+面板里的三个操作（对应 RPC `set-enabled` / `reset-project`）：
+
+| 操作 | 效果 |
+| --- | --- |
+| 关闭/开启本项目备份 | 写 `projects[<当前项目>]`，**只影响这个项目** |
+| 改为跟随全局默认 | `unset projects[<当前项目>]`，回到跟随 `enabled` |
+| 全局默认：开/关 → 切换 | 写 `enabled`，只影响没有单独设置过的项目 |
 
 ## 关键实现决策
 

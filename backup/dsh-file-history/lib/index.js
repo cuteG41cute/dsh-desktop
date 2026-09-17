@@ -68,10 +68,16 @@ export function sidecarName(backupName) {
   return `${backupName}.json`
 }
 
-/** 设置 schema：全部有默认值，用户段落可覆盖。 */
+/**
+ * 设置 schema：全部有默认值，用户段落可覆盖。
+ * `enabled` 是**全局默认**；`projects` 是**逐项目覆盖**（键＝项目目录绝对路径），
+ * 与 dsh-memory-db 的「全局默认 + 每项目覆盖」约定保持一致。
+ */
 export const fileHistorySettingsSchema = s.object({
-  /** 总开关；关闭后不再备份，也不再拦截。 */
+  /** 全局默认开关：项目没有单独设置时用它。 */
   enabled: s.boolean().default(true),
+  /** 逐项目开关覆盖：{ "<项目目录绝对路径>": true | false }。 */
+  projects: s.dict(s.boolean()).default({}),
   /** 超过该字节数的文件只记指纹，不复制内容（避免备份区被大文件撑爆）。 */
   maxFileBytes: s.natural().default(DEFAULT_MAX_FILE_BYTES),
   /** 每个源文件保留多少轮备份（「只保留最近五轮」）。 */
@@ -85,6 +91,12 @@ export const fileHistorySettingsSchema = s.object({
   /** 是否自动把 .dsh-backup/ 登记进项目 .gitignore（避免备份文件混入 git status / 提交）。 */
   gitignoreBackups: s.boolean().default(true),
 })
+
+/** 项目目录 → 覆盖键：统一大小写与分隔符，避免同一个项目因写法不同而分裂成两条。 */
+export function projectKeyOf(cwd) {
+  if (!cwd || typeof cwd !== 'string') return undefined
+  return path.resolve(cwd).replace(/[\\/]+$/, '').toLowerCase()
+}
 
 // ───────────────────────────── 小工具 ─────────────────────────────
 
@@ -967,10 +979,21 @@ export function apply(ctx, config = {}) {
   const systemPrompt = ctx.get('systemPrompt')
   let lastSweep = 0
 
-  const currentSettings = () => {
+  /**
+   * 解析当前生效的设置。
+   * @param cwd - 传项目目录时按「项目覆盖 > 全局默认」求 enabled；不传则只给全局默认值。
+   */
+  const currentSettings = (cwd) => {
     const value = settings.get() || {}
+    const projects = value.projects && typeof value.projects === 'object' ? value.projects : {}
+    const key = projectKeyOf(cwd)
+    const override = key && Object.prototype.hasOwnProperty.call(projects, key) ? projects[key] : undefined
+    const globalEnabled = value.enabled !== false
     return {
-      enabled: value.enabled !== false,
+      enabled: typeof override === 'boolean' ? override : globalEnabled,
+      globalEnabled,
+      projectOverride: typeof override === 'boolean' ? override : undefined,
+      projectKey: key,
       maxFileBytes: Number(value.maxFileBytes) > 0 ? Number(value.maxFileBytes) : DEFAULT_MAX_FILE_BYTES,
       maxGenerations: Number(value.maxGenerations) > 0 ? Number(value.maxGenerations) : DEFAULT_MAX_GENERATIONS,
       maxAgeDays: Number(value.maxAgeDays) > 0 ? Number(value.maxAgeDays) : DEFAULT_MAX_AGE_DAYS,
@@ -1015,7 +1038,8 @@ export function apply(ctx, config = {}) {
   ctx.on('tools/pre-execute', async (exec, next) => {
     const toolName = String(exec.name || '')
     const bare = toolName.includes(':') ? toolName.slice(toolName.lastIndexOf(':') + 1) : toolName
-    const config = currentSettings()
+    // 开关是项目级的：按「正在被写的这个项目」求值（项目覆盖 > 全局默认）。
+    const config = currentSettings(cwdOf(exec))
     if (!config.enabled || !MUTATING_TOOLS.has(bare)) return next()
     try {
       const meta = await backupBeforeWrite(exec, config)
@@ -1131,12 +1155,13 @@ export function apply(ctx, config = {}) {
       order: 151,
       text: (context) => {
         try {
-          const config = currentSettings()
-          if (!config.enabled || !config.announceInPrompt) return ''
           const agent = context && context.agent
           const header = agent && agent.session ? agent.session.header : undefined
           const cwd = header && header.cwd ? header.cwd : undefined
           if (!cwd) return ''
+          // 项目级开关：本项目被单独关掉时，这一段就不该出现（否则 agent 会以为有备份）。
+          const config = currentSettings(cwd)
+          if (!config.enabled || !config.announceInPrompt) return ''
           const root = backupRootFor(cwd)
           const statusPath = statusPathFor(cwd)
           return [
@@ -1169,14 +1194,39 @@ export function apply(ctx, config = {}) {
     }
 
     const dispatch = async (method, args) => {
-      const config = currentSettings()
-      if (method === 'set-enabled') {
+      const sessionId = typeof args.sessionId === 'string' ? args.sessionId : undefined
+      const projectCwd = projectOf(sessionId).cwd
+      const projectKey = projectKeyOf(projectCwd)
+
+      // 逐项目开关：scope=project 写本项目覆盖；scope=global 改全局默认；reset 删除本项目覆盖。
+      if (method === 'set-enabled' || method === 'reset-project') {
+        if (method === 'reset-project') {
+          if (!projectKey) return { ok: false, reason: 'no-project' }
+          await ctx.settings.mutate(SETTINGS_NS, [{ op: 'unset', path: ['projects', projectKey] }])
+          const after = currentSettings(projectCwd)
+          return { ok: true, enabled: after.enabled, scope: 'inherit', projectOverride: null, globalEnabled: after.globalEnabled }
+        }
         const wanted = typeof args.enabled === 'boolean' ? args.enabled : undefined
         if (wanted === undefined) return { ok: false, reason: 'bad-args' }
-        await settings.update({ enabled: wanted })
-        return { ok: true, enabled: wanted }
+        const scope = args.scope === 'global' ? 'global' : 'project'
+        if (scope === 'global') {
+          await settings.update({ enabled: wanted })
+        } else {
+          if (!projectKey) return { ok: false, reason: 'no-project' }
+          await ctx.settings.mutate(SETTINGS_NS, [{ op: 'set', path: ['projects', projectKey], value: wanted }])
+        }
+        const after = currentSettings(projectCwd)
+        return {
+          ok: true,
+          enabled: after.enabled,
+          scope,
+          projectOverride: typeof after.projectOverride === 'boolean' ? after.projectOverride : null,
+          globalEnabled: after.globalEnabled,
+        }
       }
-      const { cwd } = projectOf(typeof args.sessionId === 'string' ? args.sessionId : undefined)
+
+      const cwd = projectCwd
+      const config = currentSettings(cwd)
       const status = await readStatusFile(cwd)
       const events = await readRecentEvents(cwd)
       const stat = await (async () => {
@@ -1208,7 +1258,15 @@ export function apply(ctx, config = {}) {
         backupDir: backupRootFor(cwd),
         events,
         stat,
-        settings: { enabled: config.enabled, maxGenerations: config.maxGenerations, maxFileBytes: config.maxFileBytes },
+        settings: {
+          // enabled 是「本项目生效值」；scope 说明它来自项目覆盖还是全局默认。
+          enabled: config.enabled,
+          globalEnabled: config.globalEnabled,
+          projectOverride: typeof config.projectOverride === 'boolean' ? config.projectOverride : null,
+          scope: typeof config.projectOverride === 'boolean' ? 'project' : 'inherit',
+          maxGenerations: config.maxGenerations,
+          maxFileBytes: config.maxFileBytes,
+        },
         refreshedAt: Date.now(),
       }
     }
