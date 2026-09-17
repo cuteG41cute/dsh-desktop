@@ -253,6 +253,24 @@ ok('gitignoreBackups=false 时不改动 .gitignore', (await readFile(path.join(g
 settingsValue.gitignoreBackups = true
 await rm(gitProject, { recursive: true, force: true }).catch(() => {})
 
+// 10.6) 嵌套仓库：工作区是仓库子目录时，条目要带相对路径写到「仓库根」的 .gitignore
+const outerRepo = await mkdtemp(path.join(tmpdir(), 'fh-outer-'))
+const innerWorkspace = path.join(outerRepo, 'backup')
+await mkdir(path.join(outerRepo, '.git'), { recursive: true })
+await mkdir(innerWorkspace, { recursive: true })
+await writeFile(path.join(outerRepo, '.gitignore'), '# 运行时目录\napi/\n', 'utf8')
+const innerFile = path.join(innerWorkspace, 'code.py')
+await writeFile(innerFile, 'x = 1\n', 'utf8')
+const innerHeader = { id: 'session-inner', cwd: innerWorkspace, title: 'nested test' }
+await listeners['tools/pre-execute'](
+  { name: 'write', callId: 'c-inner', rootCallId: 'c-inner', arguments: { file_path: innerFile }, agent: { session: { header: innerHeader } }, signal: { throwIfAborted: () => {} } },
+  async () => ({ kind: 'allow' }),
+)
+const outerGitignore = await readFile(path.join(outerRepo, '.gitignore'), 'utf8')
+ok('嵌套仓库：条目写到仓库根且带相对路径', outerGitignore.includes('/backup/.dsh-backup/') && outerGitignore.includes('api/'), JSON.stringify(outerGitignore))
+ok('嵌套仓库：不往子目录塞 .gitignore', !(await stat(path.join(innerWorkspace, '.gitignore')).then(() => true, () => false)))
+await rm(outerRepo, { recursive: true, force: true }).catch(() => {})
+
 // 11) 系统提示公告内容包含目录与工具用法
 const announcement = promptSections[0].text({ agent: { session: { header } } })
 const announcedPaths = [...announcement.matchAll(/`([^`]+)`/g)].map((match) => norm(match[1]))

@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile, readdir, stat, rm, rename, appendFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
+import s from '@deepseek-ai/schemastery'
 
 /** 设置命名空间（持久化在 ~/.dsh/settings.yaml 的 file-history 段）。 */
 export const SETTINGS_NS = 'file-history'
@@ -68,7 +69,7 @@ export function sidecarName(backupName) {
 }
 
 /** 设置 schema：全部有默认值，用户段落可覆盖。 */
-export const fileHistorySettingsSchema = (s) => s.object({
+export const fileHistorySettingsSchema = s.object({
   /** 总开关；关闭后不再备份，也不再拦截。 */
   enabled: s.boolean().default(true),
   /** 超过该字节数的文件只记指纹，不复制内容（避免备份区被大文件撑爆）。 */
@@ -435,26 +436,43 @@ async function sweepLegacy(workspaceKey, settings) {
 /**
  * 把备份目录登记进项目 .gitignore（只追加一行，绝不重写已有内容）。
  * 目的：备份文件不该混进 git status / git add . / diff 之类的地方。
+ * 工作区常是某个仓库的子目录，所以从工作区往上找最近的 git 根，登记带相对路径的条目。
  */
 async function ensureGitignored(projectRoot) {
-  const gitDir = path.join(projectRoot, '.git')
-  if (!(await stat(gitDir).then((value) => value.isDirectory(), () => false))) return 'no-git'
-  const gitignorePath = path.join(projectRoot, '.gitignore')
-  const entry = `${BACKUP_DIR_NAME}/`
+  const start = path.resolve(projectRoot)
+  let current = start
+  let gitRoot
+  for (;;) {
+    if (await stat(path.join(current, '.git')).then(() => true, () => false)) {
+      gitRoot = current
+      break
+    }
+    const parent = path.dirname(current)
+    if (parent === current) break
+    current = parent
+  }
+  if (!gitRoot) return 'no-git'
+
+  // 工作区在仓库内的相对位置；工作区正好是仓库根时 rel === ''。
+  const rel = path.relative(gitRoot, start).split(path.sep).filter(Boolean).join('/')
+  const entry = rel ? `/${rel}/${BACKUP_DIR_NAME}/` : `${BACKUP_DIR_NAME}/`
+  const gitignorePath = path.join(gitRoot, '.gitignore')
   let text = ''
   try {
     text = await readFile(gitignorePath, 'utf8')
   } catch {
     text = ''
   }
-  const already = text.split(/\r?\n/).some((line) => {
-    const trimmed = line.trim()
-    return trimmed === entry || trimmed === BACKUP_DIR_NAME || trimmed === `/${entry}`
-  })
+  const normalize = (line) => line.trim().replace(/^\/+/, '').replace(/\/+$/, '')
+  const wanted = normalize(entry)
+  const already = text.split(/\r?\n/).some((line) => normalize(line) === wanted)
   if (already) return 'present'
-  const prefix = text.length === 0 ? '' : text.endsWith('\n') ? '' : '\n'
-  const header = text.length === 0 ? '' : '\n'
-  await writeFile(gitignorePath, `${text}${prefix}${header}# dsh-file-history 自动备份（改前快照），不纳入版本管理\n${entry}\n`, 'utf8')
+  const prefix = text.length === 0 ? '' : text.endsWith('\n') ? '\n' : '\n\n'
+  await writeFile(
+    gitignorePath,
+    `${text}${prefix}# dsh-file-history 自动备份（改前检查点），不纳入版本管理\n${entry}\n`,
+    'utf8',
+  )
   return 'added'
 }
 
@@ -874,8 +892,8 @@ async function handleRevertTurn(args, exec) {
 
 export const name = 'file-history'
 
-/** 依赖：tools（拦截 + 注册工具）、settings（持久开关）。systemPrompt 按需取用。 */
-export const inject = ['tools', 'settings']
+/** 依赖：tools（拦截 + 注册工具）、settings（持久开关）、timer（延迟清理）。systemPrompt 按需取用。 */
+export const inject = ['tools', 'settings', 'timer']
 
 export function apply(ctx, config = {}) {
   const settings = ctx.settings.register(SETTINGS_NS, fileHistorySettingsSchema, { base: config })

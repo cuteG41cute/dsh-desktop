@@ -30,7 +30,7 @@ $block = @"
 - insert:
     - id: dsh-file-history
       name: 'dsh-file-history'
-      inject: [tools, settings]
+      inject: [tools, settings, timer]
 "@
 
 if ($Remove) {

@@ -11,6 +11,9 @@ dsh-desktop/*.old.exe
 
 # 备份
 DeepSeek Harness 检查点*.zip
+# dsh-file-history 自动备份（改前检查点）：工作区 backup/ 是 dsh-desktop 仓库内容，
+# 它的 .dsh-backup/ 不纳入版本控制（插件在仓库根之外，无法自动登记，故手工登记）。
+/backup/.dsh-backup/
 
 # 编辑器/系统
 Thumbs.db
