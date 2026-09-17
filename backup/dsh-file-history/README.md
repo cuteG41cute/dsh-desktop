@@ -89,6 +89,19 @@ powershell -ExecutionPolicy Bypass -File verify.ps1
 注意：本机 PowerShell 7（`pwsh`）不在 PATH 上，脚本一律用系统自带的
 `powershell.exe`（Windows PowerShell 5.1）执行。
 
+**所有 `.ps1` 必须带 UTF-8 BOM**：Windows PowerShell 5.1 对无 BOM 的脚本按 ANSI(GBK) 解码，
+脚本里的中文注释/字符串会变成乱码并直接把语法搞坏（`Unexpected token`）。
+用编辑器保存时选「UTF-8 with BOM」，或命令行补一次：
+
+```powershell
+$f = 'monitor.ps1'
+$text = [System.IO.File]::ReadAllText($f, [System.Text.Encoding]::UTF8)
+[System.IO.File]::WriteAllText($f, $text, [System.Text.UTF8Encoding]::new($true))
+```
+
+另外：用 `Start-Process` 传带空格的路径会被参数拆分吃掉一段，
+所以 `monitor.ps1` 支持用环境变量 `FH_PROJECT` 指定项目目录。
+
 ## 配置（`~/.dsh/settings.yaml` → `file-history` 段，改动热生效）
 
 ```yaml

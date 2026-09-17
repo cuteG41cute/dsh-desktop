@@ -1,4 +1,4 @@
-# dsh-file-history 安装 / 卸载脚本
+﻿# dsh-file-history 安装 / 卸载脚本
 # 把插件安装到一个 dsh profile 的 node_modules，并在该 profile 的 cordis.patch.yml 里登记加载项。
 #
 # 用法：

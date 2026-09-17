@@ -1,4 +1,4 @@
-# 重启 dsh 之后的「是否已生效」体检脚本（纯读，不改任何东西）
+﻿# 重启 dsh 之后的「是否已生效」体检脚本（纯读，不改任何东西）
 # 用法：powershell -ExecutionPolicy Bypass -File after-restart-check.ps1
 #   -Project <路径>   可选：检查某个项目的备份目录是否已经建起来（默认当前目录）
 
