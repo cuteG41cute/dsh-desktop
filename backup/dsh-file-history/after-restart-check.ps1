@@ -1,9 +1,11 @@
 # 重启 dsh 之后的「是否已生效」体检脚本（纯读，不改任何东西）
 # 用法：powershell -ExecutionPolicy Bypass -File after-restart-check.ps1
+#   -Project <路径>   可选：检查某个项目的备份目录是否已经建起来（默认当前目录）
 
 param(
     [string]$DshHome = (Join-Path $env:USERPROFILE '.dsh'),
-    [string]$Profile = 'web'
+    [string]$Profile = 'web',
+    [string]$Project = (Get-Location).Path
 )
 
 $results = New-Object System.Collections.Generic.List[object]
@@ -18,12 +20,24 @@ $patch = Join-Path $DshHome "profiles\$Profile\cordis.patch.yml"
 $patchText = if (Test-Path $patch) { Get-Content $patch -Raw -Encoding utf8 } else { '' }
 Check 'patch registers the plugin' ($patchText -match 'dsh-file-history') $patch
 
-$history = Join-Path $DshHome 'file-history'
-Check 'snapshot dir created (plugin apply ran)' (Test-Path $history) $history
+$fallback = Join-Path $DshHome 'file-history'
+Check 'fallback dir exists (plugin apply ran)' (Test-Path $fallback) $fallback
 
 $settings = Join-Path $DshHome 'settings.yaml'
 $settingsText = if (Test-Path $settings) { Get-Content $settings -Raw -Encoding utf8 } else { '' }
 Check 'settings.yaml has file-history section' ($settingsText -match '(?m)^file-history:') 'appears once the namespace is registered / first config write'
+
+# 项目内备份目录与运行状况标志
+$metaDir = Join-Path $Project '.dsh-backup\_dsh-file-history'
+$statusPath = Join-Path $metaDir 'status.json'
+if (Test-Path $statusPath) {
+    $status = Get-Content $statusPath -Raw -Encoding utf8 | ConvertFrom-Json
+    Check 'project status.json exists' $true $statusPath
+    Check 'status.json has fresh timestamp' ($null -ne $status.at) ("at=" + $status.at + " snapshots=" + $status.snapshots + " lastError=" + $status.lastError)
+    Write-Host ("[info] backupDir = " + $status.backupDir)
+} else {
+    Check 'project status.json exists' $false "$statusPath (还没有发生过覆盖写入，属正常；改一个已存在的文件后应出现)"
+}
 
 $logHits = @()
 foreach ($candidate in @((Join-Path $env:TEMP 'dsh*.log'), (Join-Path $DshHome 'logs\*.log'), (Join-Path $DshHome '*.log'))) {
@@ -40,12 +54,13 @@ if ($armedLine) { Write-Host "[info] startup log: $armedLine" } else { Write-Hos
 $results | Format-Table -AutoSize
 $failed = @($results | Where-Object { $_.result -eq 'FAIL' })
 Write-Host ''
+$onlyExpected = @($failed | Where-Object { $_.item -like 'settings.yaml*' -or $_.item -like 'project status.json exists' })
 if ($failed.Count -eq 0) {
-    Write-Host '[check] ALL OK: snapshot-before-write is active. Try editing a file, then call file_history(action="list").'
+    Write-Host '[check] ALL OK: snapshot-before-write is active. Edit an existing file, then call file_history(action="list").'
     exit 0
 }
-if ($failed.Count -eq 1 -and $failed[0].item -like 'settings.yaml*') {
-    Write-Host '[check] Only the settings.yaml section is missing (normal until the first config write). The plugin itself is loaded.'
+if ($failed.Count -eq $onlyExpected.Count) {
+    Write-Host '[check] Loaded fine. Remaining FAILs are expected until the first config write / first overwrite.'
     exit 0
 }
 Write-Host '[check] Some checks failed: restart the dsh service / desktop window, then re-run this script.'

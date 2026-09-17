@@ -22,11 +22,12 @@ New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 $target = Join-Path $WorkDir 'e2e.txt'
 Set-Content -Path $target -Value 'v0: 原始内容' -Encoding utf8
 
-# 记录验证前的快照条目数，验证后对比增量，避免被历史条目干扰。
-function Get-SnapshotCount([string]$path) {
-    if (-not (Test-Path $HistoryDir)) { return 0 }
-    $hits = Get-ChildItem $HistoryDir -Recurse -Filter 'meta.json' -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -notmatch '\\_sessions\\' } |
+# 统计某个源文件在项目备份区里的备份份数（sidecar 元数据），避免被历史条目干扰。
+function Get-BackupCount([string]$path, [string]$projectRoot) {
+    $metaDir = Join-Path $projectRoot '.dsh-backup\_dsh-file-history'
+    if (-not (Test-Path $metaDir)) { return 0 }
+    $hits = Get-ChildItem $metaDir -Filter '*.json' -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne 'status.json' } |
         ForEach-Object {
             try { (Get-Content $_.FullName -Raw -Encoding utf8 | ConvertFrom-Json).originalPath } catch { $null }
         } |
@@ -34,9 +35,9 @@ function Get-SnapshotCount([string]$path) {
     return @($hits).Count
 }
 
-$before = Get-SnapshotCount $target
+$before = Get-BackupCount $target $WorkDir
 Write-Host "[verify] 目标文件: $target"
-Write-Host "[verify] 验证前快照数: $before"
+Write-Host "[verify] 验证前该文件的备份数: $before"
 
 $task = 'Work only in the current working directory. Step 1: read e2e.txt. Step 2: use the write tool to replace e2e.txt with exactly: v1 broken. Step 3: use the edit tool to change broken to worse. Step 4: call file_history with action=list, scope=session. Step 5: call file_history with action=restore, path=e2e.txt. Finally reply with exactly one line: SNAPSHOTS=<count> RESTORED=<status> AFTER=<literal current content of e2e.txt>'
 
@@ -45,19 +46,22 @@ $output = & node $bin --profile $Profile --patch $Patch $task 2>&1
 $exit = $LASTEXITCODE
 $output | ForEach-Object { Write-Host "  | $_" }
 
-$after = Get-SnapshotCount $target
+$after = Get-BackupCount $target $WorkDir
 $content = (Get-Content $target -Raw -Encoding utf8).Trim()
+$statusPath = Join-Path $WorkDir '.dsh-backup\_dsh-file-history\status.json'
+$statusText = if (Test-Path $statusPath) { (Get-Content $statusPath -Raw -Encoding utf8 | ConvertFrom-Json) } else { $null }
 
 Write-Host ''
 Write-Host '===== 结论 ====='
 Write-Host ("  exit_code     = {0}" -f $exit)
-Write-Host ("  snapshots_new = {0}" -f ($after - $before))
+Write-Host ("  backups_new   = {0}" -f ($after - $before))
 Write-Host ("  final_content = {0}" -f $content)
+Write-Host ("  status.json   = {0}" -f $(if ($statusText) { "at=$($statusText.at) snapshots=$($statusText.snapshots)" } else { '(未生成)' }))
 
 $okSnap = ($after - $before) -ge 1
 $okRestore = ($content -eq 'v0: 原始内容')
 if ($okSnap -and $okRestore) {
-    Write-Host '[verify] PASS：覆盖前自动快照已生效，且 file_history restore 把文件还原成功。'
+    Write-Host '[verify] PASS：覆盖前自动备份已生效，且 file_history restore 把文件还原成功。'
     if (-not $Keep) { Remove-Item $WorkDir -Recurse -Force -ErrorAction SilentlyContinue }
     exit 0
 }

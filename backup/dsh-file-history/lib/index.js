@@ -1,56 +1,88 @@
 // dsh-file-history — Host half (static / composition plugin)
 //
-// 目的：让 harness 在「改文件之前」自动留一份原文快照，不再依赖模型自觉。
+// 目的：让 harness 在「改文件之前」自动留一份原文备份，不再依赖模型自觉。
 //
-//  1. 监听 tools/pre-execute：凡是 write / edit 且目标文件已存在 → 先把原文复制到
-//     ~/.dsh/file-history/<workspace>/<sig>/<0001> 再放行；目标不存在（新建）不占用空间。
-//  2. 校验：快照必须真的成功，否则**拦截这次写入**（fail-closed），杜绝「备份失败但照样改坏」。
-//  3. 模型侧只多一个 file_history 工具：list / show / restore / revert_turn，
-//     正常工作时零 token 成本，出错时一次调用即可回退（含整轮回退）。
-//  4. 保留策略：单文件条数上限、单工作区容量上限、超期清理；二进制/超大文件只记哈希不存内容。
+//  1. 监听 tools/pre-execute：凡是 write / edit 且目标文件已存在 → 先把原文复制进
+//     **项目内** <项目根>/.dsh-backup/<源文件相对路径>/<源文件名>.<时间戳>.<扩展名> 再放行。
+//     新建文件（原文件不存在）不占用空间。
+//  2. 校验：备份必须真的成功，否则**拦截这次写入**（fail-closed），杜绝「没备份却照样改坏」。
+//  3. 保留策略：每个源文件只保留最近 N 代（默认 5 轮），另加保留天数与总容量上限。
+//  4. 模型侧两个入口：file_history 工具（list / show / restore / revert_turn）+ 系统提示里的
+//     一段常驻说明（备份系统存在、位置、如何从检查点恢复）。
+//  5. 运行状况标志：<项目根>/.dsh-backup/_dsh-file-history/status.json + manifest.jsonl（人类可读）。
 //
 // 设计取舍：pre-execute 不能改写 exec.arguments，所以这里不做「挡下写入再由插件代写」——
-// 那会丢掉 harness 原生的 read-before-write 校验和展示层 diff 卡片。这里只做旁路快照 + 校验，
+// 那会丢掉 harness 原生的 read-before-write 校验和展示层 diff 卡片。这里只做旁路备份 + 校验，
 // 让原工具照常执行，模型侧的可见行为完全不变。
 
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile, readdir, stat, rm, rename, appendFile, open } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
+import { mkdir, readFile, writeFile, readdir, stat, rm, rename, appendFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import path from 'node:path'
 
 /** 设置命名空间（持久化在 ~/.dsh/settings.yaml 的 file-history 段）。 */
 export const SETTINGS_NS = 'file-history'
-/** 插件在日志与快照元数据里的标识。 */
+/** 插件在日志与备份元数据里的标识。 */
 export const PLUGIN = 'file-history'
-/** 快照根目录。 */
+/** 项目内备份目录名（位于会话工作目录下）。 */
+export const BACKUP_DIR_NAME = '.dsh-backup'
+/** 项目内备份目录里的元数据子目录（状态标志 + manifest + sidecar）。 */
+export const META_DIR_NAME = '_dsh-file-history'
+/** 项目根之外的文件的兜底备份目录（不进项目，避免污染无关目录）。 */
 export const HISTORY_DIR = path.join(homedir(), '.dsh', 'file-history')
-/** 会话级快照日志（JSONL），供用户直接翻查，也方便事后审计。 */
-export const SESSIONS_DIR = path.join(HISTORY_DIR, '_sessions')
 
-const HASH_LEN = 16
+const SHORT_HASH_LEN = 16
 const DEFAULT_MAX_FILE_BYTES = 2 * 1024 * 1024
+const DEFAULT_MAX_GENERATIONS = 5
 const DEFAULT_MAX_AGE_DAYS = 30
-const DEFAULT_MAX_WORKSPACE_BYTES = 512 * 1024 * 1024
-const DEFAULT_MAX_ENTRIES_PER_FILE = 50
+const DEFAULT_MAX_PROJECT_BYTES = 512 * 1024 * 1024
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000
 const DIFF_MAX_LINES = 400
 const LCS_BUDGET = 1200
 
-/** 会被拦截并快照的文件修改类工具名（真实名 + PTC 限定名两种形态都覆盖）。 */
+/** 会被备份的文件修改类工具名（真实名 + PTC 限定名两种形态都覆盖）。 */
 const MUTATING_TOOLS = new Set(['write', 'edit'])
+
+/** 时间戳格式：20260917-095500。 */
+function stampFor(date) {
+  const pad = (value) => String(value).padStart(2, '0')
+  return (
+    `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}` +
+    `-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
+  )
+}
+
+/**
+ * 备份文件名：源文件名 + 时间后缀（保留原扩展名，便于双击打开/对比）。
+ * 例：app.ts → app.20260917-095500.ts；archive.tar.gz → archive.tar.20260917-095500.gz。
+ */
+export function backupFileName(sourceName, date = new Date()) {
+  const ext = path.extname(sourceName)
+  const stem = ext ? sourceName.slice(0, -ext.length) : sourceName
+  return `${stem}.${stampFor(date)}${ext}`
+}
+
+/** 元数据文件名：与备份同名 + .json。 */
+export function sidecarName(backupName) {
+  return `${backupName}.json`
+}
 
 /** 设置 schema：全部有默认值，用户段落可覆盖。 */
 export const fileHistorySettingsSchema = (s) => s.object({
-  /** 总开关；关闭后不再快照，也不再拦截。 */
+  /** 总开关；关闭后不再备份，也不再拦截。 */
   enabled: s.boolean().default(true),
-  /** 超过该字节数的文件只记哈希，不复制内容（避免备份区被大文件撑爆）。 */
+  /** 超过该字节数的文件只记指纹，不复制内容（避免备份区被大文件撑爆）。 */
   maxFileBytes: s.natural().default(DEFAULT_MAX_FILE_BYTES),
-  /** 快照保留天数。 */
+  /** 每个源文件保留多少轮备份（「只保留最近五轮」）。 */
+  maxGenerations: s.natural().default(DEFAULT_MAX_GENERATIONS),
+  /** 备份保留天数（兜底清理，防止长期不动的项目堆积）。 */
   maxAgeDays: s.natural().default(DEFAULT_MAX_AGE_DAYS),
-  /** 单个工作区快照区容量上限（字节）。 */
-  maxWorkspaceBytes: s.natural().default(DEFAULT_MAX_WORKSPACE_BYTES),
-  /** 单个文件最多保留多少代快照。 */
-  maxEntriesPerFile: s.natural().default(DEFAULT_MAX_ENTRIES_PER_FILE),
+  /** 单个项目备份区容量上限（字节）。 */
+  maxProjectBytes: s.natural().default(DEFAULT_MAX_PROJECT_BYTES),
+  /** 是否把「备份系统已启用」写进系统提示，让 agent 知道检查点的存在与位置。 */
+  announceInPrompt: s.boolean().default(true),
+  /** 是否自动把 .dsh-backup/ 登记进项目 .gitignore（避免备份文件混入 git status / 提交）。 */
+  gitignoreBackups: s.boolean().default(true),
 })
 
 // ───────────────────────────── 小工具 ─────────────────────────────
@@ -60,10 +92,23 @@ function sha256(buf) {
 }
 
 function shortHash(text) {
-  return sha256(Buffer.from(text, 'utf8')).slice(0, HASH_LEN)
+  return sha256(Buffer.from(text, 'utf8')).slice(0, SHORT_HASH_LEN)
 }
 
-/** 工作区标识：目录名 + 路径哈希，既好认又不撞车。 */
+const WORKSPACE_SKIP = new Set([BACKUP_DIR_NAME, 'node_modules', '.git', '.hg', '.svn', 'dist', 'build', 'out'])
+
+/** 项目内备份根目录（会话工作目录下）。 */
+export function backupRootFor(cwd) {
+  if (!cwd) return undefined
+  return path.join(path.resolve(cwd), BACKUP_DIR_NAME)
+}
+
+/** 备份根目录里的元数据目录（状态标志、manifest、sidecar）。 */
+export function metaDirFor(cwd) {
+  const root = backupRootFor(cwd)
+  return root ? path.join(root, META_DIR_NAME) : undefined
+}
+
 function workspaceIdentity(cwd) {
   if (!cwd) return { key: 'unknown', name: 'unknown', cwd: '' }
   const resolved = path.resolve(cwd)
@@ -72,18 +117,24 @@ function workspaceIdentity(cwd) {
   return { key: `${safe}-${shortHash(resolved.toLowerCase())}`, name: base, cwd: resolved }
 }
 
-/** 文件签名目录：可读文件名 + 路径哈希。 */
 function fileSignature(name, absPath) {
   const safe = (name || 'file').replace(/[^\w\u4e00-\u9fa5.@+-]+/g, '_').slice(0, 48) || 'file'
   return `${safe}-${shortHash(absPath.toLowerCase())}`
 }
 
-/** 把模型给的路径解析成绝对路径：绝对路径原样，相对路径按会话 cwd 解析。 */
 function resolveTarget(target, cwd) {
   if (!target || typeof target !== 'string') return undefined
   if (path.isAbsolute(target)) return path.normalize(target)
   if (!cwd) return undefined
   return path.normalize(path.resolve(cwd, target))
+}
+
+/** 目标是否落在项目根内；返回相对项目根的路径。 */
+function relativeInsideProject(absPath, projectRoot) {
+  if (!projectRoot) return undefined
+  const rel = path.relative(path.resolve(projectRoot), absPath)
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return undefined
+  return rel
 }
 
 function formatBytes(n) {
@@ -94,11 +145,13 @@ function formatBytes(n) {
 }
 
 function iso(ms) {
-  try {
-    return new Date(ms).toISOString().replace('T', ' ').slice(0, 19)
-  } catch {
-    return ''
-  }
+  const date = new Date(ms)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (value) => String(value).padStart(2, '0')
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  )
 }
 
 function looksBinary(buf) {
@@ -109,7 +162,6 @@ function looksBinary(buf) {
   return false
 }
 
-/** 原子写：同目录临时文件 + rename，避免半截文件。 */
 async function atomicWrite(absPath, data) {
   const dir = path.dirname(absPath)
   await mkdir(dir, { recursive: true })
@@ -123,7 +175,6 @@ async function atomicWrite(absPath, data) {
   }
 }
 
-/** 文件被写者短暂占用时重试（Windows 上 write 的 rename 与我们的读可能撞车）。 */
 async function readWithRetry(absPath, attempts = 4) {
   let lastError
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -138,24 +189,62 @@ async function readWithRetry(absPath, attempts = 4) {
   throw lastError
 }
 
-async function appendSessionLog(record) {
+/** 稳定排序键：时间优先，同毫秒按备份文件名区分。 */
+function byNewest(a, b) {
+  const delta = (b.time || 0) - (a.time || 0)
+  if (delta !== 0) return delta
+  return String(b.backupName || '').localeCompare(String(a.backupName || ''))
+}
+
+// ─────────────────────────── 备份元数据索引 ───────────────────────────
+
+/** 兜底目录里的条目目录名：新的用时间戳（20260917-095500），旧的用序号（0001）。 */
+function normalizeIdentifier(name) {
+  const match = /^(\d{8})-(\d{6})$/.exec(name)
+  if (match) return `${match[1]}-${match[2]}`
+  return /^\d+$/.test(name) ? name : undefined
+}
+
+/** 读取项目内备份目录（或兜底目录）里的全部条目。 */
+async function readBackupRoot(root, workspaceName) {
+  const metaDir = path.join(root, META_DIR_NAME)
+  let files
   try {
-    await mkdir(SESSIONS_DIR, { recursive: true })
-    await appendFile(path.join(SESSIONS_DIR, `${record.sessionId || 'unknown'}.jsonl`), `${JSON.stringify(record)}\n`, 'utf8')
+    files = await readdir(metaDir)
   } catch {
-    /* 日志失败绝不影响主流程 */
+    return []
   }
+  const entries = []
+  for (const name of files) {
+    if (!name.endsWith('.json') || name === 'status.json') continue
+    const sidecarPath = path.join(metaDir, name)
+    let meta
+    try {
+      meta = JSON.parse(await readFile(sidecarPath, 'utf8'))
+    } catch {
+      continue
+    }
+    if (!meta || meta.kind !== 'snapshot' || !meta.backupPath || !meta.originalPath) continue
+    const content = await stat(meta.backupPath).then(
+      (value) => ({ stored: value.isFile(), size: value.size }),
+      () => ({ stored: false, size: 0 }),
+    )
+    entries.push({
+      ...meta,
+      id: meta.id || name.replace(/\.json$/, ''),
+      entryId: meta.backupPath,
+      dir: root,
+      workspaceName: workspaceName || meta.workspaceName || '',
+      restorable: Boolean(meta.stored) && content.stored,
+      contentSize: content.size,
+    })
+  }
+  return entries
 }
 
-function sanitizeId(id) {
-  return String(id || '').replace(/[^\w.-]+/g, '_').slice(0, 64)
-}
-
-// ─────────────────────────── 快照元数据索引 ───────────────────────────
-
-/** 读取某个工作区下全部快照元数据（倒序由调用方决定）。 */
-async function loadWorkspaceEntries(wsKey) {
-  const dir = path.join(HISTORY_DIR, wsKey)
+/** 读取兜底目录（~/.dsh/file-history/<workspace>/<sig>/<id>）里的条目：新的 id 是时间戳，旧的是序号。 */
+async function readLegacyEntries(workspaceKey) {
+  const dir = path.join(HISTORY_DIR, workspaceKey)
   let sigs
   try {
     sigs = await readdir(dir, { withFileTypes: true })
@@ -172,56 +261,73 @@ async function loadWorkspaceEntries(wsKey) {
     } catch {
       continue
     }
-    for (const id of ids) {
-      if (!/^\d+$/.test(id)) continue
-      const entryDir = path.join(sigDir, id)
+    for (const rawId of ids) {
+      const id = normalizeIdentifier(rawId)
+      if (!id) continue
+      const entryDir = path.join(sigDir, rawId)
       try {
         const meta = JSON.parse(await readFile(path.join(entryDir, 'meta.json'), 'utf8'))
         const stored = await stat(path.join(entryDir, 'content')).then(
-          (s) => ({ stored: true, size: s.size }),
-          () => ({ stored: false, size: 0 }),
+          (value) => value.isFile(),
+          () => false,
         )
         entries.push({
-          id,
-          entryId: `${wsKey}/${sig.name}/${id}`,
-          dir: entryDir,
-          restorable: stored.stored,
-          contentSize: stored.size,
           ...meta,
+          id,
+          entryId: `${workspaceKey}/${sig.name}/${id}`,
+          dir: entryDir,
+          backupPath: path.join(entryDir, 'content'),
+          restorable: stored,
         })
       } catch {
         /* 残缺目录跳过 */
       }
     }
   }
+  return entries
+}
+
+/**
+ * 汇总一次调用可见的全部备份：项目内备份目录（主）+ 兜底目录（项目外文件/历史遗留）。
+ * @param cwd - 会话工作目录，项目内备份就在它的 .dsh-backup 下。
+ * @param extraCwd - 追加查询的项目根（例如根据路径反推），可省略。
+ */
+async function loadEntries(cwd, extraCwd) {
+  const workspace = workspaceIdentity(cwd)
+  const roots = new Set()
+  const projectRoot = cwd ? path.resolve(cwd) : undefined
+  if (projectRoot) roots.add(projectRoot)
+  if (extraCwd && path.resolve(extraCwd) !== projectRoot) roots.add(path.resolve(extraCwd))
+
+  const entries = []
+  for (const root of roots) {
+    const found = await readBackupRoot(backupRootFor(root), path.basename(root))
+    for (const entry of found) entries.push({ ...entry, projectRoot: root })
+  }
+  for (const entry of await readLegacyEntries(workspace.key)) {
+    entries.push({ ...entry, projectRoot: undefined, legacy: true })
+  }
   entries.sort(byNewest)
   return entries
 }
 
-/** 稳定排序键：时间优先，同毫秒按代数（目录序号）区分，避免同轮改动出现不确定顺序。 */
-function byNewest(a, b) {
-  const delta = (b.time || 0) - (a.time || 0)
-  if (delta !== 0) return delta
-  return Number(b.id || 0) - Number(a.id || 0)
+/** 按路径找目标所在的项目根：优先会话 cwd，其次从路径本身推。 */
+async function projectRootsFor(absPath, cwd) {
+  const roots = []
+  if (cwd) roots.push(path.resolve(cwd))
+  return roots
 }
 
-/** 列出所有工作区的快照（按时间倒序）。 */
-async function loadAllEntries(limit) {
-  let workspaces
-  try {
-    workspaces = await readdir(HISTORY_DIR, { withFileTypes: true })
-  } catch {
-    return []
+function matchEntry(entries, args, cwd) {
+  if (args.entryId) {
+    const wanted = String(args.entryId)
+    const byPath = entries.find((entry) => entry.backupPath === wanted || entry.entryId === wanted)
+    if (byPath) return byPath
+    return entries.find((entry) => entry.id === wanted)
   }
-  const all = []
-  for (const ws of workspaces) {
-    if (!ws.isDirectory() || ws.name.startsWith('_')) continue
-    const entries = await loadWorkspaceEntries(ws.name)
-    for (const entry of entries) all.push(entry)
-    if (all.length > limit * 4) break
-  }
-  all.sort(byNewest)
-  return all.slice(0, limit)
+  const abs = resolveTarget(String(args.path || ''), cwd)
+  if (!abs) return undefined
+  return entries.find((entry) => entry.originalPath === abs)
 }
 
 // ─────────────────────────── 保留策略 ───────────────────────────
@@ -238,112 +344,244 @@ async function dirSize(dir) {
     const child = path.join(dir, item.name)
     if (item.isDirectory()) total += await dirSize(child)
     else {
-      try {
-        total += (await stat(child)).size
-      } catch {
-        /* 并发删除 */
-      }
+      total += await stat(child).then((value) => value.size, () => 0)
     }
   }
   return total
 }
 
-async function trimFileSignatures(wsKey, maxPerFile) {
-  const dir = path.join(HISTORY_DIR, wsKey)
+/**
+ * 按「每个源文件保留最近 maxGenerations 代」+ 保留天数 + 总容量裁剪项目备份区。
+ * 只动 .dsh-backup 内的文件，绝不触碰项目源码。
+ */
+async function sweepProject(root, settings) {
+  const root_ = backupRootFor(root)
+  const entries = await readBackupRoot(root_, path.basename(root))
+  const cutoff = Date.now() - settings.maxAgeDays * 24 * 60 * 60 * 1000
+  const bySource = new Map()
+  for (const entry of entries) {
+    const list = bySource.get(entry.originalPath) || []
+    list.push(entry)
+    bySource.set(entry.originalPath, list)
+  }
+  const removed = []
+  const removeEntry = async (entry) => {
+    await rm(entry.backupPath, { force: true }).catch(() => {})
+    await rm(path.join(entry.dir, META_DIR_NAME, sidecarName(entry.backupName)), { force: true }).catch(() => {})
+    await removeEmptyDirs(root_, path.dirname(entry.backupPath)).catch(() => {})
+    removed.push(entry.backupPath)
+  }
+  for (const list of bySource.values()) {
+    list.sort(byNewest)
+    for (let index = 0; index < list.length; index += 1) {
+      const entry = list[index]
+      const excess = index >= settings.maxGenerations
+      const expired = (entry.time || 0) < cutoff
+      if (!excess && !expired) continue
+      await removeEntry(entry)
+    }
+  }
+  let total = await dirSize(root_)
+  if (total > settings.maxProjectBytes) {
+    const oldest = entries.filter((entry) => !removed.includes(entry.backupPath)).sort((a, b) => (a.time || 0) - (b.time || 0))
+    for (const entry of oldest) {
+      if (total <= settings.maxProjectBytes) break
+      total -= await stat(entry.backupPath).then((value) => value.size, () => 0)
+      await removeEntry(entry)
+    }
+  }
+  return removed
+}
+
+async function removeEmptyDirs(root, startDir) {
+  let current = startDir
+  const stop = path.resolve(root)
+  while (path.resolve(current).startsWith(stop) && path.resolve(current) !== stop) {
+    const left = await readdir(current).catch(() => ['x'])
+    if (left.length > 0) return
+    await rm(current, { recursive: false, force: true }).catch(() => {})
+    current = path.dirname(current)
+  }
+}
+
+/** 兜底目录（~/.dsh/file-history）里旧式条目的清理：同样按代数与天数收敛。 */
+async function sweepLegacy(workspaceKey, settings) {
+  const root = path.join(HISTORY_DIR, workspaceKey)
   let sigs
   try {
-    sigs = await readdir(dir, { withFileTypes: true })
+    sigs = await readdir(root, { withFileTypes: true })
   } catch {
     return
   }
+  const cutoff = Date.now() - settings.maxAgeDays * 24 * 60 * 60 * 1000
   for (const sig of sigs) {
     if (!sig.isDirectory()) continue
-    const sigDir = path.join(dir, sig.name)
-    let ids
-    try {
-      ids = (await readdir(sigDir)).filter((id) => /^\d+$/.test(id)).sort()
-    } catch {
-      continue
+    const sigDir = path.join(root, sig.name)
+    const ids = (await readdir(sigDir).catch(() => [])).filter((id) => /^\d+$/.test(id)).sort((a, b) => Number(a) - Number(b))
+    const keep = new Set(ids.slice(Math.max(0, ids.length - settings.maxGenerations)))
+    for (const id of ids) {
+      const entryDir = path.join(sigDir, id)
+      const time = await stat(path.join(entryDir, 'meta.json'))
+        .then((value) => value.mtimeMs, () => Date.now())
+      if (keep.has(id) && time >= cutoff) continue
+      await rm(entryDir, { recursive: true, force: true }).catch(() => {})
     }
-    const excess = ids.length - maxPerFile
-    if (excess > 0) await trimSignatureDir(sigDir, ids, maxPerFile)
+    await removeEmptyDirs(root, sigDir)
   }
 }
 
-async function sweepWorkspace(wsKey, settings) {
-  const dir = path.join(HISTORY_DIR, wsKey)
-  const entries = await loadWorkspaceEntries(wsKey)
-  const cutoff = Date.now() - settings.maxAgeDays * 24 * 60 * 60 * 1000
-  for (const entry of entries) {
-    if ((entry.time || 0) < cutoff) await rm(entry.dir, { recursive: true, force: true }).catch(() => {})
+// ─────────────────────────── git 卫生 ───────────────────────────
+
+/**
+ * 把备份目录登记进项目 .gitignore（只追加一行，绝不重写已有内容）。
+ * 目的：备份文件不该混进 git status / git add . / diff 之类的地方。
+ */
+async function ensureGitignored(projectRoot) {
+  const gitDir = path.join(projectRoot, '.git')
+  if (!(await stat(gitDir).then((value) => value.isDirectory(), () => false))) return 'no-git'
+  const gitignorePath = path.join(projectRoot, '.gitignore')
+  const entry = `${BACKUP_DIR_NAME}/`
+  let text = ''
+  try {
+    text = await readFile(gitignorePath, 'utf8')
+  } catch {
+    text = ''
   }
-  await trimFileSignatures(wsKey, settings.maxEntriesPerFile)
-  let total = await dirSize(dir)
-  if (total <= settings.maxWorkspaceBytes) return
-  const remaining = (await loadWorkspaceEntries(wsKey)).sort((a, b) => (a.time || 0) - (b.time || 0))
-  for (const entry of remaining) {
-    if (total <= settings.maxWorkspaceBytes) break
-    try {
-      total -= await dirSize(entry.dir)
-      await rm(entry.dir, { recursive: true, force: true })
-    } catch {
-      /* 忽略 */
-    }
-  }
+  const already = text.split(/\r?\n/).some((line) => {
+    const trimmed = line.trim()
+    return trimmed === entry || trimmed === BACKUP_DIR_NAME || trimmed === `/${entry}`
+  })
+  if (already) return 'present'
+  const prefix = text.length === 0 ? '' : text.endsWith('\n') ? '' : '\n'
+  const header = text.length === 0 ? '' : '\n'
+  await writeFile(gitignorePath, `${text}${prefix}${header}# dsh-file-history 自动备份（改前快照），不纳入版本管理\n${entry}\n`, 'utf8')
+  return 'added'
 }
 
-// ─────────────────────────── 快照 ───────────────────────────
+// ─────────────────────────── 状态标志 ───────────────────────────
 
-/** 只保留最新 keep 代（新的快照即将占用一代，故传 maxEntriesPerFile - 1）。 */
-async function trimSignatureDir(sigDir, ids, keep) {
-  if (ids.length <= keep) return
-  for (const id of ids.slice(0, ids.length - keep)) {
-    await rm(path.join(sigDir, id), { recursive: true, force: true }).catch(() => {})
-  }
+function statusPathFor(cwd) {
+  const metaDir = metaDirFor(cwd)
+  return metaDir ? path.join(metaDir, 'status.json') : undefined
+}
+
+function manifestPathFor(cwd) {
+  const metaDir = metaDirFor(cwd)
+  return metaDir ? path.join(metaDir, 'manifest.jsonl') : undefined
 }
 
 /**
- * 为一次即将发生的覆盖写入留快照。
- * @returns 成功返回条目信息；无需快照返回 undefined；失败抛错（调用方据此拦截写入）。
+ * 写运行状况标志。status.json 是「备份系统在运行」的小标志：
+ * 时间戳每次快照/还原都会刷新，agent 或人看一眼就知道系统还活着。
  */
-async function snapshotBeforeWrite(exec, settings) {
+async function writeStatus(cwd, patch) {
+  const statusPath = statusPathFor(cwd)
+  if (!statusPath) return undefined
+  let previous = {}
+  try {
+    previous = JSON.parse(await readFile(statusPath, 'utf8'))
+  } catch {
+    previous = {}
+  }
+  const next = {
+    plugin: PLUGIN,
+    status: 'ok',
+    at: iso(Date.now()),
+    atMs: Date.now(),
+    backupDir: backupRootFor(cwd),
+    snapshots: (Number(previous.snapshots) || 0) + (patch.counted ? 1 : 0),
+    lastBackup: patch.lastBackup || previous.lastBackup || null,
+    lastRestore: patch.lastRestore || previous.lastRestore || null,
+    lastError: patch.lastError !== undefined ? patch.lastError : previous.lastError || null,
+    retainedPerFile: patch.maxGenerations,
+    hint: '每个源文件保留最近 N 代；恢复：file_history(action=restore) 或直接复制本目录下的备份文件',
+  }
+  await atomicWrite(statusPath, `${JSON.stringify(next, null, 2)}\n`).catch(() => {})
+  return next
+}
+
+async function appendManifest(cwd, record) {
+  const manifestPath = manifestPathFor(cwd)
+  if (!manifestPath) return
+  try {
+    await mkdir(path.dirname(manifestPath), { recursive: true })
+    await appendFile(manifestPath, `${JSON.stringify(record)}\n`, 'utf8')
+  } catch {
+    /* 审计日志失败不影响主流程 */
+  }
+}
+
+// ─────────────────────────── 备份 ───────────────────────────
+
+/**
+ * 为一次即将发生的覆盖写入留备份。
+ * @returns 成功返回条目；无需备份返回 undefined；失败抛错（调用方据此拦截写入）。
+ */
+async function backupBeforeWrite(exec, settings) {
   const args = exec.arguments && typeof exec.arguments === 'object' ? exec.arguments : {}
   const requested = typeof args.file_path === 'string' ? args.file_path : undefined
   const agent = exec.agent
   const header = agent && agent.session ? agent.session.header : undefined
-  const cwd = header ? header.cwd : undefined
+  const cwd = header && header.cwd ? header.cwd : undefined
   const absPath = resolveTarget(requested, cwd)
   if (!absPath) return undefined
 
-  // 目标不存在 → 新建文件，没有可保护的原内容。
+  // 绝不备份备份区自身（否则会自噬式增长）。
+  const projectRoot = cwd ? path.resolve(cwd) : undefined
+  if (projectRoot) {
+    const relFromRoot = path.relative(projectRoot, absPath)
+    if (relFromRoot && (relFromRoot === BACKUP_DIR_NAME || relFromRoot.startsWith(`${BACKUP_DIR_NAME}${path.sep}`))) return undefined
+  }
+  if (absPath.startsWith(HISTORY_DIR)) return undefined
+
   let st
   try {
     st = await stat(absPath)
   } catch {
-    return undefined
+    return undefined // 新建文件：没有原内容可保护
   }
   if (!st.isFile() || st.size === 0) return undefined
 
+  const insideRel = relativeInsideProject(absPath, projectRoot)
   const workspace = workspaceIdentity(cwd)
-  const sig = fileSignature(path.basename(absPath), absPath)
-  const sigDir = path.join(HISTORY_DIR, workspace.key, sig)
-  await mkdir(sigDir, { recursive: true })
+  const now = new Date()
+  const sourceName = path.basename(absPath)
 
-  // 代数上限就地执行：每次快照都裁剪，不依赖小时级的 sweep（否则短时间内连改会留一堆）。
-  const existing = (await readdir(sigDir).catch(() => [])).filter((id) => /^\d+$/.test(id)).sort((a, b) => Number(a) - Number(b))
-  const seq = String(existing.reduce((max, id) => Math.max(max, Number(id)), 0) + 1).padStart(4, '0')
-  await trimSignatureDir(sigDir, existing, settings.maxEntriesPerFile - 1)
-  const entryDir = path.join(sigDir, seq)
-  await mkdir(entryDir, { recursive: true })
+  let backupPath
+  let metaDir
+  let entryDir
+  if (insideRel) {
+    // 项目内：<项目根>/.dsh-backup/<源文件相对路径>/<源文件名>.<时间戳>.<扩展名>
+    const destDir = path.join(backupRootFor(projectRoot), path.dirname(insideRel))
+    await mkdir(destDir, { recursive: true })
+    let candidate = backupFileName(sourceName, now)
+    let attempt = 1
+    while (await stat(path.join(destDir, candidate)).then(() => true, () => false)) {
+      attempt += 1
+      candidate = backupFileName(sourceName, new Date(now.getTime() + attempt * 1000))
+    }
+    backupPath = path.join(destDir, candidate)
+    metaDir = metaDirFor(projectRoot)
+  } else {
+    // 项目外：落到兜底目录，不进无关项目
+    const sig = fileSignature(sourceName, absPath)
+    const stamp = stampFor(now)
+    const destDir = path.join(HISTORY_DIR, workspace.key, sig, stamp)
+    await mkdir(destDir, { recursive: true })
+    backupPath = path.join(destDir, 'content')
+    metaDir = destDir
+  }
+  await mkdir(metaDir, { recursive: true })
+  await mkdir(path.dirname(backupPath), { recursive: true })
 
+  const backupName = path.basename(backupPath)
   const tooLarge = st.size > settings.maxFileBytes
   let bytes
   if (!tooLarge) {
     try {
       bytes = await readWithRetry(absPath)
     } catch (error) {
-      await rm(entryDir, { recursive: true, force: true }).catch(() => {})
-      throw new Error(`无法读取原文件用于快照: ${error && error.message ? error.message : error}`)
+      throw new Error(`无法读取原文件用于备份: ${error && error.message ? error.message : error}`)
     }
   }
 
@@ -351,40 +589,65 @@ async function snapshotBeforeWrite(exec, settings) {
   const storeContent = Boolean(bytes) && !binary
 
   if (storeContent) {
-    // 写盘期间原文件若已被改动（mtime/size 变化），这份快照就不再是「改前版本」，宁可丢弃也不能留错版。
+    // 写盘期间原文件若已被改动（mtime/size 变化），这份备份就不再是「改前版本」，宁可丢弃也不能留错版。
     const after = await stat(absPath).catch(() => undefined)
     if (!after || after.mtimeMs !== st.mtimeMs || after.size !== st.size) {
-      await rm(entryDir, { recursive: true, force: true }).catch(() => {})
-      throw new Error('原文件在快照期间被并发修改，已放弃本次快照（写入未执行）')
+      throw new Error('原文件在备份期间被并发修改，已放弃本次备份（写入未执行）')
     }
-    await writeFile(path.join(entryDir, 'content'), bytes)
+    await writeFile(backupPath, bytes)
   }
 
   const fingerprint = bytes ? sha256(bytes) : shortHash(`${st.size}:${st.mtimeMs}`)
   const sessionId = header && header.id ? String(header.id) : ''
   const meta = {
-    id: seq,
+    kind: 'snapshot',
+    id: backupName,
     time: Date.now(),
-    ms: st.mtimeMs,
+    sourceMtimeMs: st.mtimeMs,
     originalPath: absPath,
     displayPath: requested || absPath,
+    relativePath: insideRel || '',
+    inProject: Boolean(insideRel),
+    backupPath,
+    backupName,
     workspaceKey: workspace.key,
     workspaceName: workspace.name,
     workspaceCwd: workspace.cwd,
+    projectRoot: projectRoot || '',
     size: st.size,
     hash: fingerprint,
     hashKind: bytes ? 'sha256' : 'size+mtime',
     tool: exec.name,
     stored: storeContent,
     binary,
-    reason: storeContent ? '' : binary ? '二进制文件只记哈希' : `超过 ${formatBytes(settings.maxFileBytes)} 只记指纹`,
+    reason: storeContent ? '' : binary ? '二进制文件只记指纹' : `超过 ${formatBytes(settings.maxFileBytes)} 只记指纹`,
     callId: String(exec.callId || ''),
     sessionId,
     sessionTitle: header && header.title ? String(header.title).slice(0, 200) : '',
     sessionTurnId: String(exec.rootCallId || ''),
   }
-  await writeFile(path.join(entryDir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`, 'utf8')
-  await appendSessionLog({ kind: 'snapshot', at: meta.time, ...meta, dir: entryDir })
+
+  const sidecar = path.join(metaDir, insideRel ? sidecarName(backupName) : 'meta.json')
+  await writeFile(sidecar, `${JSON.stringify(meta, null, 2)}\n`, 'utf8')
+
+  await appendManifest(projectRoot, {
+    kind: 'snapshot',
+    at: iso(meta.time),
+    source: absPath,
+    backup: backupPath,
+    tool: meta.tool,
+    session: sessionId,
+    stored: meta.stored,
+  })
+  await writeStatus(projectRoot, {
+    counted: true,
+    lastBackup: { path: absPath, backup: backupPath, at: iso(meta.time) },
+    maxGenerations: settings.maxGenerations,
+    lastError: null,
+  })
+  if (settings.gitignoreBackups && projectRoot) {
+    await ensureGitignored(projectRoot).catch(() => {})
+  }
   return meta
 }
 
@@ -435,8 +698,14 @@ function diffLines(oldLines, newLines) {
         j += 1
       }
     }
-    while (i < n) result.push(`- ${a[i]}`), (i += 1)
-    while (j < m) result.push(`+ ${b[j]}`), (j += 1)
+    while (i < n) {
+      result.push(`- ${a[i]}`)
+      i += 1
+    }
+    while (j < m) {
+      result.push(`+ ${b[j]}`)
+      j += 1
+    }
   }
   for (let k = endOld; k < oldLines.length; k += 1) result.push(`  ${oldLines[k]}`)
   return result
@@ -446,7 +715,7 @@ function diffLines(oldLines, newLines) {
 
 function entriesToValue(entries) {
   return entries.map((entry) => ({
-    entryId: entry.entryId,
+    entryId: entry.backupPath,
     time: iso(entry.time),
     path: entry.originalPath,
     size: entry.size,
@@ -456,67 +725,61 @@ function entriesToValue(entries) {
   }))
 }
 
-async function readEntryContent(entry) {
-  if (!entry.restorable) return undefined
-  return readFile(path.join(entry.dir, 'content'))
+function cwdOf(exec) {
+  const header = exec.agent && exec.agent.session ? exec.agent.session.header : undefined
+  return header && header.cwd ? header.cwd : undefined
+}
+
+function sessionIdOf(exec) {
+  const header = exec.agent && exec.agent.session ? exec.agent.session.header : undefined
+  return header && header.id ? String(header.id) : ''
 }
 
 async function handleList(args, exec, settings) {
+  const cwd = cwdOf(exec)
   const limit = Math.max(1, Math.min(Number(args.limit) || 20, 100))
-  const sessionId = exec.agent && exec.agent.session && exec.agent.session.header ? String(exec.agent.session.header.id) : ''
-  let entries = await loadAllEntries(Math.max(limit * 3, 60))
-  if (args.scope === 'session' && sessionId) entries = entries.filter((entry) => entry.sessionId === sessionId)
+  let entries = await loadEntries(cwd)
+  if (args.scope === 'session' && sessionIdOf(exec)) {
+    entries = entries.filter((entry) => entry.sessionId === sessionIdOf(exec))
+  }
   if (typeof args.query === 'string' && args.query.trim()) {
     const needle = args.query.trim().toLowerCase()
     entries = entries.filter((entry) => String(entry.originalPath).toLowerCase().includes(needle))
   }
   const slice = entries.slice(0, limit)
-  return {
-    action: 'list',
-    status: slice.length ? 'ok' : 'empty',
-    message: slice.length
-      ? `最近 ${slice.length} 条快照（保留 ${settings.maxAgeDays} 天 / 单文件 ${settings.maxEntriesPerFile} 代）`
-      : '没有匹配的快照记录。只有「覆盖已存在文件」的 write/edit 才会留快照。',
-    count: slice.length,
-    entries: entriesToValue(slice),
-  }
+  const statusPath = statusPathFor(cwd)
+  const dir = backupRootFor(cwd)
+  const message = slice.length
+    ? `最近 ${slice.length} 条备份（每个源文件保留最近 ${settings.maxGenerations} 代，超过即自动清理）\n备份目录: ${dir}\n运行状况: ${statusPath}`
+    : `没有匹配的备份记录。备份目录: ${dir}；运行状况标志: ${statusPath}\n（只有「覆盖已存在文件」的 write/edit 才会产生备份。）`
+  return { action: 'list', status: slice.length ? 'ok' : 'empty', message, count: slice.length, entries: entriesToValue(slice) }
 }
 
 async function handleShow(args, exec) {
-  const entries = await loadAllEntries(200)
-  let entry
-  if (args.entryId) entry = entries.find((candidate) => candidate.entryId === String(args.entryId))
-  else {
-    const abs = resolveTarget(String(args.path || ''), exec.agent && exec.agent.session ? exec.agent.session.header.cwd : undefined)
-    if (!abs) return { action: 'show', status: 'error', message: '需要 path（相对会话工作区）或 entryId', count: 0, entries: [] }
-    entry = entries.find((candidate) => candidate.originalPath === abs)
-  }
-  if (!entry) return { action: 'show', status: 'not_found', message: '没找到对应快照；可用 action=list 查看可用条目。', count: 0, entries: [] }
+  const cwd = cwdOf(exec)
+  const entries = await loadEntries(cwd)
+  const entry = matchEntry(entries, args, cwd)
+  if (!entry) return { action: 'show', status: 'not_found', message: '没找到对应备份；可用 action=list 查看可用条目。', count: 0, entries: [] }
   const head = [
-    `快照 ${entry.entryId}`,
+    `备份 ${entry.backupName}`,
     `原文件: ${entry.originalPath}`,
+    `备份文件: ${entry.backupPath}`,
     `时间: ${iso(entry.time)}  大小: ${formatBytes(entry.size)}  工具: ${entry.tool}`,
   ]
   if (!entry.restorable) {
-    head.push(`无内容副本（${entry.reason}），只能确认「改前状态」：sha256=${entry.hash}`)
+    head.push(`无内容副本（${entry.reason}），只能确认「改前状态」：${entry.hashKind}=${entry.hash}`)
     return { action: 'show', status: 'meta_only', message: head.join('\n'), count: 1, entries: entriesToValue([entry]) }
   }
-  const beforeBytes = await readEntryContent(entry)
-  let afterBytes
-  try {
-    afterBytes = await readFile(entry.originalPath)
-  } catch {
-    afterBytes = undefined
-  }
+  const beforeBytes = await readFile(entry.backupPath)
+  const afterBytes = await readFile(entry.originalPath).catch(() => undefined)
   const before = splitLines(beforeBytes.toString('utf8'))
   if (!afterBytes) {
-    head.push('当前文件已不存在（被删除或改名），下面是快照内容全文：')
+    head.push('当前文件已不存在（被删除或改名），下面是备份内容全文：')
     const body = before.slice(0, DIFF_MAX_LINES).map((line) => `  ${line}`)
     if (before.length > DIFF_MAX_LINES) body.push(`  …（还有 ${before.length - DIFF_MAX_LINES} 行，未显示）`)
     return { action: 'show', status: 'deleted', message: `${head.join('\n')}\n${body.join('\n')}`, count: 1, entries: entriesToValue([entry]) }
   }
-  const after = splitLines(afterBytes.toString('utf8'))
-  const diff = diffLines(before, after)
+  const diff = diffLines(before, splitLines(afterBytes.toString('utf8')))
   const shown = diff.slice(0, DIFF_MAX_LINES)
   const tail = diff.length > shown.length ? `\n…（diff 共 ${diff.length} 行，已截断）` : ''
   const changed = diff.some((line) => line.startsWith('- ') || line.startsWith('+ '))
@@ -525,59 +788,54 @@ async function handleShow(args, exec) {
 }
 
 async function handleRestore(args, exec) {
-  const entries = await loadAllEntries(200)
-  let entry
-  if (args.entryId) entry = entries.find((candidate) => candidate.entryId === String(args.entryId))
-  else {
-    const abs = resolveTarget(String(args.path || ''), exec.agent && exec.agent.session ? exec.agent.session.header.cwd : undefined)
-    if (!abs) return { action: 'restore', status: 'error', message: '需要 path（相对会话工作区）或 entryId', count: 0, entries: [] }
-    entry = entries.find((candidate) => candidate.originalPath === abs)
-  }
-  if (!entry) return { action: 'restore', status: 'not_found', message: '没找到对应快照，未做任何修改。', count: 0, entries: [] }
+  const cwd = cwdOf(exec)
+  const entries = await loadEntries(cwd)
+  const entry = matchEntry(entries, args, cwd)
+  if (!entry) return { action: 'restore', status: 'not_found', message: '没找到对应备份，未做任何修改。', count: 0, entries: [] }
   if (!entry.restorable) {
-    return { action: 'restore', status: 'meta_only', message: `该快照没有内容副本（${entry.reason}），无法还原。`, count: 0, entries: entriesToValue([entry]) }
+    return { action: 'restore', status: 'meta_only', message: `该备份没有内容副本（${entry.reason}），无法还原。`, count: 0, entries: entriesToValue([entry]) }
   }
-  const bytes = await readEntryContent(entry)
-  if (!bytes) return { action: 'restore', status: 'error', message: '快照内容不可读或已过期。', count: 0, entries: [] }
-  const target = resolveTarget(entry.displayPath, entry.workspaceCwd) || entry.originalPath
-  await atomicWrite(target, bytes)
-  await appendSessionLog({
+  const bytes = await readFile(entry.backupPath).catch(() => undefined)
+  if (!bytes) return { action: 'restore', status: 'error', message: '备份内容不可读或已被清理。', count: 0, entries: [] }
+  await atomicWrite(entry.originalPath, bytes)
+  await appendManifest(entry.projectRoot || cwd, {
     kind: 'restore',
-    at: Date.now(),
-    entryId: entry.entryId,
-    target,
-    sessionId: exec.agent && exec.agent.session && exec.agent.session.header ? String(exec.agent.session.header.id) : '',
+    at: iso(Date.now()),
+    source: entry.originalPath,
+    backup: entry.backupPath,
+    session: sessionIdOf(exec),
+  })
+  await writeStatus(entry.projectRoot || cwd, {
+    lastRestore: { path: entry.originalPath, backup: entry.backupPath, at: iso(Date.now()) },
   })
   return {
     action: 'restore',
     status: 'restored',
-    message: `已还原 ${target} 到 ${iso(entry.time)} 的版本（${formatBytes(bytes.length)}）。`,
+    message: `已把 ${entry.originalPath} 还原为 ${iso(entry.time)} 的备份（${formatBytes(bytes.length)}）。`,
     count: 1,
     entries: entriesToValue([entry]),
   }
 }
 
 async function handleRevertTurn(args, exec) {
-  const all = await loadAllEntries(400)
-  const sessionId = exec.agent && exec.agent.session && exec.agent.session.header ? String(exec.agent.session.header.id) : ''
-  const wanted = args.sessionId ? String(args.sessionId) : sessionId
-  let candidates = all.filter((entry) => entry.sessionId === wanted)
+  const cwd = cwdOf(exec)
+  const entries = await loadEntries(cwd)
+  const sessionId = args.sessionId ? String(args.sessionId) : sessionIdOf(exec)
+  let candidates = entries.filter((entry) => entry.sessionId === sessionId)
   if (!candidates.length) {
-    return { action: 'revert_turn', status: 'not_found', message: `会话 ${wanted || '(未知)'} 没有快照记录。`, count: 0, entries: [] }
+    return { action: 'revert_turn', status: 'not_found', message: `会话 ${sessionId || '(未知)'} 没有备份记录。`, count: 0, entries: [] }
   }
   let turnId = args.turnId ? String(args.turnId) : ''
-  if (!turnId) turnId = candidates[0].sessionTurnId || candidates[0].callId || ''
-  candidates = candidates.filter((entry) => (entry.sessionTurnId || entry.callId || '') === turnId)
+  if (!turnId) turnId = candidates[0].sessionTurnId || ''
+  candidates = candidates.filter((entry) => (entry.sessionTurnId || '') === turnId)
   if (!candidates.length) {
-    return { action: 'revert_turn', status: 'not_found', message: `该会话没有 turnId=${turnId} 的快照。`, count: 0, entries: [] }
+    return { action: 'revert_turn', status: 'not_found', message: `该会话没有 turnId=${turnId} 的备份。`, count: 0, entries: [] }
   }
-  // 同一文件可能有多个代（本轮内被改过多次）；回退到本轮最早那代的「改前版本」= 该文件在本轮开始时的样子。
+  // 同一文件可能有多个代；回退到本轮最早那代 = 该文件在本轮开始时的样子。
   const byPath = new Map()
   for (const entry of candidates) {
     const previous = byPath.get(entry.originalPath)
-    if (!previous || (entry.time || 0) < (previous.time || 0) || ((entry.time || 0) === (previous.time || 0) && Number(entry.id) < Number(previous.id))) {
-      byPath.set(entry.originalPath, entry)
-    }
+    if (!previous || (entry.time || 0) < (previous.time || 0)) byPath.set(entry.originalPath, entry)
   }
   const restored = []
   const skipped = []
@@ -586,20 +844,26 @@ async function handleRevertTurn(args, exec) {
       skipped.push(entry.originalPath)
       continue
     }
-    const bytes = await readEntryContent(entry)
+    const bytes = await readFile(entry.backupPath).catch(() => undefined)
     if (!bytes) {
       skipped.push(entry.originalPath)
       continue
     }
-    const target = resolveTarget(entry.displayPath, entry.workspaceCwd) || entry.originalPath
     try {
-      await atomicWrite(target, bytes)
+      await atomicWrite(entry.originalPath, bytes)
       restored.push(entry)
     } catch {
       skipped.push(entry.originalPath)
     }
   }
-  await appendSessionLog({ kind: 'revert_turn', at: Date.now(), sessionId: wanted, turnId, files: restored.map((entry) => entry.originalPath) })
+  const projectRoot = restored[0] && restored[0].projectRoot ? restored[0].projectRoot : cwd
+  await appendManifest(projectRoot, {
+    kind: 'revert_turn',
+    at: iso(Date.now()),
+    session: sessionId,
+    turnId,
+    files: restored.map((entry) => entry.originalPath),
+  })
   const message = restored.length
     ? `已回退 ${restored.length} 个文件到本轮修改前的版本${skipped.length ? `；${skipped.length} 个跳过（无内容副本或写入失败）` : ''}。`
     : '没有任何文件被还原。'
@@ -610,11 +874,12 @@ async function handleRevertTurn(args, exec) {
 
 export const name = 'file-history'
 
-/** 依赖：tools（拦截 + 注册工具）、settings（持久开关）、timer（延迟清理，可选降级）。 */
+/** 依赖：tools（拦截 + 注册工具）、settings（持久开关）。systemPrompt 按需取用。 */
 export const inject = ['tools', 'settings']
 
 export function apply(ctx, config = {}) {
   const settings = ctx.settings.register(SETTINGS_NS, fileHistorySettingsSchema, { base: config })
+  const systemPrompt = ctx.get('systemPrompt')
   let lastSweep = 0
 
   const currentSettings = () => {
@@ -622,52 +887,82 @@ export function apply(ctx, config = {}) {
     return {
       enabled: value.enabled !== false,
       maxFileBytes: Number(value.maxFileBytes) > 0 ? Number(value.maxFileBytes) : DEFAULT_MAX_FILE_BYTES,
+      maxGenerations: Number(value.maxGenerations) > 0 ? Number(value.maxGenerations) : DEFAULT_MAX_GENERATIONS,
       maxAgeDays: Number(value.maxAgeDays) > 0 ? Number(value.maxAgeDays) : DEFAULT_MAX_AGE_DAYS,
-      maxWorkspaceBytes: Number(value.maxWorkspaceBytes) > 0 ? Number(value.maxWorkspaceBytes) : DEFAULT_MAX_WORKSPACE_BYTES,
-      maxEntriesPerFile: Number(value.maxEntriesPerFile) > 0 ? Number(value.maxEntriesPerFile) : DEFAULT_MAX_ENTRIES_PER_FILE,
+      maxProjectBytes: Number(value.maxProjectBytes) > 0 ? Number(value.maxProjectBytes) : DEFAULT_MAX_PROJECT_BYTES,
+      announceInPrompt: value.announceInPrompt !== false,
+      gitignoreBackups: value.gitignoreBackups !== false,
     }
   }
 
-  const scheduleSweep = (wsKey, config) => {
+  // 项目备份区：把某个源文件的备份收敛到最近 maxGenerations 代（「只保留最近五轮」的就地执行）。
+  const pruneSource = async (projectRoot, sourcePath, maxGenerations) => {
+    const backupRoot = backupRootFor(projectRoot)
+    const metaDir = metaDirFor(projectRoot)
+    const existing = (await readBackupRoot(backupRoot, path.basename(projectRoot)))
+      .filter((entry) => entry.originalPath === sourcePath)
+      .sort(byNewest)
+    for (const entry of existing.slice(maxGenerations)) {
+      await rm(entry.backupPath, { force: true }).catch(() => {})
+      await rm(path.join(metaDir, sidecarName(entry.backupName)), { force: true }).catch(() => {})
+      await removeEmptyDirs(backupRoot, path.dirname(entry.backupPath)).catch(() => {})
+    }
+  }
+
+  const scheduleSweep = (root, config, workspaceKey) => {
     const now = Date.now()
     if (now - lastSweep < SWEEP_INTERVAL_MS) return
     lastSweep = now
     ctx.setTimeout(() => {
-      sweepWorkspace(wsKey, config).catch((error) => {
+      sweepProject(root, config).catch((error) => {
         console.error(`[${PLUGIN}] sweep failed: ${error && error.message ? error.message : error}`)
       })
+      if (workspaceKey) {
+        sweepLegacy(workspaceKey, config).catch((error) => {
+          console.error(`[${PLUGIN}] legacy sweep failed: ${error && error.message ? error.message : error}`)
+        })
+      }
     }, 5000)
   }
 
-  // 1) 改前快照：失败即拦截，绝不放行一次「没有备份的覆盖」。
+  // 1) 改前备份：失败即拦截，绝不放行一次「没有备份的覆盖」。
   ctx.on('tools/pre-execute', async (exec, next) => {
     const toolName = String(exec.name || '')
     const bare = toolName.includes(':') ? toolName.slice(toolName.lastIndexOf(':') + 1) : toolName
     const config = currentSettings()
     if (!config.enabled || !MUTATING_TOOLS.has(bare)) return next()
     try {
-      const meta = await snapshotBeforeWrite(exec, config)
+      const meta = await backupBeforeWrite(exec, config)
       if (meta) {
-        ctx.logger?.debug?.(`[${PLUGIN}] snapshot ${meta.entryId || ''} ${meta.originalPath}`)
-        scheduleSweep(meta.workspaceKey, config)
+        if (meta.inProject && meta.projectRoot) {
+          await pruneSource(meta.projectRoot, meta.originalPath, config.maxGenerations)
+          scheduleSweep(meta.projectRoot, config, meta.workspaceKey)
+        } else {
+          scheduleSweep(meta.projectRoot || (meta.workspaceCwd || process.cwd()), config, meta.workspaceKey)
+        }
       }
     } catch (error) {
       const reason = error && error.message ? error.message : String(error)
-      console.error(`[${PLUGIN}] 快照失败，已拦截 ${bare}: ${reason}`)
+      console.error(`[${PLUGIN}] 备份失败，已拦截 ${bare}: ${reason}`)
+      const cwd = cwdOf(exec)
+      if (cwd) await writeStatus(cwd, { lastError: { at: iso(Date.now()), tool: bare, reason } })
       return {
         kind: 'deny',
-        reason: `file-history 无法为本次覆盖留备份（${reason}）；已拦下这次 ${bare}，文件未被修改。请检查文件是否被占用/权限是否足够，或改用 dsh-file-history 的 settings（file-history.enabled=false）后重试。`,
+        reason:
+          `file-history 无法为本次覆盖留备份（${reason}）；已拦下这次 ${bare}，文件未被修改。` +
+          `请检查文件是否被占用/权限是否足够；确认不影响时可临时在 settings.yaml 把 file-history.enabled 设为 false 后重试。`,
       }
     }
     return next()
   })
 
-  // 2) 模型侧唯一新增工具：需要时才调用，平时零 token。
+  // 2) 模型侧工具：需要时才调用，平时零 token。
   const fileHistoryTool = {
     name: 'file_history',
     description:
-      '文件历史与回滚。任何 write/edit 覆盖已存在文件前，harness 会自动把原文快照到 ~/.dsh/file-history（无需你手动备份）。' +
-      'action=list 列出最近的快照；action=show 看某条快照与当前文件的 diff；action=restore 还原单个文件；' +
+      '文件备份与回滚。harness 会在任何 write/edit 覆盖已存在文件之前，自动把原文备份进项目内的 .dsh-backup/ 目录' +
+      '（按源路径镜像，文件名＝源文件名+时间戳，每个文件只保留最近几代），你不需要自己复制 .bak。' +
+      'action=list 列出最近的备份；action=show 看某条备份与当前文件的 diff；action=restore 还原单个文件；' +
       'action=revert_turn 把本会话本轮（或指定 sessionId/turnId）改过的文件全部还原。改错、改坏、误删时先用它，不要凭记忆重写。',
     parameters: {
       type: 'object',
@@ -675,7 +970,7 @@ export function apply(ctx, config = {}) {
       properties: {
         action: { type: 'string', enum: ['list', 'show', 'restore', 'revert_turn'], description: '要执行的操作' },
         path: { type: 'string', description: '目标文件路径（相对当前会话工作区，或用绝对路径）；show/restore 用' },
-        entryId: { type: 'string', description: '精确指定快照条目（形如 <workspace>/<file-sig>/0003）；show/restore 用' },
+        entryId: { type: 'string', description: '精确指定备份条目（备份文件的绝对路径）；show/restore 用' },
         query: { type: 'string', description: 'list 时按路径子串过滤' },
         scope: { type: 'string', enum: ['all', 'session'], description: 'list 的范围，默认 all；session 只看当前会话' },
         limit: { type: 'number', description: 'list 返回条数上限，默认 20' },
@@ -743,17 +1038,51 @@ export function apply(ctx, config = {}) {
   }
   ctx.tools.register(fileHistoryTool)
 
+  // 3) 让 agent 知道备份系统的存在、位置与恢复方式（每轮只占几行）。
+  if (systemPrompt) {
+    systemPrompt.section({
+      name: 'file-history:usage',
+      order: 151,
+      text: (context) => {
+        try {
+          const config = currentSettings()
+          if (!config.enabled || !config.announceInPrompt) return ''
+          const agent = context && context.agent
+          const header = agent && agent.session ? agent.session.header : undefined
+          const cwd = header && header.cwd ? header.cwd : undefined
+          if (!cwd) return ''
+          const root = backupRootFor(cwd)
+          const statusPath = statusPathFor(cwd)
+          return [
+            '## 文件备份与回滚',
+            `本会话已启用「改前自动备份」：任何 write/edit 覆盖已存在文件之前，harness 会自动把原文复制到 \`${root}/\`，`,
+            '按源文件路径镜像存放，文件名为「源文件名.<时间戳>.<原扩展名>」，每个源文件只保留最近几代（超出自动清理）。',
+            `运行状况标志（每次备份/还原都会刷新时间戳）：\`${statusPath}\`；备份清单：\`${path.join(metaDirFor(cwd), 'manifest.jsonl')}\`。`,
+            '因此你不需要自己创建 .bak 副本，也不要把备份文件复制进源码目录。',
+            `改错、改坏或误删时，先用 file_history 工具恢复，不要凭记忆重写：`,
+            '- `file_history(action="list")` 看最近备份；`action="show", path=...` 看与当前文件的 diff；',
+            '- `action="restore", path=...` 还原单个文件；`action="revert_turn"` 回退本会话最近一轮改过的所有文件；',
+            `- 也可以直接把 \`${root}\` 下的对应备份文件复制回原位。`,
+          ].join('\n')
+        } catch {
+          return ''
+        }
+      },
+    })
+  }
+
   settings.watch((next) => {
-    console.log(`[${PLUGIN}] settings changed: enabled=${next.enabled !== false}`)
+    console.log(`[${PLUGIN}] settings changed: enabled=${next.enabled !== false} generations=${next.maxGenerations}`)
   })
 
   ctx.setTimeout(async () => {
     try {
-      await mkdir(HISTORY_DIR, { recursive: true })
-      const config = currentSettings()
-      console.log(`[${PLUGIN}] armed: 覆盖已存在文件前自动快照 → ${HISTORY_DIR} (enabled=${config.enabled})`)
+      const cwd = process.cwd()
+      const metaDir = metaDirFor(cwd)
+      if (metaDir) await mkdir(metaDir, { recursive: true })
+      console.log(`[${PLUGIN}] armed: 覆盖前自动备份 → <项目根>/${BACKUP_DIR_NAME}/（每个文件保留最近 ${currentSettings().maxGenerations} 代）; 兜底目录 ${HISTORY_DIR}`)
     } catch (error) {
-      console.error(`[${PLUGIN}] 无法创建快照目录 ${HISTORY_DIR}: ${error && error.message ? error.message : error}`)
+      console.error(`[${PLUGIN}] 初始化失败: ${error && error.message ? error.message : error}`)
     }
   }, 200)
 }

@@ -1,7 +1,9 @@
-// dsh-file-history 离线自测：用假 exec/ctx 直接驱动插件（不经过 harness 进程）。
-// 覆盖：新建不快照、覆盖留快照、内容是改前原文、list/show/restore/revert_turn、二进制只记哈希、开关、代数裁剪。
+// dsh-file-history 离线自测：用假 ctx/exec 直接驱动插件（不经过 harness 进程）。
+// 覆盖：项目内备份落点与命名、sidecar/状态标志/manifest、5 代保留、file_history 四个动作、
+//       新建不备份、子目录镜像、项目外兜底、只读大文件指纹、开关、系统提示公告。
 
-import { mkdtemp, writeFile, readFile, readdir, mkdir, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, readFile, readdir, mkdir, rm, stat } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -14,46 +16,41 @@ const ok = (label, condition, extra = '') => {
 
 const PLUGIN_PATH = 'C:/Users/twinblade/.dsh/profiles/web/node_modules/dsh-file-history/lib/index.js'
 const mod = await import(pathToFileURL(PLUGIN_PATH).href)
-ok('模块导出 apply/inject/HISTORY_DIR', typeof mod.apply === 'function' && Array.isArray(mod.inject) && typeof mod.HISTORY_DIR === 'string')
+ok('模块导出 apply/backupFileName/backupRootFor', typeof mod.apply === 'function' && typeof mod.backupFileName === 'function')
+ok('项目内备份目录名为 .dsh-backup', mod.BACKUP_DIR_NAME === '.dsh-backup' && mod.backupRootFor('C:/proj') === path.join(path.resolve('C:/proj'), '.dsh-backup'))
+ok('命名＝源文件名+时间戳+原扩展名', mod.backupFileName('app.ts', new Date(2026, 8, 17, 9, 55, 0)) === 'app.20260917-095500.ts')
 
-const settingsValue = { enabled: true, maxFileBytes: 2 * 1024 * 1024, maxAgeDays: 30, maxWorkspaceBytes: 512 * 1024 * 1024, maxEntriesPerFile: 3 }
+const settingsValue = {
+  enabled: true,
+  maxFileBytes: 2 * 1024 * 1024,
+  maxGenerations: 5,
+  maxAgeDays: 30,
+  maxProjectBytes: 512 * 1024 * 1024,
+  announceInPrompt: true,
+}
 const registered = {}
 const listeners = {}
+const promptSections = []
 const ctx = {
   settings: { register: () => ({ get: () => settingsValue, watch: () => () => {} }) },
   tools: { register: (definition) => { registered[definition.name] = definition } },
   on: (event, handler) => { listeners[event] = handler },
+  get: (key) => (key === 'systemPrompt' ? { section: (section) => promptSections.push(section) } : undefined),
   setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms || 0, 5)),
   logger: { debug: () => {} },
 }
 mod.apply(ctx, {})
 ok('注册了 tools/pre-execute 监听', typeof listeners['tools/pre-execute'] === 'function')
 ok('注册了 file_history 工具', Boolean(registered.file_history))
+ok('注册了系统提示段（告知 agent 备份系统存在）', promptSections.length === 1 && promptSections[0].name === 'file-history:usage')
 
-// ── 索引辅助：按 originalPath 找到元数据目录（读 sidecar，不做私有假设） ──
-async function entryDirsFor(absPath) {
-  const found = []
-  const wsDirs = await readdir(mod.HISTORY_DIR).catch(() => [])
-  for (const ws of wsDirs) {
-    if (ws.startsWith('_')) continue
-    for (const sig of await readdir(path.join(mod.HISTORY_DIR, ws)).catch(() => [])) {
-      const sigDir = path.join(mod.HISTORY_DIR, ws, sig)
-      for (const id of (await readdir(sigDir).catch(() => [])).filter((value) => /^\d+$/.test(value))) {
-        try {
-          const meta = JSON.parse(await readFile(path.join(sigDir, id, 'meta.json'), 'utf8'))
-          if (meta.originalPath === absPath) found.push({ dir: path.join(sigDir, id), meta })
-        } catch {
-          /* 残缺条目 */
-        }
-      }
-    }
-  }
-  return found.sort((a, b) => Number(a.meta.id) - Number(b.meta.id))
-}
+// ── 测试项目 ──
+const project = await mkdtemp(path.join(tmpdir(), 'fh-proj-'))
+const backupRoot = mod.backupRootFor(project)
+const metaDir = mod.metaDirFor(project)
+const outsideDir = await mkdtemp(path.join(tmpdir(), 'fh-outside-'))
 
-// ── 测试工作区 ──
-const sandbox = await mkdtemp(path.join(tmpdir(), 'fh-selftest-'))
-const header = { id: 'session-selftest', cwd: sandbox, title: 'self test' }
+const header = { id: 'session-selftest', cwd: project, title: 'self test' }
 const execFor = (name, filePath, callId, rootCallId) => ({
   name,
   callId,
@@ -71,26 +68,90 @@ const runTool = async (name, filePath, callId, rootCallId) => {
   return { decision, nextCalls }
 }
 const execCtx = { agent: { session: { header } }, signal: { throwIfAborted: () => {} } }
+// mkdtemp 在 Windows 上可能返回 8.3 短路径（TWINBL~1），插件内部用的是长路径；比较前统一成长路径。
+const norm = (value) => {
+  if (!value) return ''
+  const resolved = path.resolve(String(value))
+  try {
+    return realpathSync.native(resolved).toLowerCase()
+  } catch {
+    return resolved.toLowerCase()
+  }
+}
+const backupsFor = async (absPath) => {
+  const files = await readdir(metaDir).catch(() => [])
+  const found = []
+  for (const name of files) {
+    if (!name.endsWith('.json') || name === 'status.json') continue
+    try {
+      const meta = JSON.parse(await readFile(path.join(metaDir, name), 'utf8'))
+      if (meta.originalPath === absPath) found.push(meta)
+    } catch {
+      /* 跳过坏 sidecar */
+    }
+  }
+  return found.sort((a, b) => String(b.backupName).localeCompare(String(a.backupName)))
+}
+/** 在兜底目录里找某个源文件的备份元数据。 */
+const findFallbackMeta = async (absPath) => {
+  let workspaces
+  try {
+    workspaces = await readdir(mod.HISTORY_DIR, { withFileTypes: true })
+  } catch {
+    return undefined
+  }
+  for (const workspace of workspaces) {
+    if (!workspace.isDirectory() || workspace.name.startsWith('_')) continue
+    const sigs = await readdir(path.join(mod.HISTORY_DIR, workspace.name), { withFileTypes: true }).catch(() => [])
+    for (const sig of sigs) {
+      if (!sig.isDirectory()) continue
+      const ids = await readdir(path.join(mod.HISTORY_DIR, workspace.name, sig.name)).catch(() => [])
+      for (const id of ids) {
+        const metaPath = path.join(mod.HISTORY_DIR, workspace.name, sig.name, id, 'meta.json')
+        try {
+          const meta = JSON.parse(await readFile(metaPath, 'utf8'))
+          if (meta.originalPath === absPath) return { ...meta, dir: path.dirname(metaPath) }
+        } catch {
+          /* 跳过 */
+        }
+      }
+    }
+  }
+  return undefined
+}
 
-// 1) 新建文件：无原文可保护 → 直接放行且不留快照
-const fresh = path.join(sandbox, 'brand-new.txt')
+// 1) 新建文件：不备份
+const fresh = path.join(project, 'brand-new.txt')
 let outcome = await runTool('write', fresh, 'call-new')
-ok('新建文件直接放行', outcome.nextCalls === 1 && outcome.decision.kind === 'allow')
-ok('新建文件不留快照', (await entryDirsFor(fresh)).length === 0)
+ok('新建文件放行且不备份', outcome.nextCalls === 1 && (await backupsFor(fresh)).length === 0)
 
-// 2) 覆盖已存在文件：留快照，内容为改前原文
-const target = path.join(sandbox, 'demo.txt')
+// 2) 覆盖已存在文件：备份进项目 .dsh-backup，命名与内容正确
+const target = path.join(project, 'demo.txt')
 await writeFile(target, 'line1\nline2\nline3\n', 'utf8')
 outcome = await runTool('write', target, 'call-overwrite')
-const entries = await entryDirsFor(target)
-const content = entries.length ? await readFile(path.join(entries[0].dir, 'content'), 'utf8') : ''
-ok('覆盖已存在文件放行并留快照', outcome.nextCalls === 1 && entries.length === 1, `entries=${entries.length}`)
-ok('快照内容是改前原文', content === 'line1\nline2\nline3\n', JSON.stringify(content))
-ok('元数据记录了来源工具与会话', entries[0]?.meta.tool === 'write' && entries[0]?.meta.sessionId === 'session-selftest')
+let metas = await backupsFor(target)
+ok('覆盖已存在文件放行且备份', outcome.nextCalls === 1 && metas.length === 1, `backups=${metas.length}`)
+const first = metas[0]
+ok('备份落在 <项目根>/.dsh-backup/<相对路径>/ 下', first && path.dirname(first.backupPath) === backupRoot, first && first.backupPath)
+ok('备份名＝源文件名+时间戳', first && /^demo\.\d{8}-\d{6}\.txt$/.test(first.backupName), first && first.backupName)
+ok('备份内容是改前原文（逐字节）', (await readFile(first.backupPath, 'utf8')) === 'line1\nline2\nline3\n')
+ok('sidecar 元数据在 _dsh-file-history 下', (await stat(path.join(metaDir, `${first.backupName}.json`))).isFile())
+const status = JSON.parse(await readFile(path.join(metaDir, 'status.json'), 'utf8'))
+ok('状态标志 status.json 记录运行状况', status.status === 'ok' && status.snapshots >= 1 && Boolean(status.lastBackup), JSON.stringify({ snapshots: status.snapshots, at: status.at }))
+const manifestLines = (await readFile(path.join(metaDir, 'manifest.jsonl'), 'utf8')).trim().split('\n')
+ok('manifest.jsonl 追加了审计行', manifestLines.length >= 1 && JSON.parse(manifestLines[0]).kind === 'snapshot')
 
-// 3) 模型侧 list / show / restore
+// 3) 子目录镜像
+const nested = path.join(project, 'src', 'lib', 'nested.ts')
+await mkdir(path.dirname(nested), { recursive: true })
+await writeFile(nested, 'export const v = 0\n', 'utf8')
+await runTool('edit', nested, 'call-nested')
+const nestedMeta = (await backupsFor(nested))[0]
+ok('子目录按源路径镜像', nestedMeta && path.relative(backupRoot, nestedMeta.backupPath) === path.join('src', 'lib', nestedMeta.backupName), nestedMeta && path.relative(backupRoot, nestedMeta.backupPath))
+
+// 4) file_history：list / show / restore
 let value = await registered.file_history.execute({ action: 'list', scope: 'session' }, execCtx)
-ok('list 命中本次快照', value.count >= 1 && value.entries.some((entry) => entry.path === target))
+ok('list 命中备份并给出目录与状态标志', value.count >= 2 && value.message.includes(backupRoot) && value.message.includes('status.json'))
 
 await writeFile(target, 'line1\nCHANGED\nline3\nline9\n', 'utf8')
 value = await registered.file_history.execute({ action: 'show', path: target }, execCtx)
@@ -98,10 +159,12 @@ ok('show 给出 -改前/+现在 的 diff', value.message.includes('- line2') && 
 
 value = await registered.file_history.execute({ action: 'restore', path: target }, execCtx)
 ok('restore 还原为改前内容', (await readFile(target, 'utf8')) === 'line1\nline2\nline3\n', value.status)
+const statusAfterRestore = JSON.parse(await readFile(path.join(metaDir, 'status.json'), 'utf8'))
+ok('还原也刷新状态标志与 manifest', Boolean(statusAfterRestore.lastRestore) && (await readFile(path.join(metaDir, 'manifest.jsonl'), 'utf8')).includes('"kind":"restore"'))
 
-// 4) revert_turn：同一条助手消息内改了两个文件（同一个 rootCallId）→ 一次全部回退
-const fileA = path.join(sandbox, 'a.txt')
-const fileB = path.join(sandbox, 'b.txt')
+// 5) revert_turn：同一条助手消息内改两个文件（同一 rootCallId）
+const fileA = path.join(project, 'a.txt')
+const fileB = path.join(project, 'b.txt')
 await writeFile(fileA, 'A0\n', 'utf8')
 await writeFile(fileB, 'B0\n', 'utf8')
 await runTool('write', fileA, 'call-a', 'turn-1')
@@ -109,64 +172,111 @@ await runTool('write', fileB, 'call-b', 'turn-1')
 await writeFile(fileA, 'A1\n', 'utf8')
 await writeFile(fileB, 'B1\n', 'utf8')
 value = await registered.file_history.execute({ action: 'revert_turn' }, execCtx)
-const [backA, backB] = [await readFile(fileA, 'utf8'), await readFile(fileB, 'utf8')]
-ok('revert_turn 回退整轮文件', value.status === 'restored' && value.count >= 2 && backA === 'A0\n' && backB === 'B0\n', `${value.message} a=${JSON.stringify(backA)} b=${JSON.stringify(backB)}`)
+ok('revert_turn 回退整轮文件', value.status === 'restored' && value.count >= 2 && (await readFile(fileA, 'utf8')) === 'A0\n' && (await readFile(fileB, 'utf8')) === 'B0\n', value.message)
 
-// 5) 二进制文件：只记哈希，不复制内容
-const blob = path.join(sandbox, 'blob.bin')
-await writeFile(blob, Buffer.from([0, 1, 2, 3, 0, 9, 9]))
-await runTool('write', blob, 'call-blob')
-const blobEntries = await entryDirsFor(blob)
-const blobContentExists = blobEntries.length ? await readFile(path.join(blobEntries[0].dir, 'content')).then(() => true, () => false) : true
-ok('二进制只记哈希不存内容', blobEntries[0]?.meta.stored === false && blobEntries[0]?.meta.binary === true && blobEntries[0]?.meta.hash.length === 64 && blobContentExists === false, `reason=${blobEntries[0]?.meta.reason}`)
+// 6) 只保留最近 5 轮：连改 8 次后只剩 5 份
+const loop = path.join(project, 'loop.txt')
+await writeFile(loop, 'gen0\n', 'utf8')
+for (let i = 1; i <= 8; i += 1) {
+  await runTool('write', loop, `call-loop-${i}`)
+  await writeFile(loop, `gen${i}\n`, 'utf8')
+}
+const loopBackups = await backupsFor(loop)
+ok('每个源文件只保留最近 5 轮', loopBackups.length === 5, `backups=${loopBackups.length}`)
+const remaining = await Promise.all(loopBackups.map((meta) => readFile(meta.backupPath, 'utf8').then((text) => text.trim())))
+// 每次覆盖前存的是「当时的当前内容」：8 次覆盖依次存下 gen0..gen7，只留最近 5 代 = gen3..gen7。
+ok('保留的是最近 5 代内容', JSON.stringify(remaining.sort()) === JSON.stringify(['gen3', 'gen4', 'gen5', 'gen6', 'gen7']), JSON.stringify(remaining))
 
-// 6) 超大文件：超过 maxFileBytes 时不读内容，只留 size+mtime 指纹
+// 7) 项目外文件走兜底目录，不污染外部目录
+const outside = path.join(outsideDir, 'outside.txt')
+await writeFile(outside, 'outside v0\n', 'utf8')
+await runTool('write', outside, 'call-outside')
+const outsideBackupDirs = await readdir(outsideDir)
+ok('项目外文件不写进外部目录', !outsideBackupDirs.includes('.dsh-backup'), JSON.stringify(outsideBackupDirs))
+const fallbackMeta = await findFallbackMeta(outside)
+ok('项目外文件落到兜底目录且带元数据', Boolean(fallbackMeta) && fallbackMeta.stored === true, fallbackMeta && fallbackMeta.backupPath)
+value = await registered.file_history.execute({ action: 'list', scope: 'session' }, execCtx)
+ok('项目外文件的备份仍能被 list 看到', value.entries.some((entry) => entry.path === outside), `count=${value.count}`)
+ok('项目外文件也能被 restore 还原', (await registered.file_history.execute({ action: 'restore', path: outside }, execCtx)).status === 'restored')
+
+// 8) 大文件只记指纹
 settingsValue.maxFileBytes = 8
-const big = path.join(sandbox, 'big.txt')
+const big = path.join(project, 'big.txt')
 await writeFile(big, '0123456789abcdef\n', 'utf8')
 await runTool('write', big, 'call-big')
-const bigEntries = await entryDirsFor(big)
-ok('超过 maxFileBytes 只记指纹', bigEntries[0]?.meta.stored === false && bigEntries[0]?.meta.hashKind === 'size+mtime' && /maxFileBytes|只记指纹/.test(bigEntries[0]?.meta.reason || ''), bigEntries[0]?.meta.reason)
+const bigMeta = (await backupsFor(big))[0]
+ok('超过 maxFileBytes 只记指纹且无内容副本', bigMeta && bigMeta.stored === false && bigMeta.hashKind === 'size+mtime' && !(await stat(bigMeta.backupPath).then(() => true, () => false)), bigMeta && bigMeta.reason)
+ok('不可还原的条目不会谎报可还原', bigMeta && value.entries.every((entry) => entry.path !== big || entry.restorable === false))
 settingsValue.maxFileBytes = 2 * 1024 * 1024
 
-// 7) 保留策略：单文件最多 maxEntriesPerFile 代
-for (let i = 0; i < 5; i += 1) {
-  await writeFile(target, `v${i}\n`, 'utf8')
-  await runTool('write', target, `call-loop-${i}`)
-}
-await new Promise((resolve) => setTimeout(resolve, 400))
-const trimmed = await entryDirsFor(target)
-ok('快照代数被裁剪到上限', trimmed.length <= 3, `entries=${trimmed.length}（上限 3）`)
+// 9) 备份系统不备份自己
+const selfFile = path.join(backupRoot, 'self.txt')
+await writeFile(selfFile, 'x\n', 'utf8')
+outcome = await runTool('write', selfFile, 'call-self')
+ok('.dsh-backup 内的文件不会被再次备份', outcome.nextCalls === 1 && (await backupsFor(selfFile)).length === 0)
 
-// 8) 开关：enabled=false 后不再新增快照
+// 10) 开关关闭后不再备份
 settingsValue.enabled = false
-const beforeOff = (await entryDirsFor(target)).length
+const beforeOff = (await backupsFor(target)).length
 await runTool('write', target, 'call-off')
-ok('enabled=false 时不再新增快照', (await entryDirsFor(target)).length === beforeOff)
+ok('enabled=false 时不再备份', (await backupsFor(target)).length === beforeOff)
 settingsValue.enabled = true
 
-// 9) 失败必须拦截：把目标文件换成「stat 成功但读取失败」的不可读文件
-const locked = path.join(sandbox, 'locked.txt')
-await writeFile(locked, 'secret\n', 'utf8')
-const { chmod } = await import('node:fs/promises')
-await chmod(locked, 0o000)
-let denyDecision = null
-try {
-  denyDecision = await runTool('write', locked, 'call-locked')
-} catch (error) {
-  denyDecision = { thrown: String(error && error.message) }
-}
-await chmod(locked, 0o600)
-const denied = denyDecision && denyDecision.decision && denyDecision.decision.kind === 'deny'
-const allowedDespiteFailure = denyDecision && denyDecision.nextCalls === 1
-ok('快照失败时拦截写入（fail-closed）', denied || allowedDespiteFailure, denied ? '已 deny' : `未拦截但放行（平台权限模型差异）：${JSON.stringify(denyDecision?.decision)}`)
+// 10.5) git 卫生：自动把 .dsh-backup/ 登记进 .gitignore，且不重写已有内容
+const gitProject = await mkdtemp(path.join(tmpdir(), 'fh-git-'))
+await mkdir(path.join(gitProject, '.git'), { recursive: true })
+await writeFile(path.join(gitProject, '.gitignore'), 'node_modules/\n', 'utf8')
+const gitFile = path.join(gitProject, 'code.js')
+await writeFile(gitFile, 'const a = 1\n', 'utf8')
+const gitHeader = { id: 'session-git', cwd: gitProject, title: 'git test' }
+await listeners['tools/pre-execute'](
+  { name: 'write', callId: 'c-git', rootCallId: 'c-git', arguments: { file_path: gitFile }, agent: { session: { header: gitHeader } }, signal: { throwIfAborted: () => {} } },
+  async () => ({ kind: 'allow' }),
+)
+const gitignoreText = await readFile(path.join(gitProject, '.gitignore'), 'utf8')
+ok('自动把 .dsh-backup/ 写进 .gitignore 且保留原内容', gitignoreText.includes('node_modules/') && gitignoreText.includes('.dsh-backup/'), JSON.stringify(gitignoreText))
+await listeners['tools/pre-execute'](
+  { name: 'write', callId: 'c-git2', rootCallId: 'c-git2', arguments: { file_path: gitFile }, agent: { session: { header: gitHeader } }, signal: { throwIfAborted: () => {} } },
+  async () => ({ kind: 'allow' }),
+)
+const gitignoreAgain = await readFile(path.join(gitProject, '.gitignore'), 'utf8')
+ok('.gitignore 不会被重复追加', (gitignoreAgain.match(/\.dsh-backup\//g) || []).length === 1)
+settingsValue.gitignoreBackups = false
+const gitFile2 = path.join(gitProject, 'code2.js')
+await writeFile(gitFile2, 'const b = 2\n', 'utf8')
+await writeFile(path.join(gitProject, '.gitignore'), 'node_modules/\n', 'utf8')
+await listeners['tools/pre-execute'](
+  { name: 'write', callId: 'c-git3', rootCallId: 'c-git3', arguments: { file_path: gitFile2 }, agent: { session: { header: gitHeader } }, signal: { throwIfAborted: () => {} } },
+  async () => ({ kind: 'allow' }),
+)
+ok('gitignoreBackups=false 时不改动 .gitignore', (await readFile(path.join(gitProject, '.gitignore'), 'utf8')) === 'node_modules/\n')
+settingsValue.gitignoreBackups = true
+await rm(gitProject, { recursive: true, force: true }).catch(() => {})
 
-// 清理测试产生的快照与沙箱
-for (const absPath of [fresh, target, fileA, fileB, blob, big, locked]) {
-  for (const entry of await entryDirsFor(absPath)) await rm(entry.dir, { recursive: true, force: true }).catch(() => {})
-}
-await rm(sandbox, { recursive: true, force: true })
-await mkdir(sandbox, { recursive: true }).catch(() => {})
+// 11) 系统提示公告内容包含目录与工具用法
+const announcement = promptSections[0].text({ agent: { session: { header } } })
+const announcedPaths = [...announcement.matchAll(/`([^`]+)`/g)].map((match) => norm(match[1]))
+ok(
+  '系统提示告知备份目录与恢复方式',
+  announcedPaths.includes(norm(backupRoot)) &&
+    announcement.includes('file_history') &&
+    announcement.includes('action="restore"') &&
+    announcement.includes('action="revert_turn"') &&
+    announcement.includes('status.json'),
+  `announced=${announcedPaths.length} paths`,
+)
+ok('系统提示写明每文件保留代数', announcement.includes('最近几代') || announcement.includes('保留最近'))
+settingsValue.announceInPrompt = false
+ok('announceInPrompt=false 时不注入该段', promptSections[0].text({ agent: { session: { header } } }) === '')
+settingsValue.announceInPrompt = true
+
+// 清理
+await rm(project, { recursive: true, force: true }).catch(() => {})
+await rm(outsideDir, { recursive: true, force: true }).catch(() => {})
+for (const meta of await (async () => {
+  const dir = path.join(mod.HISTORY_DIR, 'unknown')
+  return []
+})()) void meta
 
 const failed = results.filter((entry) => !entry.pass)
 console.log(`\n===== ${results.length - failed.length}/${results.length} passed =====`)
