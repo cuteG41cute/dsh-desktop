@@ -29,3 +29,6 @@ dsh-time-stamp/
 # Python cache
 __pycache__/
 *.pyc
+
+# dsh-file-history 自动备份（改前检查点），不纳入版本管理
+/menmory logic/.dsh-backup/
