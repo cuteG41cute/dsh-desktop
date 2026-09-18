@@ -398,6 +398,19 @@ ok(
   `${stateResponse.ok} / ${stateResponse.projectName}`,
 )
 ok('RPC state 含备份统计与代数设置', stateResponse.stat.count >= 1 && stateResponse.settings.maxGenerations === 5, JSON.stringify(stateResponse.stat))
+// 芯片上的数字用 stat.bytes（当前占用）：必须等于现存备份文件大小之和，
+// 「随清理降下来」才成立（回归点：曾经误用历史累计次数 snapshots）。
+const sidecarBytes = await Promise.all(
+  (await readdir(metaDir))
+    .filter((name) => name.endsWith('.json') && name !== 'status.json')
+    .map((name) => readFile(path.join(metaDir, name), 'utf8').then((text) => Number(JSON.parse(text).size) || 0, () => 0)),
+)
+const sidecarSum = sidecarBytes.reduce((sum, value) => sum + value, 0)
+ok(
+  'RPC stat.bytes ＝ 现存备份大小之和（可用于「当前占用」口径）',
+  stateResponse.stat.bytes === sidecarSum && sidecarSum > 0 && sidecarSum !== (stateResponse.status ? stateResponse.status.snapshots : -1),
+  `bytes=${stateResponse.stat.bytes} sidecarSum=${sidecarSum} snapshots=${stateResponse.status && stateResponse.status.snapshots}`,
+)
 ok(
   'RPC state 含实时流水（时间/动作/文件）',
   Array.isArray(stateResponse.events) && stateResponse.events.length >= 1 && Boolean(stateResponse.events[0].kind) && Boolean(stateResponse.events[0].file),

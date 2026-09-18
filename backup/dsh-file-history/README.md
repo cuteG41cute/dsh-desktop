@@ -42,7 +42,7 @@ harness 原生只有 `dsh-atomic-write`（写入原子）和 `dsh-fs-observation
 | `lib/client.js` | **客户端**半边：右上角「备份」状态芯片 + 悬停面板（实时流水 / 统计 / 总开关） |
 | `package.json` | 插件清单（`dsh.client` 段声明浏览器半边，依赖 `@deepseek-ai/cordis`、`@deepseek-ai/schemastery`） |
 | `install.ps1` | 安装/卸载到指定 dsh profile（写 `node_modules` + 登记 `cordis.patch.yml`，自动备份原文件） |
-| `selftest.mjs` | 离线自测：假 ctx 驱动已安装副本，59 项断言（宿主加载路径、schema 契约、客户端 RPC、项目级开关） |
+| `selftest.mjs` | 离线自测：假 ctx 驱动已安装副本，60 项断言（宿主加载路径、schema 契约、客户端 RPC、项目级开关） |
 | `host-contract-check.mjs` | **真依赖**契约检查：在 profile 内加载真实 schemastery/timer 语义，9 项断言 |
 | `monitor.ps1` | 命令行观测面板：一次看清 / `-Watch` 实时盯梢 / `-Scan` 扫全机 |
 | `after-restart-check.ps1` | 重启后体检：插件是否已加载、备份目录是否已创建 |
@@ -54,6 +54,7 @@ harness 原生只有 `dsh-atomic-write`（写入原子）和 `dsh-fs-observation
 装上客户端半边后，会话右上角（「时间戳开 / 记忆库开」那排旁边）会多一个**备份**芯片：
 
 - 灯色：🟢 最近 2 分钟内有备份 · 🔵 已启用但暂时没动作 · 🔴 有错误（含最近一次失败原因）· ⚪ 读不到状态。
+- 芯片文字：**当前占用**（现存备份的总大小，会随 5 代清理降下来），不是历史累计次数；悬停提示里另给「份数 / 累计次数」。
 - 点击展开面板：最后活动时间 / 备份次数 / 保留代数 / 占用 · 统计 / 最近一次备份与还原的完整路径 / 实时流水（每 2 秒刷新，格式 `时间 · 动作 · 文件名`，鼠标悬停看备份文件路径）/ 一键开关。
 - 面板关着时每 30 秒轮询一次（只更新灯色，开销可忽略）；开着时每 2 秒。
 - 数据来源与命令行面板完全一致：`status.json` + `manifest.jsonl`，通过宿主路由 `POST /dsh-file-history/api` 读取。

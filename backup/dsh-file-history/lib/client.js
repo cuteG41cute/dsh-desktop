@@ -170,10 +170,18 @@ window.__ModuleLoader__.load({
           const projectSettings = (state && state.settings) || {}
           const enabled = projectSettings.enabled !== false
           const scope = projectSettings.scope === 'project' ? 'project' : 'inherit'
-          const chipText = primaryError ? '备份异常' : (enabled ? '备份 ' + (state && state.status ? state.status.snapshots || 0 : 0) : '备份 关')
+          // 芯片上的数字＝**当前占用**（现存备份文件总字节，会随清理降下来），不是历史累计次数；
+          // 次数仍在面板里（「备份次数」一行）。
+          const stat = (state && state.stat) || { count: 0, bytes: 0 }
+          const chipText = primaryError
+            ? '备份异常'
+            : (enabled ? '备份 ' + formatSize(stat.bytes) : '备份 关')
           const title = primaryError
             ? '改前自动备份：' + primaryError + '（点击查看）'
-            : '改前自动备份（本项目：' + (enabled ? '开启' : '关闭') + (scope === 'project' ? '，项目单独设置' : '，继承全局默认') + '）。（点击查看实时状态与项目级开关）'
+            : '改前自动备份（本项目：' + (enabled ? '开启' : '关闭') + (scope === 'project' ? '，项目单独设置' : '，继承全局默认') + '）'
+              + '；当前占用 ' + formatSize(stat.bytes) + ' / ' + stat.count + ' 份'
+              + '，累计备份 ' + ((state && state.status && state.status.snapshots) || 0) + ' 次'
+              + '。（点击查看实时状态与项目级开关）'
 
           // 开关是项目级的：scope=project 只改当前项目；scope=global 改全局默认。
           const setEnabled = (wanted, targetScope) => {
