@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DeepSeek Harness 桌面版 - MSI 安装包源文件（WiX v4/v7 语法，per-user 安装）
+
+  构建：
+    wix.exe build product.wxs -o "DeepSeek Harness 桌面版.msi" \
+      -ext WixToolset.UI.wixext.dll -arch x64 \
+      -culture zh-CN -loc WixUI_zh-CN.wxl
+
+  向导流程：欢迎 -> 安装目录 -> DeepSeek Harness 检测（自定义页）-> 确认 -> 进度 -> 完成
+  检测页逻辑（VBScript 自定义操作，见 actions.vbs）：
+    - 自动扫描 dsh（npx 缓存 / 全局 npm / $DSH_HOME profiles）
+    - 未找到时可选【帮助安装】（npm install -g @deepseek-ai/dsh）或手动输入路径（验证后写入 dsh-path.config）
+    - 直接【下一步】跳过：安装后 launcher 启动时自动扫描
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package ProductCode="{73BC2F8B-EE96-4AD4-85BB-E558AF3776CA}"
+           Name="DeepSeek Harness 桌面版"
+           Manufacturer="DeepSeek Harness"
+           Version="1.2.1"
+           Language="2052"
+           UpgradeCode="C3F0AF3F-FCB6-430D-B94E-D78230482689"
+           Scope="perUser"
+           Compressed="yes">
+    <SummaryInformation Description="DeepSeek Harness 桌面版（WebView2 桌面包装程序与启动器）"
+                        Keywords="DeepSeek,Harness,dsh,桌面版"
+                        Manufacturer="DeepSeek Harness" />
+    <MajorUpgrade DowngradeErrorMessage="已安装更新版本的 [ProductName]。" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- 控制面板图标 -->
+    <Icon Id="AppIcon" SourceFile="files\dsh-desktop\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+
+    <!-- 目录：%LOCALAPPDATA%\Programs\DSH Desktop -->
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLDIR" Name="DSH Desktop">
+          <Directory Id="DesktopSub" Name="dsh-desktop" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- 快捷方式（桌面 + 开始菜单） -->
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="DesktopShortcut">
+        <Shortcut Id="DesktopLnk"
+                  Name="DeepSeek Harness"
+                  Target="[INSTALLDIR]启动 DeepSeek Harness.vbs"
+                  WorkingDirectory="INSTALLDIR"
+                  Icon="AppIcon" />
+        <RegistryValue Root="HKCU" Key="Software\DeepSeek Harness" Name="DesktopLnk"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="StartMenuDir" Name="DeepSeek Harness">
+        <Component Id="StartMenuLnk">
+          <Shortcut Id="StartLnk"
+                    Name="DeepSeek Harness"
+                    Target="[INSTALLDIR]启动 DeepSeek Harness.vbs"
+                    WorkingDirectory="INSTALLDIR"
+                    Icon="AppIcon" />
+          <RemoveFolder Id="RemoveStartMenuDir" On="uninstall" />
+          <RegistryValue Root="HKCU" Key="Software\DeepSeek Harness" Name="StartMenuLnk"
+                         Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- 主程序文件 -->
+    <ComponentGroup Id="AppFiles">
+      <Component Directory="INSTALLDIR">
+        <File Source="files\launcher.ps1" KeyPath="yes" />
+      </Component>
+      <Component Directory="INSTALLDIR">
+        <File Source="files\启动 DeepSeek Harness.vbs" KeyPath="yes" />
+      </Component>
+      <Component Directory="INSTALLDIR">
+        <File Source="files\Start DeepSeek Harness.vbs" KeyPath="yes" />
+      </Component>
+      <Component Directory="INSTALLDIR">
+        <File Source="files\README.md" KeyPath="yes" />
+      </Component>
+      <Component Directory="DesktopSub">
+        <File Source="files\dsh-desktop\DSH Desktop.exe" KeyPath="yes" />
+      </Component>
+      <Component Directory="DesktopSub">
+        <File Source="files\dsh-desktop\App.cs" KeyPath="yes" />
+      </Component>
+      <Component Directory="DesktopSub">
+        <File Source="files\dsh-desktop\app.ico" KeyPath="yes" />
+      </Component>
+      <Component Directory="DesktopSub">
+        <File Source="files\dsh-desktop\icon-source.png" KeyPath="yes" />
+      </Component>
+      <Component Directory="DesktopSub">
+        <File Source="files\dsh-desktop\Microsoft.Web.WebView2.Core.dll" KeyPath="yes" />
+      </Component>
+      <Component Directory="DesktopSub">
+        <File Source="files\dsh-desktop\Microsoft.Web.WebView2.Core.xml" KeyPath="yes" />
+      </Component>
+      <Component Directory="DesktopSub">
+        <File Source="files\dsh-desktop\Microsoft.Web.WebView2.WinForms.dll" KeyPath="yes" />
+      </Component>
+      <Component Directory="DesktopSub">
+        <File Source="files\dsh-desktop\Microsoft.Web.WebView2.WinForms.xml" KeyPath="yes" />
+      </Component>
+      <Component Directory="DesktopSub">
+        <File Source="files\dsh-desktop\WebView2Loader.dll" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- 自定义操作（VBScript） -->
+    <Binary Id="DshActions" SourceFile="actions.vbs" />
+    <CustomAction Id="GetDshStatus" BinaryRef="DshActions" VBScriptCall="GetDshStatus"
+                  Execute="firstSequence" Impersonate="yes" />
+    <CustomAction Id="HelpInstallDsh" BinaryRef="DshActions" VBScriptCall="HelpInstallDsh"
+                  Execute="firstSequence" Impersonate="yes" />
+    <CustomAction Id="ValidateDshPath" BinaryRef="DshActions" VBScriptCall="ValidateDshPath"
+                  Execute="firstSequence" Impersonate="yes" />
+    <CustomAction Id="WriteDshConfig" BinaryRef="DshActions" VBScriptCall="WriteDshConfig"
+                  Execute="deferred" Impersonate="no" />
+    <CustomAction Id="WriteDshConfigData" Property="WriteDshConfig"
+                  Value="DIR=[INSTALLDIR];CFG=[DSH_CONFIG_PATH]" Execute="immediate" />
+    <CustomAction Id="RemoveDshConfig" BinaryRef="DshActions" VBScriptCall="RemoveDshConfig"
+                  Execute="deferred" Impersonate="no" />
+    <CustomAction Id="RemoveDshConfigData" Property="RemoveDshConfig"
+                  Value="DIR=[INSTALLDIR]" Execute="immediate" />
+    <CustomAction Id="RemoveShorctutsVbs" BinaryRef="DshActions" VBScriptCall="RemoveShortcuts"
+                  Execute="deferred" Impersonate="no" />
+    <CustomAction Id="RemoveShortcutsData" Property="RemoveShorctutsVbs"
+                  Value="DESK=[DesktopFolder];MENU=[ProgramMenuFolder]DeepSeek Harness\DeepSeek Harness.lnk"
+                  Execute="immediate" />
+
+    <InstallExecuteSequence>
+      <Custom Action="WriteDshConfigData" Before="WriteDshConfig" Condition="(NOT REMOVE) AND DSH_CONFIG_REQUIRED = &quot;1&quot;" />
+      <Custom Action="WriteDshConfig" After="InstallFiles" Condition="(NOT REMOVE) AND DSH_CONFIG_REQUIRED = &quot;1&quot;" />
+      <Custom Action="RemoveDshConfigData" Before="RemoveDshConfig" Condition="REMOVE = &quot;ALL&quot;" />
+      <Custom Action="RemoveDshConfig" After="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
+      <Custom Action="RemoveShortcutsData" Before="RemoveShortcuts" Condition="REMOVE = &quot;ALL&quot;" />
+      <Custom Action="RemoveShorctutsVbs" After="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
+    </InstallExecuteSequence>
+
+    <!-- 安装向导（WixUI_InstallDir，跳过许可页，插入 DeepSeek Harness 检测页） -->
+    <Property Id="WixUI_INSTALLDIR" Value="INSTALLDIR" />
+    <UI>
+      <UIRef Id="WixUI_InstallDir_X64" />
+      <UIRef Id="WixUI_ErrorProgressText" />
+
+      <!-- 跳过许可协议页：欢迎 -> 检测页（先运行检测 CA）；按检测结果分流 -->
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="DoAction" Value="GetDshStatus" Order="5" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="DshDetectDlg" Order="10" Condition="DSH_DETECTED = &quot;1&quot;" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="DshNotFoundDlg" Order="11" Condition="DSH_DETECTED &lt;&gt; &quot;1&quot;" />
+
+      <!-- DeepSeek Harness 检测页（已检测到：仅显示状态，直接下一步） -->
+      <Dialog Id="DshDetectDlg" Width="370" Height="270" Title="[ProductName] 安装" TrackDiskSpace="yes">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="[WixUIBannerBmp]" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="340" Height="15" Transparent="yes" Text="{\WixUI_Font_Title}DeepSeek Harness 检测" />
+        <Control Id="Description" Type="Text" X="15" Y="23" Width="340" Height="15" Transparent="yes" Text="检测本机 DeepSeek Harness 的安装情况" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+
+        <Control Id="StatusText" Type="Text" X="20" Y="70" Width="330" Height="50" Text="[DSH_DETECT_STATUS]" />
+
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="上一步(&amp;B)">
+          <Publish Event="NewDialog" Value="WelcomeDlg" Order="1" />
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="下一步(&amp;N)">
+          <Publish Event="NewDialog" Value="VerifyReadyDlg" Order="1" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="取消(&amp;C)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" Order="1" />
+        </Control>
+      </Dialog>
+
+      <!-- DeepSeek Harness 未检测到页（提供帮助安装与手动路径） -->
+      <Dialog Id="DshNotFoundDlg" Width="370" Height="270" Title="[ProductName] 安装" TrackDiskSpace="yes">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="[WixUIBannerBmp]" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="340" Height="15" Transparent="yes" Text="{\WixUI_Font_Title}DeepSeek Harness 未检测到" />
+        <Control Id="Description" Type="Text" X="15" Y="23" Width="340" Height="15" Transparent="yes" Text="请选择安装 DeepSeek Harness 的方式，或直接继续" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+
+        <Control Id="StatusText" Type="Text" X="20" Y="58" Width="330" Height="38" Text="[DSH_DETECT_STATUS]" />
+
+        <Control Id="HelpBtn" Type="PushButton" X="20" Y="102" Width="200" Height="17" Text="帮助我安装 DeepSeek Harness">
+          <Publish Event="DoAction" Value="HelpInstallDsh" Order="1" />
+          <Publish Event="NewDialog" Value="WelcomeDlg" Order="2" />
+        </Control>
+        <Control Id="HelpResult" Type="Text" X="20" Y="122" Width="330" Height="18" Text="[DSH_HELP_RESULT]" />
+
+        <Control Id="ManualLabel" Type="Text" X="20" Y="146" Width="330" Height="15" Text="或手动输入 DeepSeek Harness 的安装路径：" />
+        <Control Id="ManualEdit" Type="Edit" X="20" Y="164" Width="248" Height="17" Property="DSH_MANUAL_PATH" />
+        <Control Id="ValidateBtn" Type="PushButton" X="276" Y="163" Width="74" Height="17" Text="验证路径">
+          <Publish Event="DoAction" Value="ValidateDshPath" Order="1" />
+          <Publish Event="NewDialog" Value="WelcomeDlg" Order="2" />
+        </Control>
+        <Control Id="PathError" Type="Text" X="20" Y="186" Width="330" Height="32" Text="[DSH_PATH_ERROR]" />
+
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="上一步(&amp;B)">
+          <Publish Event="NewDialog" Value="WelcomeDlg" Order="1" />
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="下一步(&amp;N)">
+          <Publish Event="NewDialog" Value="VerifyReadyDlg" Order="1" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="取消(&amp;C)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" Order="1" />
+        </Control>
+      </Dialog>
+    </UI>
+
+    <Feature Id="MainFeature" Title="DeepSeek Harness 桌面版" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="DesktopShortcut" />
+      <ComponentRef Id="StartMenuLnk" />
+    </Feature>
+  </Package>
+</Wix>

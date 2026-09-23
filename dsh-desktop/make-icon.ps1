@@ -15,7 +15,7 @@ Add-Type -AssemblyName System.Drawing
 $ErrorActionPreference = "Stop"
 
 $root = $PSScriptRoot
-if (-not $Output) { $Output = Join-Path $root "dsh-desktop\app.ico" }
+if (-not $Output) { $Output = Join-Path $root "app.ico" }
 
 if (-not (Test-Path $Source)) { throw "Source image not found: $Source" }
 

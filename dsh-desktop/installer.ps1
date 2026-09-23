@@ -212,18 +212,31 @@ function Install-DesktopApp {
     Copy-Item -Path (Join-Path $sourceRoot "启动 DeepSeek Harness.vbs") -Destination $installDir -Force
     Copy-Item -Path (Join-Path $sourceRoot "Start DeepSeek Harness.vbs") -Destination $installDir -Force
 
-    # 2) 复制 dsh-desktop（WebView2 桌面程序）
-    $srcDesktop = Join-Path $sourceRoot "dsh-desktop"
+    # 2) 复制 WebView2 桌面程序（安装到 dsh-desktop\ 子目录，与 MSI 安装布局一致）
+    #    来源：开发/免安装目录里包装程序与启动器同目录；若存在旧的分层结构则取其子目录。
+    $srcDesktop = $sourceRoot
+    if (Test-Path (Join-Path $sourceRoot "dsh-desktop\DSH Desktop.exe")) {
+        $srcDesktop = Join-Path $sourceRoot "dsh-desktop"
+    }
     if (Test-Path (Join-Path $srcDesktop "DSH Desktop.exe")) {
         $dstDesktop = Join-Path $installDir "dsh-desktop"
         New-Item -ItemType Directory -Force $dstDesktop | Out-Null
         # 清理历史残留（*.old.exe 等），避免旧版本文件混入
         Get-ChildItem $dstDesktop -Filter "*.old.exe" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-        Get-ChildItem $srcDesktop -File | Where-Object { $_.Name -ne "user-data" -and $_.Name -notlike "*.old.exe" } | ForEach-Object {
-            Copy-Item $_.FullName -Destination $dstDesktop -Force
+        # 明确清单：开发目录里同目录还有启动器/文档/构建产物，不能整目录复制
+        $payload = @(
+            "DSH Desktop.exe", "DSH Desktop.exe.config", "App.cs",
+            "app.ico", "app.manifest", "icon-source.png",
+            "Microsoft.Web.WebView2.Core.dll", "Microsoft.Web.WebView2.Core.xml",
+            "Microsoft.Web.WebView2.WinForms.dll", "Microsoft.Web.WebView2.WinForms.xml",
+            "WebView2Loader.dll"
+        )
+        foreach ($name in $payload) {
+            $src = Join-Path $srcDesktop $name
+            if (Test-Path $src) { Copy-Item $src -Destination $dstDesktop -Force }
         }
     } else {
-        Write-Log "警告: 安装包中缺少 dsh-desktop\DSH Desktop.exe"
+        Write-Log "警告: 安装包中缺少 DSH Desktop.exe（包装程序）"
     }
 
     # 3) 手动指定路径时写入 dsh-path.config（启动器优先使用）

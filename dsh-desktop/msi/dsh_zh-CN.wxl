@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization Culture="zh-CN" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <!-- 覆盖官方中文向导字符串：在欢迎页显示产品版本号 -->
+  <String Id="WelcomeDlg_Title" Overridable="yes" Value="[ProductName] v[ProductVersion] 安装程序" />
+  <String Id="WelcomeDlgTitle" Overridable="yes" Value="{\WixUI_Font_Bigger}欢迎使用 [ProductName] 安装向导（v[ProductVersion]）" />
+  <String Id="WelcomeDlgDescription" Overridable="yes" Value="安装向导将在计算机上安装 [ProductName] v[ProductVersion]。单击“下一步”继续，或单击“取消”退出安装向导。" />
+  <String Id="MaintenanceWelcomeDlgTitle" Overridable="yes" Value="{\WixUI_Font_Bigger}欢迎使用 [ProductName] 安装向导（v[ProductVersion]）" />
+  <String Id="MaintenanceWelcomeDlgDescription" Overridable="yes" Value="通过安装向导可以更改在您的计算机上安装 [ProductName] v[ProductVersion] 功能的方式，或将其从您的计算机中删除。" />
+</WixLocalization>

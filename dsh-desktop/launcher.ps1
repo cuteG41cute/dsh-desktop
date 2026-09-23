@@ -1,7 +1,7 @@
 ﻿<#
   DeepSeek Harness 桌面启动器
   ==========================
-  双击 "启动 DeepSeek Harness.cmd" 即会运行本脚本：
+  双击 "启动 DeepSeek Harness.vbs" 即会运行本脚本：
 
     1. 检查 http://127.0.0.1:3080 上的 WebUI 是否已在运行；
        未运行则启动 `dsh web` 服务（后台、无窗口）。
@@ -9,9 +9,14 @@
     3. 取得 Web 认证凭据：dsh ≥0.1.5 的 WebUI 需要一枚签名 cookie 才返回页面
        （未认证时返回 401）。本脚本优先自行签发并用真实请求验证这枚 cookie，
        再交给桌面窗口注入；取不到时才退回「带 token 的认证 URL」方式。
-    4. 用 dsh-desktop\DSH Desktop.exe（WebView2 桌面窗口）打开 WebUI；
+    4. 用 DSH Desktop.exe（WebView2 桌面窗口）打开 WebUI；
        若该包装程序不存在，则回退到 Edge 应用模式窗口，再回退到默认浏览器。
     5. 桌面窗口关闭后，若服务是本脚本启动的，则一并停止服务。
+
+  目录布局（两种都支持，包装程序位置自动识别）：
+    · 开发目录 / 免安装目录：launcher.ps1 与 DSH Desktop.exe 同目录（本仓库的 dsh-desktop\）
+    · 安装目录：launcher.ps1 在安装根，包装程序在 dsh-desktop\ 子目录
+  运行期产物：同目录下的 logs\（服务日志）、edge-profile\（Edge 回退的配置目录）。
 #>
 [CmdletBinding()]
 param(
@@ -314,7 +319,12 @@ if (-not $running) {
 }
 
 # ---- 3. 打开桌面窗口（阻塞等待窗口关闭） ----
-$exe = Join-Path $root "dsh-desktop\DSH Desktop.exe"
+# 包装程序位置：开发/免安装目录里与启动器同目录；安装目录里在 dsh-desktop\ 子目录。
+$exe = Join-Path $root "DSH Desktop.exe"
+if (-not (Test-Path $exe)) {
+    $nestedExe = Join-Path $root "dsh-desktop\DSH Desktop.exe"
+    if (Test-Path $nestedExe) { $exe = $nestedExe }
+}
 $windowProc = $null
 $leaveServerRunning = $false
 $alreadyRunning = $false

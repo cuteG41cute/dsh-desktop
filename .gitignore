@@ -32,3 +32,13 @@ __pycache__/
 
 # dsh-file-history 自动备份（改前检查点），不纳入版本管理
 /menmory logic/.dsh-backup/
+
+# dsh-file-history 自动备份（改前检查点），不纳入版本管理
+.dsh-backup/
+
+# 打包暂存目录（由 msi\build-msi.ps1 与 linux\build\build-linux.py 生成）
+dsh-desktop/msi/.stage/
+dsh-desktop/linux/build/.stage/
+
+# harness 运行数据
+.dsh/

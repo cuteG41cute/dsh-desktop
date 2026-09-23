@@ -1,11 +1,15 @@
 # Keep Unix scripts LF on every platform (bash/python shebangs break with CRLF).
-linux/dsh-desktop text eol=lf
-linux/install.sh text eol=lf
+dsh-desktop/linux/dsh-desktop text eol=lf
+dsh-desktop/linux/install.sh text eol=lf
+dsh-desktop/linux/build/deb/DEBIAN/postinst text eol=lf
+dsh-desktop/linux/build/deb/DEBIAN/prerm text eol=lf
 *.sh text eol=lf
 *.py text eol=lf
 
 # Binaries: never normalize or diff as text.
 *.msi binary
+*.deb binary
+*.gz binary
 *.exe binary
 *.dll binary
 *.ico binary
