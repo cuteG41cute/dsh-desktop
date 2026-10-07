@@ -91,15 +91,15 @@
 Windows 版的完整功能已移植到 Linux（GTK + WebKitGTK 原生窗口）：
 
 - 源码与说明：`linux/` 目录（`dsh-desktop` 启动器 + `dsh-desktop.py` 窗口 + `install.sh` 免 root 安装）；
-- 安装包：Release 附件中的 `dsh-desktop_1.2.7_amd64.deb`（apt 安装）与 `dsh-desktop-linux-1.2.7.tar.gz`（免 root）；
+- 安装包：Release 附件中的 `dsh-desktop_1.2.8_amd64.deb`（apt 安装）与 `dsh-desktop-linux-1.2.8.tar.gz`（免 root）；
 - 功能对照与已知差异见 `linux/README.md`，真机验证步骤见 `linux/测试指南.md`；
 - 打包脚本：`linux/build/build-linux.py`（产出到 `dist\`，Windows/Linux 都能跑）；
 - 已修复：软链启动路径、Deepin 密钥环弹窗（ephemeral WebContext）。
 
 ## MSI 安装包（推荐分发方式）
 
-**`dist\DeepSeek Harness 桌面版 1.2.7.msi`**（文件名带版本号；安装向导欢迎页亦显示版本，旧版本双击新包即自动升级） 是标准 Windows 安装程序（per-user 安装，无需管理员权限）。
-> Release 附件中的同一个安装包写作 ASCII 名 **`DeepSeek-Harness-Desktop-1.2.7.msi`**（GitHub 会改写含中文/空格的附件名）。
+**`dist\DeepSeek Harness 桌面版 1.2.8.msi`**（文件名带版本号；安装向导欢迎页亦显示版本，旧版本双击新包即自动升级） 是标准 Windows 安装程序（per-user 安装，无需管理员权限）。
+> Release 附件中的同一个安装包写作 ASCII 名 **`DeepSeek-Harness-Desktop-1.2.8.msi`**（GitHub 会改写含中文/空格的附件名）。
 双击即进入**安装向导**：
 
 1. **欢迎** → **选择安装目录**（默认 `%LOCALAPPDATA%\Programs\DSH Desktop\`）；
@@ -277,6 +277,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File make-icon.ps1 -Source <新PN
   `WaitForExit` 返回，随即停止它本次启动的服务进程（服务不是启动器拉起的则不动）。
 - 回退链：找不到 `DSH Desktop.exe` 时改用 Edge/Chrome 的“应用模式”（`--app=`，同样是无边框独立窗口），
   再不行才用默认浏览器打开（该回退下服务会保持运行）。
+- **启动画面只在真的要开一个新窗口时出现**（`splash.ps1`，与宣传图同色系的粉彩渐变 + 底部进度条）：
+  启动器先看有没有「带主窗口的 `DSH Desktop` 进程」，有就说明本次双击只是把旧窗口唤到前台（单实例短路，退出码 42），
+  于是连 splash 都不拉起 —— 程序已在运行时双击不再闪一下启动画面；
+  `splash.ps1 -Run` 自己也会在开头再判一次同样的条件（`-WatchProcess`，默认 `DSH Desktop`），直接调用它同样不会闪。
+  冷启动照旧：窗口出现或到达 `-CapSeconds`（默认 45s）时收尾；`DSH_DESKTOP_NO_SPLASH=1` 可完全关掉启动画面。
 
 ## 重新编译桌面包装程序（可选）
 

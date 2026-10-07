@@ -150,9 +150,16 @@ function Close-Splash {
 # 自己按时间推进进度条，并在"桌面窗口出现"时填满、收尾、退出。
 # ---------------------------------------------------------------------------
 if ($Run) {
+    # 已经在运行（存在带主窗口的进程）→ 本次双击只是唤起旧窗口，不该闪一下启动画面。
+    # launcher.ps1 也有一道同样的门，这里再兜一次底（直接调用本脚本时同样成立）。
+    try {
+        $already = @(Get-Process -Name $WatchProcess -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })
+        if ($already.Count -gt 0) { exit 0 }
+    } catch { }
     $script:SplashCapSeconds = $CapSeconds
     $script:SplashWatch = $WatchProcess
     $script:SplashParent = $ParentPid
+    $script:SplashMinMs = $MinMs
     $script:SplashForm = New-SplashScreen
     if (-not $script:SplashForm) { exit 1 }
     $script:SplashPercent = 4

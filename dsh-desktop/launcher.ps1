@@ -27,9 +27,17 @@ param(
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 
-# ---- 启动画面：独立进程（splash.ps1 -Run），自己计时推进，并在桌面窗口出现或启动器退出后收尾 ----
+# ---- 启动画面：只在「本次真的要开一个新窗口」时才显示 ----
+# 程序已经在运行时，双击启动器只是把旧窗口唤到前台（DSH Desktop.exe 会以退出码 42 短路），
+# 没有任何启动等待，所以不显示启动画面。
+$desktopWindowOpen = $false
+try {
+    foreach ($p in @(Get-Process -Name "DSH Desktop" -ErrorAction SilentlyContinue)) {
+        if ($p.MainWindowHandle -ne 0) { $desktopWindowOpen = $true; break }
+    }
+} catch { }
 $splashScript = Join-Path $root "splash.ps1"
-if ((Test-Path $splashScript) -and -not $env:DSH_DESKTOP_NO_SPLASH) {
+if ((Test-Path $splashScript) -and -not $desktopWindowOpen -and -not $env:DSH_DESKTOP_NO_SPLASH) {
     try {
         Start-Process -FilePath "powershell.exe" -WindowStyle Hidden -ArgumentList @(
             "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$splashScript`"", "-Run", "-ParentPid", "$PID"
