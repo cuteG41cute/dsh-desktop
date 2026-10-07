@@ -45,6 +45,18 @@ function New-SplashScreen {
         $gp.AddArc(0, 0, $r, $r, 180, 90); $gp.AddArc($wd - $r, 0, $r, $r, 270, 90)
         $gp.AddArc($wd - $r, $ht - $r, $r, $r, 0, 90); $gp.AddArc(0, $ht - $r, $r, $r, 90, 90)
         $gp.CloseFigure(); $form.Region = New-Object System.Drawing.Region($gp)
+        # 关键：双缓冲 + AllPaintingInWmPaint，否则每次重绘都会先擦背景再画，整幅画面闪一下
+        try {
+            $flags = [System.Reflection.BindingFlags]'Instance,NonPublic'
+            $dbProp = $form.GetType().GetProperty('DoubleBuffered', $flags)
+            if ($dbProp) { $dbProp.SetValue($form, $true) }
+            $setStyle = [System.Windows.Forms.Control].GetMethod('SetStyle', $flags)
+            if ($setStyle) {
+                $style = [System.Windows.Forms.ControlStyles]::AllPaintingInWmPaint -bor [System.Windows.Forms.ControlStyles]::OptimizedDoubleBuffer -bor [System.Windows.Forms.ControlStyles]::UserPaint
+                $setStyle.Invoke($form, @($style, $true)) | Out-Null
+            }
+            # UpdateStyles 是受保护方法，SetStyle 已即时生效，这里不需要再调用
+        } catch { }
         try {
             if (Test-Path $script:SplashExePath) {
                 $script:SplashIcon = [System.Drawing.Icon]::ExtractAssociatedIcon($script:SplashExePath)
@@ -148,6 +160,8 @@ if ($Run) {
     $script:SplashT0 = Get-Date
     $script:SplashTicks = 0
     $script:SplashClosing = $false
+    $script:SplashPaintedPct = -1
+    $script:SplashPaintedMsg = ""
     $timer = New-Object System.Windows.Forms.Timer
     $timer.Interval = 120
 
@@ -168,6 +182,7 @@ if ($Run) {
                 $script:SplashStatus = '启动完成'
                 $script:SplashClosing = $true
                 $timer.Stop()
+                $script:SplashPaintedPct = -1
                 $script:SplashForm.Invalidate(); $script:SplashForm.Update()
                 Start-Sleep -Milliseconds 420
                 $script:SplashForm.Close()
@@ -188,8 +203,15 @@ if ($Run) {
             $script:SplashForm.Close()
             return
         }
-        $script:SplashForm.Invalidate()
-        $script:SplashForm.Update()
+        if ($script:SplashPercent -ne $script:SplashPaintedPct -or $script:SplashStatus -ne $script:SplashPaintedMsg) {
+            $script:SplashPaintedPct = $script:SplashPercent
+            $script:SplashPaintedMsg = $script:SplashStatus
+            $script:SplashForm.Invalidate()
+            $script:SplashForm.Update()
+            if ($script:SplashDump) {
+                Add-Content -Path ($script:SplashDump + '.ticks.log') -Value ((Get-Date -Format 'HH:mm:ss.fff') + '  ' + [string]$script:SplashPercent + '%  ' + [string]$script:SplashStatus)
+            }
+        }
         if ($script:SplashDump) {
             $bmp = New-Object System.Drawing.Bitmap(560, 300)
             $script:SplashForm.DrawToBitmap($bmp, (New-Object System.Drawing.Rectangle(0, 0, 560, 300)))
