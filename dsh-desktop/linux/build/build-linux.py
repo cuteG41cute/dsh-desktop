@@ -27,7 +27,7 @@ SKEL = os.path.join(HERE, 'deb')              # deb 骨架
 STAGE = os.path.join(HERE, '.stage')          # 打包暂存
 ICONS = os.path.join(LINUX, 'icons', 'hicolor')
 
-VERSION = '1.2.2'
+VERSION = '1.2.3'
 DEB_NAME = f'dsh-desktop_{VERSION}_amd64.deb'
 TAR_NAME = f'dsh-desktop-linux-{VERSION}.tar.gz'
 
