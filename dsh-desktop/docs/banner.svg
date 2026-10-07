@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img"
+     aria-label="DeepSeek Harness 桌面版 —— 把 WebUI 变成真正的桌面应用"
+     font-family="'Microsoft YaHei','PingFang SC','Noto Sans CJK SC','Segoe UI',Roboto,sans-serif">
+  <title>DeepSeek Harness 桌面版</title>
+  <desc>把 DeepSeek Harness WebUI 变成原生桌面应用：无浏览器、无控制台，支持多会话分离窗口、自适应 MSI 安装、预览缩放平移，Windows 与 Linux 双平台，MIT 许可。</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1015"/>
+      <stop offset="0.55" stop-color="#101a22"/>
+      <stop offset="1" stop-color="#0c1f27"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#14b8a6"/>
+      <stop offset="1" stop-color="#4d6bfe"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.72" cy="0.34" r="0.58">
+      <stop offset="0" stop-color="#4d6bfe" stop-opacity="0.30"/>
+      <stop offset="0.55" stop-color="#14b8a6" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="win" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#131b24"/>
+      <stop offset="1" stop-color="#0e151d"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#glow)"/>
+  <g stroke="#1b2733" stroke-width="1" opacity="0.5">
+    <path d="M0 160 H1280 M0 320 H1280 M0 480 H1280"/>
+    <path d="M320 0 V640 M640 0 V640 M960 0 V640"/>
+  </g>
+
+  <!-- 左侧文案 -->
+  <g>
+    <rect x="72" y="58" width="212" height="32" rx="16" fill="#0f2030" stroke="#1f4d5c"/>
+    <circle cx="90" cy="74" r="4" fill="#14b8a6"/>
+    <text x="104" y="79" font-size="13" fill="#7fd6c8" letter-spacing="0.4">Windows · Linux · MIT</text>
+
+    <text x="72" y="156" font-size="46" font-weight="700" fill="#eaf2f8">DeepSeek Harness</text>
+    <text x="72" y="212" font-size="46" font-weight="700" fill="url(#accent)">桌面版</text>
+
+    <text x="72" y="256" font-size="17" fill="#93a3b3">把 WebUI 变成真正的桌面应用：无浏览器、无控制台，双击即用。</text>
+
+    <!-- 四条能力 -->
+    <g>
+      <rect x="72" y="292" width="34" height="34" rx="9" fill="#12202c" stroke="#1f4d5c"/>
+      <path d="M82 302 h14 v10 h-14 z" fill="none" stroke="#14b8a6" stroke-width="1.6"/>
+      <path d="M82 312 h-4 v-4" fill="none" stroke="#14b8a6" stroke-width="1.6"/>
+      <text x="122" y="308" font-size="16" font-weight="600" fill="#e6edf3">原生窗口</text>
+      <text x="122" y="330" font-size="13.5" fill="#8b99a8">基于 WebView2（Windows）／ GTK+WebKitGTK（Linux），独立窗口、无地址栏</text>
+
+      <rect x="72" y="354" width="34" height="34" rx="9" fill="#12202c" stroke="#1f4d5c"/>
+      <rect x="82" y="364" width="10" height="14" rx="2" fill="none" stroke="#4d6bfe" stroke-width="1.6"/>
+      <rect x="89" y="369" width="9" height="9" rx="2" fill="#4d6bfe" opacity="0.45"/>
+      <text x="122" y="370" font-size="16" font-weight="600" fill="#e6edf3">多会话分离</text>
+      <text x="122" y="392" font-size="13.5" fill="#8b99a8">把左侧会话拖出侧边栏（含拖出窗口外），立刻在新窗口里打开它</text>
+
+      <rect x="72" y="416" width="34" height="34" rx="9" fill="#12202c" stroke="#1f4d5c"/>
+      <circle cx="89" cy="433" r="8" fill="none" stroke="#14b8a6" stroke-width="1.6"/>
+      <path d="M89 428 v10 M86 433 h6" stroke="#14b8a6" stroke-width="1.6"/>
+      <text x="122" y="432" font-size="16" font-weight="600" fill="#e6edf3">预览可缩放</text>
+      <text x="122" y="454" font-size="13.5" fill="#8b99a8">右栏看图片 / PDF：滚轮缩放、左键拖动平移、滑动条加粗到 14px</text>
+
+      <rect x="72" y="478" width="34" height="34" rx="9" fill="#12202c" stroke="#1f4d5c"/>
+      <path d="M82 490 h16 v12 h-16 z" fill="none" stroke="#4d6bfe" stroke-width="1.6"/>
+      <path d="M89 486 v6 M89 502 v-6" stroke="#4d6bfe" stroke-width="1.6"/>
+      <text x="122" y="494" font-size="16" font-weight="600" fill="#e6edf3">自适应安装</text>
+      <text x="122" y="516" font-size="13.5" fill="#8b99a8">MSI 安装向导自动检测 dsh，可一键帮装或手动指定路径；旧版直接覆盖升级</text>
+    </g>
+
+    <text x="72" y="582" font-size="14" fill="#6ea8ff">github.com/cuteG41cute/dsh-desktop</text>
+    <text x="368" y="582" font-size="14" fill="#5f6b78">·  v1.2.2  ·  MIT License</text>
+  </g>
+
+  <!-- 右侧：应用窗口示意 -->
+  <g>
+    <!-- 分离出来的新窗口（先画，压在主窗口之下） -->
+    <g>
+      <rect x="1006" y="392" width="252" height="180" rx="10" fill="#141d27" stroke="#33424f" stroke-width="1.2"/>
+      <path d="M1006 402 a10 10 0 0 1 10 -10 h232 a10 10 0 0 1 10 10 v20 h-252 z" fill="#16202b"/>
+      <g fill="#3c4753">
+        <circle cx="1022" cy="407" r="3.4"/><circle cx="1032" cy="407" r="3.4"/><circle cx="1042" cy="407" r="3.4"/>
+      </g>
+      <rect x="1178" y="401" width="64" height="12" rx="6" fill="#1d3a4a"/>
+      <text x="1210" y="411" font-size="9.5" fill="#7fd6c8" text-anchor="middle">新窗口</text>
+      <g fill="#26333f">
+        <rect x="1022" y="436" width="164" height="12" rx="6"/>
+        <rect x="1022" y="458" width="204" height="12" rx="6"/>
+        <rect x="1022" y="480" width="140" height="12" rx="6"/>
+        <rect x="1022" y="502" width="188" height="12" rx="6"/>
+        <rect x="1022" y="524" width="112" height="12" rx="6"/>
+      </g>
+      <rect x="1022" y="546" width="220" height="12" rx="6" fill="none" stroke="#223041"/>
+    </g>
+
+    <!-- 主窗口 -->
+    <g>
+      <rect x="682" y="112" width="540" height="376" rx="12" fill="#000000" opacity="0.35"/>
+      <rect x="676" y="104" width="540" height="376" rx="12" fill="url(#win)" stroke="#2b3a49"/>
+      <!-- 标题栏 -->
+      <path d="M676 116 a12 12 0 0 1 12 -12 h516 a12 12 0 0 1 12 12 v22 h-540 z" fill="#16202b"/>
+      <g fill="#3c4753">
+        <circle cx="696" cy="121" r="4"/><circle cx="710" cy="121" r="4"/><circle cx="724" cy="121" r="4"/>
+      </g>
+      <text x="946" y="126" font-size="11" fill="#7f8c99" text-anchor="middle">DeepSeek Harness</text>
+      <!-- 侧边栏 -->
+      <path d="M676 138 h148 v330 a12 12 0 0 1 -12 12 h-136 z" fill="#0d141c"/>
+      <g>
+        <rect x="690" y="156" width="120" height="26" rx="7" fill="#131c26"/>
+        <rect x="690" y="192" width="120" height="26" rx="7" fill="#1b2a44"/>
+        <rect x="688" y="192" width="3" height="26" rx="1.5" fill="#4d6bfe"/>
+        <rect x="690" y="228" width="120" height="26" rx="7" fill="#131c26"/>
+        <rect x="690" y="264" width="120" height="26" rx="7" fill="#131c26"/>
+        <rect x="690" y="300" width="120" height="26" rx="7" fill="#131c26"/>
+      </g>
+      <g fill="#243140">
+        <rect x="700" y="164" width="72" height="10" rx="5"/>
+        <rect x="700" y="200" width="86" height="10" rx="5" fill="#37507a"/>
+        <rect x="700" y="236" width="62" height="10" rx="5"/>
+        <rect x="700" y="272" width="80" height="10" rx="5"/>
+        <rect x="700" y="308" width="54" height="10" rx="5"/>
+      </g>
+      <!-- 对话区 -->
+      <rect x="1000" y="156" width="200" height="34" rx="9" fill="#1e2a3a"/>
+      <g fill="#33506f">
+        <rect x="1012" y="166" width="132" height="8" rx="4"/>
+        <rect x="1012" y="178" width="96" height="8" rx="4"/>
+      </g>
+      <rect x="844" y="206" width="356" height="64" rx="9" fill="#141d27" stroke="#223041"/>
+      <g fill="#2b3a4b">
+        <rect x="858" y="220" width="300" height="8" rx="4"/>
+        <rect x="858" y="236" width="330" height="8" rx="4"/>
+        <rect x="858" y="252" width="212" height="8" rx="4"/>
+      </g>
+      <rect x="844" y="284" width="356" height="58" rx="9" fill="#0b1118" stroke="#1b2733"/>
+      <g fill="#2f4a63">
+        <rect x="858" y="298" width="180" height="7" rx="3.5"/>
+        <rect x="858" y="312" width="248" height="7" rx="3.5" fill="#3d5f45"/>
+        <rect x="858" y="326" width="140" height="7" rx="3.5"/>
+      </g>
+      <rect x="844" y="356" width="268" height="40" rx="9" fill="#141d27" stroke="#223041"/>
+      <g fill="#2b3a4b">
+        <rect x="858" y="368" width="228" height="8" rx="4"/>
+        <rect x="858" y="382" width="160" height="8" rx="4"/>
+      </g>
+      <!-- 输入区 -->
+      <rect x="844" y="428" width="356" height="36" rx="9" fill="#0f171f" stroke="#223041"/>
+      <rect x="858" y="440" width="150" height="8" rx="4" fill="#243140"/>
+      <rect x="1160" y="436" width="30" height="20" rx="7" fill="url(#accent)" opacity="0.85"/>
+    </g>
+
+    <!-- 说明标注 -->
+    <path d="M812 322 C 900 372, 950 396, 1006 430" fill="none" stroke="#4d6bfe" stroke-width="1.6" stroke-dasharray="6 5" opacity="0.8"/>
+    <circle cx="812" cy="322" r="3" fill="#4d6bfe"/>
+    <text x="676" y="524" font-size="13.5" fill="#7fb0ff">拖出侧边栏 → 立刻分离成新窗口</text>
+    <text x="676" y="548" font-size="12.5" fill="#5f6b78">同一个实例、同一批会话；关窗即退出，服务随之停止</text>
+  </g>
+</svg>

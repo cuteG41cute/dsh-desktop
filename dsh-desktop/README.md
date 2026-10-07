@@ -1,5 +1,7 @@
 # DeepSeek Harness 桌面版
 
+![DeepSeek Harness 桌面版](docs/banner.png)
+
 > 把 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 WebUI 变成真正的桌面应用程序：
 > 无浏览器、无控制台，双击即用，支持多会话分离窗口、系统托盘、自适应安装包（MSI）。
 
@@ -281,3 +283,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File make-icon.ps1 -Source <新PN
   彻底退出请用托盘右键菜单的「退出」。
 - **双击了很多次只有两个窗口？** 单实例模式下重复启动只会唤起现有窗口；若仍出现多个窗口，
   说明有旧版本进程残留，可在任务管理器中结束所有 `DSH Desktop.exe` 后重试。
+---
+
+## 宣传图
+
+![DeepSeek Harness 桌面版 宣传图](docs/banner.png)
+
+| 文件 | 说明 |
+| --- | --- |
+| `docs/banner.svg` | 矢量源文件（1280×640，纯 SVG：无脚本、无外链字体、无位图依赖，可直接改文案重新导出） |
+| `docs/banner.png` | 渲染成品（1280×640，正好也是 GitHub 社交预览图的标准尺寸） |
+
+> 想换文案或配色：改 `docs/banner.svg` 后重新导出 PNG 即可（任何浏览器打开 SVG → 截图，或 `rsvg-convert`／Inkscape）。
+> 建议同时把 `docs/banner.png` 上传到 **仓库 Settings → Social preview**，这样链接分享出去时的卡片就是这张图。
