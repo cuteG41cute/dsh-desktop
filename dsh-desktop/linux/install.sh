@@ -37,7 +37,7 @@ ln -sf "$DEST/dsh-desktop" "$BIN/dsh-desktop"
 cat > "$APP/dsh-desktop.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Version=1.2.6
+Version=1.2.7
 Name=DeepSeek Harness
 Name[zh_CN]=DeepSeek Harness 桌面版
 GenericName=DeepSeek Harness Desktop
