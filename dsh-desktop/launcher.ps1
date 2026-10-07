@@ -27,6 +27,16 @@ param(
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 
+# ---- 启动画面：独立进程（splash.ps1 -Run），自己计时推进，并在桌面窗口出现或启动器退出后收尾 ----
+$splashScript = Join-Path $root "splash.ps1"
+if ((Test-Path $splashScript) -and -not $env:DSH_DESKTOP_NO_SPLASH) {
+    try {
+        Start-Process -FilePath "powershell.exe" -WindowStyle Hidden -ArgumentList @(
+            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$splashScript`"", "-Run", "-ParentPid", "$PID"
+        ) | Out-Null
+    } catch { }
+}
+
 function Write-Log {
     param([string]$Message)
     Write-Host ("[{0}] {1}" -f (Get-Date -Format "HH:mm:ss"), $Message)

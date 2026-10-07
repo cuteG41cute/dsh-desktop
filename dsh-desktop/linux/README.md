@@ -11,7 +11,7 @@
 ### 方式一：deb 安装包（推荐，deepin 可直接双击）
 
 ```bash
-sudo apt install ./dsh-desktop_1.2.3_amd64.deb
+sudo apt install ./dsh-desktop_1.2.4_amd64.deb
 ```
 
 安装后：
@@ -22,7 +22,7 @@ sudo apt install ./dsh-desktop_1.2.3_amd64.deb
 ### 方式二：通用 tarball（免 root，任意发行版）
 
 ```bash
-tar xzf dsh-desktop-linux-1.2.3.tar.gz
+tar xzf dsh-desktop-linux-1.2.4.tar.gz
 cd dsh-desktop-linux
 ./install.sh          # 安装到 ~/.local/share/dsh-desktop
 dsh-desktop           # 启动（或从应用菜单打开）

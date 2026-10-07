@@ -93,6 +93,7 @@ $rootPayload = @{
     "启动 DeepSeek Harness.vbs"       = (Join-Path $devRoot "启动 DeepSeek Harness.vbs")
     "Start DeepSeek Harness.vbs"    = (Join-Path $devRoot "Start DeepSeek Harness.vbs")
     "README.md"                     = (Join-Path $here "payload\README.md")
+    "splash.ps1"                    = (Join-Path $devRoot "splash.ps1")
 }
 foreach ($name in $rootPayload.Keys) {
     $src = $rootPayload[$name]

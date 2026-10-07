@@ -14,10 +14,10 @@
     - 直接【下一步】跳过：安装后 launcher 启动时自动扫描
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package ProductCode="{A8568624-AAD5-434E-8E80-3581F6A40ED5}"
+  <Package ProductCode="{D58ECFEA-5608-4108-83F5-E934218AE9F9}"
            Name="DeepSeek Harness 桌面版"
            Manufacturer="DeepSeek Harness"
-           Version="1.2.3"
+           Version="1.2.4"
            Language="2052"
            UpgradeCode="C3F0AF3F-FCB6-430D-B94E-D78230482689"
            Scope="perUser"
@@ -81,6 +81,9 @@
       </Component>
       <Component Directory="INSTALLDIR">
         <File Source="files\README.md" KeyPath="yes" />
+      </Component>
+      <Component Directory="INSTALLDIR">
+        <File Source="files\splash.ps1" KeyPath="yes" />
       </Component>
       <Component Directory="DesktopSub">
         <File Source="files\dsh-desktop\DSH Desktop.exe" KeyPath="yes" />

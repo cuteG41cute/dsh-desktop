@@ -211,6 +211,7 @@ function Install-DesktopApp {
     Copy-Item -Path (Join-Path $sourceRoot "launcher.ps1") -Destination $installDir -Force
     Copy-Item -Path (Join-Path $sourceRoot "启动 DeepSeek Harness.vbs") -Destination $installDir -Force
     Copy-Item -Path (Join-Path $sourceRoot "Start DeepSeek Harness.vbs") -Destination $installDir -Force
+    Copy-Item -Path (Join-Path $sourceRoot "splash.ps1") -Destination $installDir -Force
 
     # 2) 复制 WebView2 桌面程序（安装到 dsh-desktop\ 子目录，与 MSI 安装布局一致）
     #    来源：开发/免安装目录里包装程序与启动器同目录；若存在旧的分层结构则取其子目录。
