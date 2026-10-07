@@ -282,6 +282,14 @@ if (-not $running) {
     try {
         $uri = [System.Uri]$Url
         if ($uri.Port -gt 0 -and $uri.Port -ne 80) { $serverArgs += @("--port", "$($uri.Port)") }
+        # 手机/平板局域网接入（dsh-mobile-bridge）：把手机侧看到的来源登记进 /api 的 Host/Origin 信任栅栏。
+        # 每个网卡 IP + 桥端口；桥端口可用 $env:DSH_BRIDGE_PORT 覆盖（默认 8099）。
+        $bridgePort = if ($env:DSH_BRIDGE_PORT) { [int]$env:DSH_BRIDGE_PORT } else { 8099 }
+        foreach ($addr in [System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName())) {
+            if ($addr.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork -and -not [System.Net.IPAddress]::IsLoopback($addr)) {
+                $serverArgs += @("--trusted-host", ("{0}:{1}" -f $addr.IPAddressToString, $bridgePort))
+            }
+        }
     } catch { }
     $proc = Start-Process -FilePath $node `
         -ArgumentList $serverArgs `
@@ -347,6 +355,41 @@ if ($authCookie) {
     Write-Log "已获取认证 URL，窗口将自动完成 Web 认证。"
 } else {
     Write-Log "未取得认证凭据；若窗口显示认证提示，请用 dsh web 打印的带 token 地址打开一次。"
+}
+
+# 桌面窗口优先走本机桥（dsh-mobile-bridge, 默认 8099）：
+#   「设置 → 手机端」（二维码 + 设备管理）是桥注入的客户端插件，直连 3080 的窗口看不到它；
+#   桥自己会给页面签发认证 cookie，所以走桥时不需要上面的凭据。
+#   桥没在跑就照旧直连，窗口一定能打开（桥是可选增强，不是硬依赖）。
+#   但桥要往 __DSH_BOOT__ 里插条目 —— DSH 换版本若改了清单结构，插错一步就是白屏，
+#   而白屏的恰好是这个窗口（唯一还能改设置的地方）。所以先让桥自检：/__selftest 会
+#   真的向上游取一次首页、把注入管线完整跑一遍。自检不过就退回官方端口，窗口一定开得出来
+#   （代价只是没有「手机端」面板，手机侧功能不受影响）。
+#   想强制直连：设环境变量 DSH_DESKTOP_DIRECT=1。
+$bridgeBase = "http://127.0.0.1:8099/"
+$bridgeUsable = $false
+if ($env:DSH_DESKTOP_DIRECT -eq "1") {
+    Write-Log "按 DSH_DESKTOP_DIRECT=1 强制直连官方端口（不会有「手机端」面板）。"
+} else {
+    try {
+        $probe = Invoke-WebRequest -Uri ($bridgeBase + "__selftest") -UseBasicParsing -TimeoutSec 8
+        if ($probe.StatusCode -eq 200) {
+            $self = $probe.Content | ConvertFrom-Json
+            $bridgeUsable = [bool]$self.ok
+            if ($bridgeUsable) {
+                Write-Log "桥自检通过：面板注入=$($self.panel) 移动端适配=$($self.tweaks) 按设备隔离=$($self.describe) — $($self.note)"
+            } else {
+                Write-Log "桥自检未通过（$($self.note)）→ 桌面窗口直连官方端口，避免白屏；手机侧不受影响。"
+            }
+        }
+    } catch {
+        $bridgeUsable = $false
+    }
+}
+if ($bridgeUsable) {
+    $windowUrl = $bridgeBase
+    $browserUrl = $bridgeBase
+    Write-Log "桌面窗口走本机桥: $bridgeBase （设置里会有「手机端」面板）"
 }
 
 if (Test-Path $exe) {

@@ -1,5 +1,5 @@
 Package: dsh-desktop
-Version: 1.2.1
+Version: 1.2.2
 Section: utils
 Priority: optional
 Architecture: amd64

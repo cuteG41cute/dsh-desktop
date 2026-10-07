@@ -9,6 +9,7 @@
 - 🖥️ **多会话分离**：把左侧会话拖出侧边栏即弹出新窗口，同时查看多个会话；
 - 🗂️ **单实例 + 托盘**：重复启动只唤起现有窗口；点 X 最小化到托盘，托盘菜单退出；
 - 📦 **自适应安装**：MSI 安装向导自动检测本机 DeepSeek Harness，未安装时可一键帮助安装或手动指定路径；
+- 🔍 **预览可缩放**：右栏看图片/PDF 时滚轮缩放、左键拖动平移，滑动条加粗到 14px（详见下文「右侧栏预览」）；
 - 🔌 **完全离线可用**：除首次安装 dsh 外不依赖网络。
 
 ---
@@ -42,20 +43,41 @@
 
 ---
 
+## 右侧栏预览：缩放 / 平移 / 滑动条（Windows 桌面版）
+
+产品自带的文件预览把图片、PDF 按**原始尺寸**放进右栏（`width:max-content` 的 frame + `overflow:auto` 的文档体），
+而右栏通常只有 600px 上下 —— 一张 1373×3051 的手机长截图只能看到一角，而且没有缩放。桌面窗口的注入脚本
+（`App.cs` 里的 `PreviewToolsScript()`）在这个视口上补了四件事：
+
+| 操作 | 行为 |
+| --- | --- |
+| **滚轮** | 以光标为锚点缩放（15%–800%），缩放时右上角短暂显示百分比 |
+| **左键拖动** | 平移（图片 / PDF；文本预览保留原生选字） |
+| **滑动条** | 右栏右侧与底部从产品的 8px 细条加粗到 **14px**，可直接拖动定位 |
+| **双击** | 适宽 ↔ 1:1（100%）切换 |
+| Shift+滚轮 | 水平滚动（保留浏览器习惯） |
+| Ctrl+滚轮（文本 / 代码） | 缩放文本；**文本预览里普通滚轮仍是滚动**，不影响阅读与选字 |
+
+首次打开预览会浮出一条一次性提示（`滚轮缩放 · 拖动平移 · 双击适宽`）。
+
+> 实现要点：脚本在 `document-start` 注入，所以会等 DOM 就绪后再挂载，并每 700ms 扫描一次以适配预览标签的
+> 创建/切换；图片与 PDF 是「滚轮即缩放」，文本/代码是「Ctrl+滚轮缩放」，避免把长文本的常规滚动抢掉。
+> 这套只在桌面窗口（WebView2）里生效，浏览器里打开同一个页面不受影响。
+
 ## Linux 版（deepin / Ubuntu / Debian）
 
 Windows 版的完整功能已移植到 Linux（GTK + WebKitGTK 原生窗口）：
 
 - 源码与说明：`linux/` 目录（`dsh-desktop` 启动器 + `dsh-desktop.py` 窗口 + `install.sh` 免 root 安装）；
-- 安装包：Release 附件中的 `dsh-desktop_1.2.1_amd64.deb`（apt 安装）与 `dsh-desktop-linux-1.2.1.tar.gz`（免 root）；
+- 安装包：Release 附件中的 `dsh-desktop_1.2.2_amd64.deb`（apt 安装）与 `dsh-desktop-linux-1.2.2.tar.gz`（免 root）；
 - 功能对照与已知差异见 `linux/README.md`，真机验证步骤见 `linux/测试指南.md`；
 - 打包脚本：`linux/build/build-linux.py`（产出到 `dist\`，Windows/Linux 都能跑）；
 - 已修复：软链启动路径、Deepin 密钥环弹窗（ephemeral WebContext）。
 
 ## MSI 安装包（推荐分发方式）
 
-**`dist\DeepSeek Harness 桌面版 1.2.1.msi`**（文件名带版本号；安装向导欢迎页亦显示版本，旧版本双击新包即自动升级） 是标准 Windows 安装程序（per-user 安装，无需管理员权限）。
-> Release 附件中的同一个安装包写作 ASCII 名 **`DeepSeek-Harness-Desktop-1.2.1.msi`**（GitHub 会改写含中文/空格的附件名）。
+**`dist\DeepSeek Harness 桌面版 1.2.2.msi`**（文件名带版本号；安装向导欢迎页亦显示版本，旧版本双击新包即自动升级） 是标准 Windows 安装程序（per-user 安装，无需管理员权限）。
+> Release 附件中的同一个安装包写作 ASCII 名 **`DeepSeek-Harness-Desktop-1.2.2.msi`**（GitHub 会改写含中文/空格的附件名）。
 双击即进入**安装向导**：
 
 1. **欢迎** → **选择安装目录**（默认 `%LOCALAPPDATA%\Programs\DSH Desktop\`）；
