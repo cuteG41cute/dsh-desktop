@@ -647,6 +647,128 @@ namespace DshDesktop
 
 
         // ------------------------------------------------------------------
+        // Top-bar loading ring
+        // ------------------------------------------------------------------
+        // The WebUI shell renders before sessions and plugins arrive, so the
+        // window looks ready while nothing is clickable yet. This shows a small
+        // progress ring at the top-right (where the header buttons sit) and
+        // drives it from observable signals: document ready, boot manifest,
+        // WebSocket connected, composer rendered, then it fades out.
+        private static string _loadRingScript;
+        private static string LoadRingScript()
+        {
+            if (_loadRingScript != null) return _loadRingScript;
+            _loadRingScript = @"
+// 顶栏环形加载进度：窗口打开后、应用真正可交互之前显示，加载完成自动淡出。
+// 进度由可观测信号驱动：文档就绪 → boot 清单 → WebSocket 建连 → 外壳渲染 → 数据到达。
+(function () {
+  if (window.__dshLoadRing) return;
+  window.__dshLoadRing = true;
+
+  var MIN_MS = 700, MAX_MS = 25000, FADE_MS = 320;
+  var t0 = Date.now(), wsTried = 0, wsOpen = 0, done = false;
+
+  // 在 document-start 抢先包住 WebSocket，用来判断""数据通道是否已连上""
+  try {
+    var OrigWS = window.WebSocket;
+    if (OrigWS && !OrigWS.__dshWrapped) {
+      var Wrapped = function (url, protocols) {
+        wsTried++;
+        var sock = protocols === undefined ? new OrigWS(url) : new OrigWS(url, protocols);
+        try { sock.addEventListener('open', function () { wsOpen++; }); } catch (e) {}
+        return sock;
+      };
+      Wrapped.prototype = OrigWS.prototype;
+      Wrapped.__dshWrapped = true;
+      ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function (k) { try { Wrapped[k] = OrigWS[k]; } catch (e) {} });
+      window.WebSocket = Wrapped;
+    }
+  } catch (e) {}
+
+  var STYLE_ID = 'dsh-ring-style', BOX_ID = 'dsh-ring', R = 9, C = 2 * Math.PI * R;
+
+  function build() {
+    if (!document.head || document.getElementById(BOX_ID)) return;
+    var st = document.createElement('style');
+    st.id = STYLE_ID;
+    st.textContent =
+      '#' + BOX_ID + '{position:fixed;top:9px;right:11px;width:26px;height:26px;z-index:2147483000;' +
+      'pointer-events:none;opacity:1;transition:opacity ' + FADE_MS + 'ms linear;display:block}' +
+      '#' + BOX_ID + ' svg{display:block;transform:rotate(-90deg)}' +
+      '#' + BOX_ID + ' .dsh-ring-track{stroke:rgba(120,140,165,.28)}' +
+      '#' + BOX_ID + ' .dsh-ring-arc{stroke:#3b5bfd;stroke-linecap:round;transition:stroke-dashoffset 180ms linear}' +
+      '#' + BOX_ID + '.dsh-ring-out{opacity:0}';
+    document.head.appendChild(st);
+
+    var box = document.createElement('div');
+    box.id = BOX_ID;
+    box.setAttribute('aria-hidden', 'true');
+    var NS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('width', '26'); svg.setAttribute('height', '26');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    var cx = 12, cy = 12;
+    var track = document.createElementNS(NS, 'circle');
+    track.setAttribute('class', 'dsh-ring-track');
+    track.setAttribute('cx', cx); track.setAttribute('cy', cy); track.setAttribute('r', R);
+    track.setAttribute('fill', 'none'); track.setAttribute('stroke-width', '2.4');
+    var arc = document.createElementNS(NS, 'circle');
+    arc.setAttribute('class', 'dsh-ring-arc');
+    arc.setAttribute('cx', cx); arc.setAttribute('cy', cy); arc.setAttribute('r', R);
+    arc.setAttribute('fill', 'none'); arc.setAttribute('stroke-width', '2.4');
+    arc.setAttribute('stroke-dasharray', C.toFixed(2));
+    arc.setAttribute('stroke-dashoffset', C.toFixed(2));
+    svg.appendChild(track); svg.appendChild(arc); box.appendChild(svg);
+    document.body.appendChild(box);
+    return { box: box, arc: arc };
+  }
+
+  var ui = null, shown = 0;
+
+  function target() {
+    var p = 6;
+    var rs = document.readyState;
+    if (rs === 'interactive' || rs === 'complete') p = 16;
+    if (rs === 'complete') p = 24;
+    if (window.__DSH_BOOT__) p = 34;
+    if (wsTried) p = 46;
+    if (wsOpen) p = 60;
+    var shell = document.querySelector('textarea, [contenteditable=""true""], [class*=""composer""], [class*=""Composer""]');
+    if (shell) p = 76;
+    var rows = document.querySelectorAll('[role=""treeitem""], [class*=""sessionRow""], [class*=""SessionRow""]');
+    if (rows.length > 0) p = 92;
+    return { p: p, ready: (wsOpen > 0 && !!shell && (Date.now() - t0) > MIN_MS) || (Date.now() - t0) > MAX_MS };
+  }
+
+  function tick() {
+    if (done) return;
+    if (!ui) ui = build();
+    var t = target();
+    var goal = t.ready ? 100 : t.p;
+    shown = Math.max(shown, Math.min(goal, shown + 6));   // 只前进、平滑逼近
+    if (ui) ui.arc.setAttribute('stroke-dashoffset', (C * (1 - shown / 100)).toFixed(2));
+    if (shown >= 100) {
+      done = true;
+      if (ui) {
+        ui.box.classList.add('dsh-ring-out');
+        setTimeout(function () { try { ui.box.remove(); var s = document.getElementById(STYLE_ID); if (s) s.remove(); } catch (e) {} }, FADE_MS + 60);
+      }
+      return;
+    }
+    setTimeout(tick, 130);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { setTimeout(tick, 60); });
+  } else {
+    setTimeout(tick, 60);
+  }
+})();
+";
+            return _loadRingScript;
+        }
+
+        // ------------------------------------------------------------------
         // Right-sidebar file preview: wheel zoom, drag pan, thicker scrollbars
         // ------------------------------------------------------------------
         // The product renders a document preview inside a scrolling body and
@@ -951,6 +1073,7 @@ namespace DshDesktop
                 // Inject the session-detach script before the first navigation.
                 await _web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(InjectScript());
                 await _web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(PreviewToolsScript());
+                await _web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(LoadRingScript());
 
                 _web.CoreWebView2.WebMessageReceived += OnWebMessage;
                 _web.CoreWebView2.NewWindowRequested += (s, e2) =>
