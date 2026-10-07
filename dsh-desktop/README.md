@@ -62,8 +62,20 @@
 
 首次打开预览会浮出一条一次性提示（`滚轮缩放 · 拖动平移 · 双击适宽`）。
 
-> 实现要点：脚本在 `document-start` 注入，所以会等 DOM 就绪后再挂载，并每 700ms 扫描一次以适配预览标签的
-> 创建/切换；图片与 PDF 是「滚轮即缩放」，文本/代码是「Ctrl+滚轮缩放」，避免把长文本的常规滚动抢掉。
+### 生效范围：只在右侧栏里（v1.2.6 起）
+
+这套增强**只作用于右侧栏的文档/图片预览视口**（`[data-sidebar-right-panel]` 内的 `[data-textpreview-body]`）：
+
+- 对话区、左侧会话列表、输入框等**其它任何滚动容器都不会被加粗、也不会被接管滚轮**，
+  产品原生的 8px 滑动条与滚动行为保持原样；
+- **右侧栏一收起（或预览标签关闭），注入的类、事件监听与缩放立即全部撤销**：滑动条回到产品原生样式，
+  滚轮 / 拖动 / 双击也恢复原生行为，不留残留；
+- 判定以「右栏面板的几何可见性」为准（收起时 dsh 会把面板 `aria-hidden` 并整体移出窗口右侧，
+  grid 列归零），不依赖易变的 CSS 类名，dsh 小版本升级也不容易失效。
+
+> 实现要点：脚本在 `document-start` 注入，等 DOM 就绪后再挂载，并每 500ms 校验一次作用范围
+> （预览标签的创建/切换、右栏的收展都会在下一次校验时生效）；图片与 PDF 是「滚轮即缩放」，
+> 文本/代码是「Ctrl+滚轮缩放」，避免把长文本的常规滚动抢掉。
 > 这套只在桌面窗口（WebView2）里生效，浏览器里打开同一个页面不受影响。
 
 ## Linux 版（deepin / Ubuntu / Debian）
@@ -71,15 +83,15 @@
 Windows 版的完整功能已移植到 Linux（GTK + WebKitGTK 原生窗口）：
 
 - 源码与说明：`linux/` 目录（`dsh-desktop` 启动器 + `dsh-desktop.py` 窗口 + `install.sh` 免 root 安装）；
-- 安装包：Release 附件中的 `dsh-desktop_1.2.5_amd64.deb`（apt 安装）与 `dsh-desktop-linux-1.2.5.tar.gz`（免 root）；
+- 安装包：Release 附件中的 `dsh-desktop_1.2.6_amd64.deb`（apt 安装）与 `dsh-desktop-linux-1.2.6.tar.gz`（免 root）；
 - 功能对照与已知差异见 `linux/README.md`，真机验证步骤见 `linux/测试指南.md`；
 - 打包脚本：`linux/build/build-linux.py`（产出到 `dist\`，Windows/Linux 都能跑）；
 - 已修复：软链启动路径、Deepin 密钥环弹窗（ephemeral WebContext）。
 
 ## MSI 安装包（推荐分发方式）
 
-**`dist\DeepSeek Harness 桌面版 1.2.5.msi`**（文件名带版本号；安装向导欢迎页亦显示版本，旧版本双击新包即自动升级） 是标准 Windows 安装程序（per-user 安装，无需管理员权限）。
-> Release 附件中的同一个安装包写作 ASCII 名 **`DeepSeek-Harness-Desktop-1.2.5.msi`**（GitHub 会改写含中文/空格的附件名）。
+**`dist\DeepSeek Harness 桌面版 1.2.6.msi`**（文件名带版本号；安装向导欢迎页亦显示版本，旧版本双击新包即自动升级） 是标准 Windows 安装程序（per-user 安装，无需管理员权限）。
+> Release 附件中的同一个安装包写作 ASCII 名 **`DeepSeek-Harness-Desktop-1.2.6.msi`**（GitHub 会改写含中文/空格的附件名）。
 双击即进入**安装向导**：
 
 1. **欢迎** → **选择安装目录**（默认 `%LOCALAPPDATA%\Programs\DSH Desktop\`）；

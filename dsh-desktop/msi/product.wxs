@@ -14,10 +14,10 @@
     - 直接【下一步】跳过：安装后 launcher 启动时自动扫描
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package ProductCode="{A1509F46-AFC3-4775-A344-9DA513A6959B}"
+  <Package ProductCode="{228451C8-C541-4236-BBAC-8521D817399A}"
            Name="DeepSeek Harness 桌面版"
            Manufacturer="DeepSeek Harness"
-           Version="1.2.5"
+           Version="1.2.6"
            Language="2052"
            UpgradeCode="C3F0AF3F-FCB6-430D-B94E-D78230482689"
            Scope="perUser"
