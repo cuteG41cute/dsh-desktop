@@ -404,3 +404,5 @@ export class CleanerService extends Service {
     }
   }
 }
+
+export default CleanerService
