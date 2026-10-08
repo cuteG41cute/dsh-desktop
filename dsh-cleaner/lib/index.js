@@ -145,7 +145,7 @@ export class CleanerService extends Service {
   sessionDirs(sessionId) {
     const root = this.sessionsRoot()
     const found = []
-    if (!existsSync(root)) return found
+    if (!sessionId || !existsSync(root)) return found
     for (const wsDir of readdirSync(root, { withFileTypes: true })) {
       if (!wsDir.isDirectory()) continue
       const candidate = join(root, wsDir.name, sessionId)
@@ -468,7 +468,7 @@ export class CleanerService extends Service {
     const projectPath = handle.path
     this.assertProjectPathSafe(projectPath)
 
-    const recordsDirName = this.recordsDirNameOf(sessionIds[0]) || null
+    const recordsDirName = sessionIds.length > 0 ? (this.recordsDirNameOf(sessionIds[0]) || null) : null
     const title = handle.title || basename(projectPath)
     const { name, entryDir } = this.newRecycleEntry(`workspace_${title}`)
 
