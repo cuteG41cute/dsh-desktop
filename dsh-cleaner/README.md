@@ -28,6 +28,8 @@ dsh 原生没有删除会话/工作区的入口，本插件在 dsh 进程内补�
 
 设置导航那一行的图标也是页面层换的：DSH 的 `navIcon()` 按分区 id 硬编码（只有 `models` / `agent-presets` / `plugins` 有专属图形，**其余一律齿轮**），而 `slots.register` 只收 `id/order/label` —— 所以定位到标题为「清理与回收站」的那一行（`svg[class*="navIcon"]`），把 svg 内容换成与行菜单**同一份**垃圾桶图形。用 `stroke="currentColor"`，深浅色主题与选中态自动跟随文字颜色，和相邻图标观感一致（实测与相邻齿轮的 computed color 在浅色 `rgb(15,17,21)`、深色 `rgb(249,250,251)` 下都相同；与期望图形的像素 IoU = 1.00，与原齿轮 0.19）。类名是 CSS Module 哈希（如 `VOzbGW_navIcon`），所以按 `[class*="navIcon"]` + 行文字匹配，不写死哈希。
 
+宿主方法版本差异由客户端兜底：按标题删工作区先试 `delete-workspace-by-title`，若宿主回 `unknown-method:`（旧版本，或进程还没重启、仍跑着旧宿主代码）就退回 `list` 取 id → `delete-workspace(id)`，两条路最终做的是同一件事（同名工作区时报错拒绝，绝不猜）。这样"页面刷新即可用"不会被宿主是否需要重启卡住。
+
 ## 回收条目长这样
 
 ```

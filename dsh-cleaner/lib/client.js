@@ -343,6 +343,24 @@ window.__ModuleLoader__.load({
       return wrap;
     }
 
+    // 按标题删工作区：宿主新版本有 delete-workspace-by-title 一步到位；
+    // 老版本（或还没重启、仍跑着旧宿主代码的进程）会回 unknown-method ——
+    // 这时退回「list 拿 id → delete-workspace(id)」，两条路最终做的是同一件事。
+    function deleteWorkspaceByTitle(title) {
+      return rpc('delete-workspace-by-title', { title: title }).then((res) => {
+        if (res && res.ok) return res;
+        const reason = String((res && res.reason) || '');
+        if (reason.indexOf('unknown-method') !== 0) return res;
+        return rpc('list', {}).then((l) => {
+          const all = (l && l.workspaces) || [];
+          const hits = all.filter((w) => w && w.title === title);
+          if (hits.length === 0) return { ok: false, reason: '找不到标题为「' + title + '」的工作区' };
+          if (hits.length > 1) return { ok: false, reason: '有多个同名工作区「' + title + '」，请在「清理与回收站」里按路径确认后再删' };
+          return rpc('delete-workspace', { workspaceId: hits[0].id });
+        });
+      });
+    }
+
     function decorateMenus() {
       for (const menu of document.querySelectorAll('[role="menu"]')) {
         if (menu.getAttribute('data-dsh-cleaner') === '1') continue;
@@ -388,7 +406,7 @@ window.__ModuleLoader__.load({
                 '回收条目里会写好「恢复说明.md」与「恢复.ps1」，随时可以还原。',
                 '移入回收站',
                 () => {
-                  rpc('delete-workspace-by-title', { title: who.title }).then((res) => {
+                  deleteWorkspaceByTitle(who.title).then((res) => {
                     if (res && res.ok) { alertBox('已移入回收站：\n' + (res.recycleEntry || '')); return; }
                     alertBox('删除失败：' + ((res && res.reason) || '未知错误'));
                   });
