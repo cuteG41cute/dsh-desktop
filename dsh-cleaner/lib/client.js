@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
       }).then((r) => r.json()).catch((e) => ({ ok: false, reason: String(e && e.message !== undefined ? e.message : e) }));
     }
 
-    const inject = ['slots'];
+    const inject = [];
 
     const chipStyle = {
       display: 'inline-flex',
@@ -168,7 +168,7 @@ window.__ModuleLoader__.load({
       overlay.append(busy);
 
       let trashEntries = [];
-      rpc('recycle-list', {}).then((r) => { if (r && r.ok) trashEntries = r.entries || []; });
+      rpc('recycle-list', {}).then((r) => { if (r && r.ok) { trashEntries = r.entries || []; if (r.bin) cachedBin = r.bin; } });
 
       rpc('list', {}).then((r) => {
         if (!overlay.isConnected) return;
@@ -333,34 +333,91 @@ window.__ModuleLoader__.load({
       });
     }
 
-    // ── header chip ──
-    function CleanerChip() {
-      return react.createElement('button', {
-        onClick: togglePanel,
-        title: '清理：删除会话与工作区（工作区=项目文件夹连同会话记录一起搬进 DSH Recycle Bin，可还原）',
-        style: chipStyle,
-      }, [
-        react.createElement('span', { key: 't' }, '清理'),
-      ]);
-    }
-
-    // ── 会话行 ⋯ 菜单装饰器：把「从列表移除」加进产品自己的菜单 ──
+    // ── 行 ⋯ 菜单装饰器 ──
     // 菜单是挂在 body 上的 portal，与行没有 DOM 连接；身份线索 = ⋯ 按钮的
-    // aria-label「会话“<标题>”的操作」，所在分组标题（工作区）用于消歧。
-    const TRIGGER_RE = /^会话[“"](.+?)[”"]的操作$/;
-    let lastTrigger = null;
+    // aria-label（会话“<标题>”的操作 / 工作区“<标题>”的操作）。
+    const TRASH_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+      '<path d="M2.6 4.4h10.8M6.2 4.4V3.2c0-.5.4-.9.9-.9h1.8c.5 0 .9.4.9.9v1.2M4.1 4.4l.5 8.2c0 .6.5 1.1 1.1 1.1h4.6c.6 0 1.1-.5 1.1-1.1l.5-8.2" ' +
+      'stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M6.6 6.9v4.1M9.4 6.9v4.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+    const DANGER = 'var(--dsw-alias-state-error-primary,#d92d20)';
+    let cachedBin = '';
+    const SESSION_TRIGGER_RE = /^会话[“"](.+?)[”"]的操作$/;
+    const WORKSPACE_TRIGGER_RE = /^工作区[“"](.+?)[”"]的操作$/;
+    let lastSessionTrigger = null;
+    let lastWorkspaceTrigger = null;
 
     function rememberTrigger(ev) {
       const t = ev.target;
       if (!t || typeof t.closest !== 'function') return;
       const btn = t.closest('button[aria-label]');
       if (!btn) return;
-      const m = TRIGGER_RE.exec(btn.getAttribute('aria-label') || '');
-      if (!m) return;
-      const row = btn.closest('[role="treeitem"]');
-      const group = row && typeof row.closest === 'function' ? row.closest('div[class*="groupSection"]') : null;
-      const groupTitle = group ? String(group.innerText || '').split('\n')[0].trim() : '';
-      lastTrigger = { title: m[1].trim(), workspaceTitle: groupTitle, at: Date.now() };
+      const label = btn.getAttribute('aria-label') || '';
+      let m = SESSION_TRIGGER_RE.exec(label);
+      if (m) {
+        const row = btn.closest('[role="treeitem"]');
+        const group = row && typeof row.closest === 'function' ? row.closest('div[class*="groupSection"]') : null;
+        const groupTitle = group ? String(group.innerText || '').split('\n')[0].trim() : '';
+        lastSessionTrigger = { title: m[1].trim(), workspaceTitle: groupTitle, at: Date.now() };
+        return;
+      }
+      m = WORKSPACE_TRIGGER_RE.exec(label);
+      if (m) lastWorkspaceTrigger = { title: m[1].trim(), at: Date.now() };
+    }
+
+    function closeMenus() {
+      try {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+      } catch (e) { /* ignore */ }
+    }
+
+    /** 用产品自己的菜单条目做模板，克隆出一个同款条目（含 danger 红色与垃圾桶图标）。 */
+    function makeItem(templateBtn, label, opts) {
+      const wrap = templateBtn.parentElement.cloneNode(true);
+      const btn = wrap.querySelector('button[role="menuitem"]') || wrap;
+      const labelEl = btn.querySelector('span[class*="itemLabel"]') || btn;
+      labelEl.textContent = label;
+      const iconEl = btn.querySelector('span[class*="itemIcon"]');
+      if (iconEl) iconEl.innerHTML = TRASH_SVG;
+      btn.style.color = DANGER;
+      if (opts && opts.onClick) btn.addEventListener('click', opts.onClick, true);
+      return wrap;
+    }
+
+    /** 面内确认框（不依赖 window.confirm，WebView 里更稳）。 */
+    function confirmBox(title, detail, okLabel, onOk) {
+      const box = document.createElement('div');
+      box.style.cssText = 'position:fixed;inset:0;z-index:2147483001;display:flex;align-items:center;justify-content:center;' +
+        'background:rgba(0,0,0,0.35);';
+      const card = document.createElement('div');
+      card.style.cssText = 'width:min(460px,calc(100vw - 32px));padding:16px 18px;border-radius:12px;' +
+        'background:var(--dsw-alias-surface-primary,#fff);color:var(--dsw-alias-label-primary,#222);' +
+        'border:1px solid var(--dsw-alias-divider,rgba(128,128,128,0.35));box-shadow:0 16px 40px rgba(0,0,0,0.25);' +
+        'font:13px/1.7 var(--dsh-font-family,inherit);';
+      const h = document.createElement('div');
+      h.textContent = title;
+      h.style.cssText = 'font-weight:600;margin-bottom:6px;';
+      const d = document.createElement('div');
+      d.textContent = detail;
+      d.style.cssText = 'opacity:0.8;white-space:pre-wrap;margin-bottom:14px;';
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+      const cancel = document.createElement('button');
+      cancel.textContent = '取消';
+      const ok = document.createElement('button');
+      ok.textContent = okLabel || '确定';
+      for (const [b, danger] of [[cancel, false], [ok, true]]) {
+        b.style.cssText = 'padding:5px 14px;border-radius:8px;border:1px solid var(--dsw-alias-divider,rgba(128,128,128,0.35));' +
+          'background:transparent;color:' + (danger ? DANGER : 'inherit') + ';font:inherit;cursor:pointer;';
+      }
+      const close = () => box.remove();
+      cancel.addEventListener('click', close);
+      ok.addEventListener('click', () => { close(); onOk(); });
+      box.addEventListener('click', (e) => { if (e.target === box) close(); });
+      row.append(cancel, ok);
+      card.append(h, d, row);
+      box.append(card);
+      document.body.appendChild(box);
     }
 
     function decorateMenus() {
@@ -368,47 +425,73 @@ window.__ModuleLoader__.load({
       for (const menu of menus) {
         if (menu.getAttribute('data-dsh-cleaner') === '1') continue;
         const items = [...menu.querySelectorAll('button[role="menuitem"]')];
+        if (items.length === 0) continue;
         const labels = items.map((b) => (b.innerText || '').trim());
-        const isSessionMenu = labels.some((l) => l === '重命名') &&
-          labels.some((l) => /分叉|归档/.test(l));
-        if (!isSessionMenu || items.length === 0) continue;
-        if (items.some((b) => (b.innerText || '').trim() === '从列表移除')) { menu.setAttribute('data-dsh-cleaner', '1'); continue; }
-        const template = items[items.length - 1];
-        const wrap = template.parentElement && template.parentElement.cloneNode(true);
-        if (!wrap) continue;
-        const btn = wrap.querySelector('button[role="menuitem"]') || wrap;
-        const labelEl = btn.querySelector('span[class*="itemLabel"]') || btn;
-        labelEl.textContent = '从列表移除';
-        const iconEl = btn.querySelector('span[class*="itemIcon"]');
-        if (iconEl) {
-          iconEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-            '<circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.3"/>' +
-            '<path d="M5.2 8h5.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
-        }
-        btn.addEventListener('click', (ev) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          const who = lastTrigger && Date.now() - lastTrigger.at < 120000 ? lastTrigger : null;
-          if (!who) { alert('无法确定是哪个会话：请重新点开该会话行的 ⋯ 菜单。'); return; }
-          rpc('detach-title', { title: who.title, workspaceTitle: who.workspaceTitle }).then((res) => {
-            closeMenus();
-            if (res && res.ok) {
-              refreshPanel();
-              return;
-            }
-            alert('移除失败：' + ((res && res.reason) || '未知错误'));
-          });
-        }, true);
+        const isSessionMenu = labels.includes('重命名') && labels.some((l) => /分叉|归档/.test(l));
+        const isWorkspaceMenu = labels.includes('重命名') && labels.includes('删除工作区');
+        if (!isSessionMenu && !isWorkspaceMenu) continue;
         menu.setAttribute('data-dsh-cleaner', '1');
-        if (template.parentElement) template.parentElement.parentElement.appendChild(wrap);
-        else menu.appendChild(wrap);
-      }
-    }
 
-    function closeMenus() {
-      try {
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
-      } catch (e) { /* ignore */ }
+        if (isSessionMenu && !labels.includes('从列表移除')) {
+          const template = items[items.length - 1];
+          const wrap = makeItem(template, '从列表移除', {
+            onClick: (ev) => {
+              ev.preventDefault(); ev.stopPropagation();
+              const who = lastSessionTrigger && Date.now() - lastSessionTrigger.at < 120000 ? lastSessionTrigger : null;
+              if (!who) { alert('无法确定是哪个会话：请重新点开该会话行的 ⋯ 菜单。'); return; }
+              closeMenus();
+              rpc('detach-title', { title: who.title, workspaceTitle: who.workspaceTitle }).then((res) => {
+                if (res && res.ok) { refreshPanel(); return; }
+                alert('移除失败：' + ((res && res.reason) || '未知错误'));
+              });
+            },
+          });
+          template.parentElement.parentElement.appendChild(wrap);
+        }
+
+        if (isWorkspaceMenu) {
+          const native = items.find((b) => (b.innerText || '').trim() === '删除工作区');
+          if (native && native.getAttribute('data-dsh-cleaner-hooked') !== '1') {
+            native.setAttribute('data-dsh-cleaner-hooked', '1');
+            native.addEventListener('click', (ev) => {
+              ev.preventDefault(); ev.stopPropagation();
+              const who = lastWorkspaceTrigger && Date.now() - lastWorkspaceTrigger.at < 120000 ? lastWorkspaceTrigger : null;
+              if (!who) { alert('无法确定是哪个工作区：请重新点开该工作区行的 ⋯ 菜单。'); return; }
+              closeMenus();
+              confirmBox(
+                '删除工作区「' + who.title + '」',
+                '将把整个项目文件夹（含里面所有文件，原样不改）连同它的会话记录一起移入：\n' +
+                (cachedBin || 'C:\\Users\\<你>\\Documents\\DSH Recycle Bin') + '\n\n' +
+                '回收条目里会写好「恢复说明.md」与「恢复.ps1」，随时可以还原。',
+                '移入回收站',
+                () => {
+                  rpc('delete-workspace-by-title', { title: who.title }).then((res) => {
+                    if (res && res.ok) { refreshPanel(); return; }
+                    alert('删除失败：' + ((res && res.reason) || '未知错误'));
+                  });
+                },
+              );
+            }, true);
+          }
+          if (!labels.includes('清理与回收站…')) {
+            const template = items[items.length - 1];
+            const wrap = makeItem(template, '清理与回收站…', {
+              onClick: (ev) => {
+                ev.preventDefault(); ev.stopPropagation();
+                closeMenus();
+                togglePanel();
+              },
+            });
+            const btn = wrap.querySelector('button[role="menuitem"]') || wrap;
+            btn.style.color = 'inherit';
+            const iconEl = btn.querySelector('span[class*="itemIcon"]');
+            if (iconEl) iconEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+              '<path d="M3 6h10v6.2c0 .7-.6 1.3-1.3 1.3H4.3c-.7 0-1.3-.6-1.3-1.3V6Z" stroke="currentColor" stroke-width="1.3"/>' +
+              '<path d="M2.2 3.6h11.6M6.2 3.6V2.8c0-.4.3-.8.8-.8h2c.4 0 .8.3.8.8v.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+            template.parentElement.parentElement.appendChild(wrap);
+          }
+        }
+      }
     }
 
     let menuObserver = null;
@@ -427,14 +510,10 @@ window.__ModuleLoader__.load({
     }
 
     // ── plugin body ──
+    // 不再往会话头部加「清理」芯片：删除会话在工作区/会话行的 ⋯ 菜单里，
+    // 面板（工作区删除结果、已移除记录、回收站）从工作区菜单的「清理与回收站…」打开。
     function apply(ctx) {
       installMenuDecorator(ctx);
-      const slots = ctx.get('slots');
-      if (slots === undefined) return;
-      slots.inject('conversation.session.header.utilities', () => slots.register(
-        { name: 'conversation.session.header.utilities', id: 'dsh-cleaner-chip', order: 22 },
-        (props) => CleanerChip(props),
-      ));
     }
 
     exports.apply = apply;

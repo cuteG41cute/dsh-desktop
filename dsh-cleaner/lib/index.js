@@ -580,6 +580,23 @@ export class CleanerService extends Service {
     throw new Error(`没有工作区能重新接纳这个会话（记录里的 cwd 与登记的工作区路径都对不上）：${errors.slice(0, 3).join(' / ')}`)
   }
 
+  /** 按标题删工作区（供工作区行 ⋯ 菜单里被接管的「删除工作区」使用）。 */
+  async deleteWorkspaceByTitle(title) {
+    const want = String(title || '').trim()
+    if (want === '') throw new Error('缺少工作区标题')
+    const hits = []
+    for (const w of this.ctx.workspaceRegistry.list()) {
+      const id = String(w.id)
+      let handle = null
+      try { handle = this.ctx.workspaceRegistry.get(id) } catch { }
+      const t = String((handle && handle.title) || w.title || '').trim()
+      if (t === want || id === want) hits.push(id)
+    }
+    if (hits.length === 0) throw new Error(`找不到标题为「${want}」的工作区（可能已被删除）`)
+    if (hits.length > 1) throw new Error(`有 ${hits.length} 个同名工作区「${want}」，无法确定是哪一个`)
+    return await this.deleteWorkspace(hits[0])
+  }
+
   async deleteOrphan(sessionId) {
     sessionId = String(sessionId)
     this.assertNotOpen(sessionId)
@@ -787,6 +804,8 @@ export class CleanerService extends Service {
         return await this.attachSession(args.sessionId)
       case 'delete-workspace':
         return await this.deleteWorkspace(args.workspaceId)
+      case 'delete-workspace-by-title':
+        return await this.deleteWorkspaceByTitle(args.title)
       case 'delete-orphan':
         return await this.deleteOrphan(args.sessionId)
       case 'recycle-list':
