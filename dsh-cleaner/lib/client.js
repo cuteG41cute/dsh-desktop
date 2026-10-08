@@ -160,7 +160,7 @@ window.__ModuleLoader__.load({
       close.addEventListener('click', closePanel);
       head.append(title, refresh, close);
       overlay.append(head);
-      overlay.append(panelNote('删除 = 移入 ~/.dsh/trash/session-cleaner（可恢复）。正在打开的会话会被拒绝。', null));
+      overlay.append(panelNote('删除 = 搬家，不是销毁：「删除工作区」会把整个项目文件夹（含全部文件，原样未改）连同会话记录一起移入 DSH Recycle Bin，并在里面写好恢复说明与恢复脚本；「删除」会话只移动那条会话记录。正在打开的会话会被拒绝。', null));
 
       const busy = document.createElement('div');
       busy.textContent = '读取中…';
@@ -168,7 +168,7 @@ window.__ModuleLoader__.load({
       overlay.append(busy);
 
       let trashEntries = [];
-      rpc('trash-list', {}).then((r) => { if (r && r.ok) trashEntries = r.entries || []; });
+      rpc('recycle-list', {}).then((r) => { if (r && r.ok) trashEntries = r.entries || []; });
 
       rpc('list', {}).then((r) => {
         if (!overlay.isConnected) return;
@@ -191,12 +191,19 @@ window.__ModuleLoader__.load({
           head.style.cssText = 'display:flex;align-items:center;gap:8px;';
           head.append(rowLabel(
             ws.title || '(未命名工作区)',
-            `${ws.sessions.length} 个会话 · ${fmtBytes(ws.bytes)} · ${ws.path || ''}`,
+            `${ws.sessions.length} 个会话 · 记录 ${fmtBytes(ws.bytes)}` +
+            (typeof ws.projectBytes === 'number' ? ` · 项目 ${fmtBytes(ws.projectBytes)}` : '') +
+            ` · ${ws.path || ''}`,
           ));
           if (ws.sessions.length > 0 || true) {
-            head.append(dangerButton('删除工作区', () => {
+            head.append(dangerButton('删除工作区（含项目）', () => {
               return rpc('delete-workspace', { workspaceId: ws.id }).then((res) => {
-                if (res && res.ok) { refreshPanel(); return; }
+                if (res && res.ok) {
+                  alert('已搬入回收站：\n' + (res.recycleEntry || '') + '\n' + (res.recycleBin || '') +
+                    '\n\n项目文件夹与会话记录原样保留，可按里面的「恢复说明.md」还原。');
+                  refreshPanel();
+                  return;
+                }
                 alert('删除失败：' + ((res && res.reason) || '未知错误'));
                 refreshPanel();
               });
@@ -257,15 +264,21 @@ window.__ModuleLoader__.load({
           const details = document.createElement('details');
           details.style.cssText = 'margin-top:10px;';
           const summary = document.createElement('summary');
-          summary.textContent = `回收目录（${trashEntries.length} 条，可恢复）`;
+          summary.textContent = `DSH Recycle Bin（${trashEntries.length} 条，可还原）`;
           summary.style.cssText = 'cursor:pointer;font-size:12px;opacity:0.8;';
           details.append(summary);
+          const KIND_LABEL = { workspace: '工作区（含项目文件夹）', session: '会话记录', orphan: '孤儿会话记录' };
           for (const t of trashEntries) {
             const row = document.createElement('div');
             row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:3px 0;';
-            row.append(rowLabel(t.sessionId, [fmtBytes(t.bytes), t.when ? t.when.slice(0, 19).replace('T', ' ') : null].filter(Boolean).join(' · ')));
+            const kind = KIND_LABEL[t.kind] || '回收条目';
+            row.append(rowLabel(
+              `${kind} · ${t.title || t.sessionId}`,
+              [fmtBytes(t.bytes), t.when ? t.when.slice(0, 19).replace('T', ' ') : null,
+                t.projectPath || null].filter(Boolean).join(' · '),
+            ));
             const btn = document.createElement('button');
-            btn.textContent = '恢复';
+            btn.textContent = t.kind === 'workspace' ? '还原项目' : '恢复';
             btn.style.cssText = 'padding:2px 8px;border-radius:6px;border:1px solid var(--dsw-alias-divider,rgba(128,128,128,0.35));background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap;';
             btn.addEventListener('click', () => {
               btn.disabled = true;
@@ -290,7 +303,7 @@ window.__ModuleLoader__.load({
     function CleanerChip() {
       return react.createElement('button', {
         onClick: togglePanel,
-        title: '清理：删除会话与工作区（移入可恢复的回收目录）',
+        title: '清理：删除会话与工作区（工作区=项目文件夹连同会话记录一起搬进 DSH Recycle Bin，可还原）',
         style: chipStyle,
       }, [
         react.createElement('span', { key: 't' }, '清理'),
