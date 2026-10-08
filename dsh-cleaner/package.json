@@ -1,0 +1,38 @@
+{
+  "name": "dsh-cleaner",
+  "version": "1.0.0",
+  "description": "DeepSeek Harness static plugin: delete sessions and workspaces (product-native registry detach/delete + file move to a restorable trash) with a header-chip management panel. Composition-loaded, survives restarts.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  },
+  "files": [
+    "lib"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "plugin",
+    "session",
+    "workspace",
+    "delete"
+  ],
+  "license": "MIT",
+  "author": "cuteG41cute",
+  "dependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}
