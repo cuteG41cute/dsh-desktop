@@ -283,10 +283,13 @@ window.__ModuleLoader__.load({
     // ── 行 ⋯ 菜单装饰器 ──
     // 菜单是挂在 body 上的 portal，与行没有 DOM 连接；身份线索 = ⋯ 按钮的
     // aria-label（会话“<标题>”的操作 / 工作区“<标题>”的操作）。
-    const TRASH_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+    // 垃圾桶图形（行菜单与设置导航共用同一份，保证「之前那个垃圾桶」处处一致）
+    const TRASH_GLYPH = '<g fill="none">' +
       '<path d="M2.6 4.4h10.8M6.2 4.4V3.2c0-.5.4-.9.9-.9h1.8c.5 0 .9.4.9.9v1.2M4.1 4.4l.5 8.2c0 .6.5 1.1 1.1 1.1h4.6c.6 0 1.1-.5 1.1-1.1l.5-8.2" ' +
       'stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
-      '<path d="M6.6 6.9v4.1M9.4 6.9v4.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+      '<path d="M6.6 6.9v4.1M9.4 6.9v4.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></g>';
+    const TRASH_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+      TRASH_GLYPH + '</svg>';
     const DANGER = 'var(--dsw-alias-state-error-primary,#d92d20)';
     const SESSION_TRIGGER_RE = /^会话[“"](.+?)[”"]的操作$/;
     const WORKSPACE_TRIGGER_RE = /^工作区[“"](.+?)[”"]的操作$/;
@@ -397,13 +400,38 @@ window.__ModuleLoader__.load({
       }
     }
 
+    // ── 设置导航里「清理与回收站」那一行的图标 ──
+    // DSH 的导航图标按分区 id 硬编码（只有 models / agent-presets / plugins 有专属图形，
+    // 其余一律齿轮），而 slots.register 只收 id/order/label，给不了自定义图标。
+    // 所以在页面里把这一行的 svg 内容换成垃圾桶：stroke 走 currentColor，
+    // 深浅色主题、选中/未选中态都自动跟随文字颜色（与相邻图标观感一致）。
+    const NAV_LABEL = '清理与回收站';
+    function markCleanerNavIcon() {
+      const icons = document.querySelectorAll('svg[class*="navIcon"]');
+      for (const svg of icons) {
+        if (svg.getAttribute('data-dshcl-navicon') === '1') continue;
+        let holder = svg.parentElement;
+        let text = '';
+        for (let i = 0; i < 3 && holder; i++) {
+          text = String(holder.textContent || '').trim();
+          if (text) break;
+          holder = holder.parentElement;
+        }
+        if (text !== NAV_LABEL) continue;
+        svg.setAttribute('data-dshcl-navicon', '1');
+        svg.setAttribute('viewBox', '0 0 16 16');
+        svg.setAttribute('fill', 'none');
+        svg.innerHTML = TRASH_GLYPH;
+      }
+    }
+
     let menuObserver = null;
-    function installMenuDecorator(ctx) {
+    function installDecorators(ctx) {
       document.addEventListener('pointerdown', rememberTrigger, true);
       document.addEventListener('click', rememberTrigger, true);
-      menuObserver = new MutationObserver(() => decorateMenus());
+      menuObserver = new MutationObserver(() => { decorateMenus(); markCleanerNavIcon(); });
       menuObserver.observe(document.body, { childList: true, subtree: true });
-      const timer = setInterval(decorateMenus, 800);
+      const timer = setInterval(() => { decorateMenus(); markCleanerNavIcon(); }, 800);
       ctx.effect(() => () => {
         document.removeEventListener('pointerdown', rememberTrigger, true);
         document.removeEventListener('click', rememberTrigger, true);
@@ -415,7 +443,8 @@ window.__ModuleLoader__.load({
     // ── plugin body ──
     function apply(ctx) {
       installStyles();
-      installMenuDecorator(ctx);
+      installDecorators(ctx);
+      markCleanerNavIcon();
       rpc('list', {}).then((r) => { if (r && r.ok && r.recycleBin) lastBinPath = r.recycleBin; });
       const slots = ctx.get('slots');
       if (slots === undefined) return;
