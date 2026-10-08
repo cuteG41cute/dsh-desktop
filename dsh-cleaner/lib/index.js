@@ -381,9 +381,11 @@ export class CleanerService extends Service {
         projectBytes,
       })
     }
-    // 孤儿：sessions/ 下存在目录、但不在任何工作区登记里的会话。
+    // 未登记在册的目录：`session-*` 是"已从列表移除、记录仍保留"的会话记录；
+    // 其余（多为 api-* / od-* 残留）算孤儿。
     const seenOrphans = new Set()
     const orphans = []
+    const detached = []
     const root = this.sessionsRoot()
     if (existsSync(root)) {
       for (const wsDir of readdirSync(root, { withFileTypes: true })) {
@@ -394,11 +396,13 @@ export class CleanerService extends Service {
           const name = entry.name
           if (accounted.has(name) || seenOrphans.has(name)) continue
           seenOrphans.add(name)
-          orphans.push(this.sessionView(name, proj, archivedSet))
+          const view = this.sessionView(name, proj, archivedSet)
+          if (name.startsWith('session-')) detached.push(view)
+          else orphans.push(view)
         }
       }
     }
-    return { workspaces, orphans }
+    return { workspaces, orphans, detached }
   }
 
   /** 找到登记了某会话的工作区（返回 handle 或 null）。 */
@@ -419,39 +423,28 @@ export class CleanerService extends Service {
     return null
   }
 
+  /**
+   * 删除会话 = 仅解除 dsh 与该会话记录的关联（从会话列表里消失）。
+   * 磁盘上的任何真实文件都不动：会话记录目录原地保留。
+   * 需要连记录一起清掉时，面板「已从列表移除（记录仍保留）」里可以显式移入回收站。
+   */
   async deleteSession(sessionId) {
     sessionId = String(sessionId)
     if (sessionId === '') throw new Error('缺少 sessionId')
     this.assertNotOpen(sessionId)
     const handle = this.ownerHandleOf(sessionId)
-    let detached = false
-    if (handle) {
-      await handle.detachSession(sessionId)   // 产品原生：走 storage 写链并广播变更
-      detached = true
+    if (!handle) {
+      throw new Error('这个会话不在任何工作区登记里：它已从列表移除（记录仍保留），可在「已从列表移除」一栏把它移入回收站')
     }
-    const dirs = this.sessionDirs(sessionId)
-    if (dirs.length === 0 && !detached) throw new Error(`磁盘上找不到会话「${sessionId}」的目录`)
-    const recordsDirName = this.recordsDirNameOf(sessionId)
-    const moved = []
-    for (const dir of dirs) {
-      const { name, entryDir } = this.newRecycleEntry(`session_${sessionId}`)
-      const payload = join(entryDir, basename(dir))
-      moveDir(dir, payload)
-      const manifest = {
-        kind: 'session',
-        sessionId,
-        workspaceId: handle ? String(handle.id) : null,
-        recordsDirName,
-        dirName: basename(dir),
-        fromDir: dirname(dir),
-        when: new Date().toISOString(),
-      }
-      writeFileSync(join(entryDir, 'manifest.json'), JSON.stringify(manifest, null, 2))
-      this.writeRestoreGuide(entryDir, manifest)
-      this.writeRestoreScript(entryDir, { ...manifest, sessionIds: [sessionId] })
-      moved.push({ name, bytes: this.dirStats(entryDir).bytes })
+    await handle.detachSession(sessionId)   // 产品原生：只摘登记，走 storage 写链并广播变更
+    return {
+      ok: true,
+      detached: true,
+      filesUntouched: true,
+      moved: [],
+      freed: 0,
+      note: '仅解除关联：会话记录仍原样保留在磁盘上',
     }
-    return { ok: true, detached, moved, freed: moved.reduce((sum, m) => sum + (m.bytes || 0), 0) }
   }
 
   /**

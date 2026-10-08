@@ -90,8 +90,8 @@ window.__ModuleLoader__.load({
       return div;
     }
 
-    /** 两步确认按钮：第一下变「确认删除？」，3 秒内再点才执行。 */
-    function dangerButton(label, onConfirm) {
+    /** 两步确认按钮：第一下变「确认…？」，3 秒内再点才执行。 */
+    function dangerButton(label, onConfirm, armedLabel, busyLabel) {
       const btn = document.createElement('button');
       btn.textContent = label;
       btn.style.cssText = 'padding:2px 8px;border-radius:6px;border:1px solid var(--dsw-alias-divider,rgba(128,128,128,0.35));' +
@@ -101,7 +101,7 @@ window.__ModuleLoader__.load({
       btn.addEventListener('click', () => {
         if (!armed) {
           armed = true;
-          btn.textContent = '确认删除？';
+          btn.textContent = armedLabel || '确认删除？';
           btn.style.color = 'var(--dsw-alias-state-error-primary,#d92d20)';
           btn.style.borderColor = 'var(--dsw-alias-state-error-primary,#d92d20)';
           clearTimeout(timer);
@@ -115,7 +115,7 @@ window.__ModuleLoader__.load({
         }
         clearTimeout(timer);
         btn.disabled = true;
-        btn.textContent = '删除中…';
+        btn.textContent = busyLabel || '删除中…';
         onConfirm().finally(() => { btn.disabled = false; });
       });
       return btn;
@@ -160,7 +160,7 @@ window.__ModuleLoader__.load({
       close.addEventListener('click', closePanel);
       head.append(title, refresh, close);
       overlay.append(head);
-      overlay.append(panelNote('删除 = 搬家，不是销毁：「删除工作区」会把整个项目文件夹（含全部文件，原样未改）连同会话记录一起移入 DSH Recycle Bin，并在里面写好恢复说明与恢复脚本；「删除」会话只移动那条会话记录。正在打开的会话会被拒绝。', null));
+      overlay.append(panelNote('删除工作区 = 把整个项目文件夹（含全部文件，原样未改）连同它的会话记录一起搬进 DSH Recycle Bin，并写好恢复说明与恢复脚本。删除会话 = 只解除它与 dsh 的关联（会话列表里消失），磁盘上任何文件都不动。正在打开的会话会被拒绝。', null));
 
       const busy = document.createElement('div');
       busy.textContent = '读取中…';
@@ -179,9 +179,11 @@ window.__ModuleLoader__.load({
         }
         const workspaces = r.workspaces || [];
         const orphans = r.orphans || [];
+        const detached = r.detached || [];
         const totalBytes = workspaces.reduce((s, w) => s + (w.bytes || 0), 0);
         const totalSessions = workspaces.reduce((s, w) => s + w.sessions.length, 0);
         overlay.append(panelNote(`${workspaces.length} 个工作区 · ${totalSessions} 个会话 · 共 ${fmtBytes(totalBytes)}` +
+          (detached.length ? ` · 已移除 ${detached.length} 个（记录保留）` : '') +
           (orphans.length ? ` · 孤儿 ${orphans.length} 个` : ''), null));
 
         for (const ws of workspaces) {
@@ -223,13 +225,13 @@ window.__ModuleLoader__.load({
               sub + (tags.length ? ' · ' + tags.join('/') : ''),
             ));
             if (!s.open) {
-              row.append(dangerButton('删除', () => {
+              row.append(dangerButton('从列表移除', () => {
                 return rpc('delete-session', { sessionId: s.id }).then((res) => {
                   if (res && res.ok) { refreshPanel(); return; }
-                  alert('删除失败：' + ((res && res.reason) || '未知错误'));
+                  alert('移除失败：' + ((res && res.reason) || '未知错误'));
                   refreshPanel();
                 });
-              }));
+              }, '确认移除？', '移除中…'));
             } else {
               const tag = document.createElement('span');
               tag.textContent = '使用中';
@@ -241,6 +243,28 @@ window.__ModuleLoader__.load({
           overlay.append(group);
         }
 
+        if (detached.length > 0) {
+          overlay.append(sectionTitle('已从列表移除（记录仍原样保留在磁盘上，dsh 不再显示）'));
+          for (const d of detached) {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:3px 0;';
+            row.append(rowLabel(
+              d.title || d.id,
+              [fmtBytes(d.bytes), d.mtime ? fmtWhen(d.mtime) : null].filter(Boolean).join(' · '),
+            ));
+            if (!d.open) {
+              row.append(dangerButton('移入回收站', () => {
+                return rpc('delete-orphan', { sessionId: d.id }).then((res) => {
+                  if (res && res.ok) { refreshPanel(); return; }
+                  alert('操作失败：' + ((res && res.reason) || '未知错误'));
+                  refreshPanel();
+                });
+              }, '确认移入？', '搬运中…'));
+            }
+            overlay.append(row);
+          }
+        }
+
         if (orphans.length > 0) {
           overlay.append(sectionTitle('孤儿会话（不在任何工作区登记里，多为接口任务残留）'));
           for (const o of orphans) {
@@ -248,13 +272,13 @@ window.__ModuleLoader__.load({
             row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:3px 0;';
             row.append(rowLabel(o.id, [fmtBytes(o.bytes), o.mtime ? fmtWhen(o.mtime) : null].filter(Boolean).join(' · ')));
             if (!o.open) {
-              row.append(dangerButton('删除', () => {
+              row.append(dangerButton('移入回收站', () => {
                 return rpc('delete-orphan', { sessionId: o.id }).then((res) => {
                   if (res && res.ok) { refreshPanel(); return; }
-                  alert('删除失败：' + ((res && res.reason) || '未知错误'));
+                  alert('操作失败：' + ((res && res.reason) || '未知错误'));
                   refreshPanel();
                 });
-              }));
+              }, '确认移入？', '搬运中…'));
             }
             overlay.append(row);
           }
