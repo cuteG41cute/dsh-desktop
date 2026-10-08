@@ -1,12 +1,12 @@
 // dsh-cleaner — Client half (static / composition plugin)
 //
-// Browser bundle consumed by the client module loader (window.__ModuleLoader__).
-// Talks to the Host through the plugin's own JSON API on the webServer route
-// (POST /dsh-cleaner/api) via fetch. Adds a 「清理」 chip to the conversation
-// header; the chip opens a management panel listing every workspace with its
-// sessions (title / size / turns / last activity) plus orphan sessions and a
-// restorable trash. Deletions are two-step confirmed and move files into the
-// host-side trash, so the product sidebar updates itself via the registry feed.
+// 两件事：
+//  1. 设置里注册一个分区「清理与回收站」（和「手机端」同一个通道
+//     slots.register('settings.section', …)）——工作区删除、已移除记录、回收站都在这儿；
+//  2. 装饰产品自己的行 ⋯ 菜单：
+//     · 会话行 → 追加「从列表移除」（红色垃圾桶图标，只解除关联、不动文件）
+//     · 工作区行 → 接管原生「删除工作区」（原生的只摘登记、保留文件夹；
+//       现在改为确认后把项目文件夹与会话记录一起搬进 DSH Recycle Bin）
 window.__ModuleLoader__.load({
   id: 'dsh-cleaner',
   factory: (require) => {
@@ -24,25 +24,6 @@ window.__ModuleLoader__.load({
       }).then((r) => r.json()).catch((e) => ({ ok: false, reason: String(e && e.message !== undefined ? e.message : e) }));
     }
 
-    const inject = [];
-
-    const chipStyle = {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 6,
-      padding: '3px 10px',
-      borderRadius: 999,
-      border: '1px solid var(--dsw-alias-divider, rgba(128,128,128,0.35))',
-      background: 'transparent',
-      color: 'var(--dsw-alias-label-secondary, #8a8a8a)',
-      fontSize: 12,
-      lineHeight: '18px',
-      cursor: 'pointer',
-      fontFamily: 'inherit',
-      whiteSpace: 'nowrap',
-    };
-
-    // ── formatting helpers ──
     function fmtBytes(n) {
       if (typeof n !== 'number' || !(n >= 0)) return '—';
       if (n < 1024) return n + ' B';
@@ -56,281 +37,247 @@ window.__ModuleLoader__.load({
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
 
-    // ── panel (plain DOM overlay; data comes from the host API) ──
-    const PANEL_ID = 'dsh-cleaner-panel';
+    const inject = ['slots'];
 
-    function closePanel() {
-      const el = document.getElementById(PANEL_ID);
-      if (el) el.remove();
-    }
-    function togglePanel() {
-      if (document.getElementById(PANEL_ID)) { closePanel(); return; }
-      const overlay = document.createElement('div');
-      overlay.id = PANEL_ID;
-      Object.assign(overlay.style, {
-        position: 'fixed', top: '44px', right: '12px',
-        width: 'min(460px, calc(100vw - 16px))',
-        maxHeight: 'min(75vh, 720px)', overflow: 'auto',
-        zIndex: 2147483000, padding: '12px', borderRadius: '12px',
-        background: 'var(--dsw-alias-surface-primary, #fff)',
-        color: 'var(--dsw-alias-label-primary, #222)',
-        border: '1px solid var(--dsw-alias-divider, rgba(128,128,128,0.35))',
-        boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
-        font: '13px/1.6 var(--dsh-font-family, inherit)',
-      });
-      document.body.appendChild(overlay);
-      refreshPanel();
-    }
-
-    function panelNote(text, tone) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      div.style.cssText = 'margin:6px 0;font-size:12px;opacity:0.75;' +
-        (tone === 'error' ? 'color:var(--dsw-alias-state-error-primary,#d92d20);opacity:1;' : '');
-      return div;
+    // ── 样式（只装一次） ──
+    const STYLE_ID = 'dsh-cleaner-style';
+    function installStyles() {
+      if (document.getElementById(STYLE_ID)) return;
+      const style = document.createElement('style');
+      style.id = STYLE_ID;
+      style.textContent = [
+        '.dshcl-wrap{display:flex;flex-direction:column;gap:14px;padding:4px 2px 10px;color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px}',
+        '.dshcl-title{font-weight:600;font-size:15px}',
+        '.dshcl-muted{color:var(--dsw-alias-label-secondary,#666);font-size:12.5px;line-height:1.7}',
+        '.dshcl-card{border:1px solid var(--dsw-alias-border-l2,#00000014);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}',
+        '.dshcl-row{display:flex;align-items:center;gap:10px;min-width:0}',
+        '.dshcl-name{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}',
+        '.dshcl-name b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        '.dshcl-sub{font-size:11.5px;opacity:.65;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        '.dshcl-btn{padding:3px 10px;border-radius:7px;border:1px solid var(--dsw-alias-border-l2,#0000001f);background:transparent;color:inherit;font:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap}',
+        '.dshcl-btn:disabled{opacity:.5;cursor:default}',
+        '.dshcl-btn-danger{color:var(--dsw-alias-state-error-primary,#d92d20)}',
+        '.dshcl-head{display:flex;align-items:center;gap:10px}',
+        '.dshcl-head .dshcl-title{flex:1}',
+        '.dshcl-empty{font-size:12.5px;opacity:.6}',
+      ].join('\n');
+      document.head.appendChild(style);
     }
 
-    /** 两步确认按钮：第一下变「确认…？」，3 秒内再点才执行。 */
-    function dangerButton(label, onConfirm, armedLabel, busyLabel) {
-      const btn = document.createElement('button');
-      btn.textContent = label;
-      btn.style.cssText = 'padding:2px 8px;border-radius:6px;border:1px solid var(--dsw-alias-divider,rgba(128,128,128,0.35));' +
-        'background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap;';
-      let armed = false;
-      let timer = 0;
-      btn.addEventListener('click', () => {
-        if (!armed) {
-          armed = true;
-          btn.textContent = armedLabel || '确认删除？';
-          btn.style.color = 'var(--dsw-alias-state-error-primary,#d92d20)';
-          btn.style.borderColor = 'var(--dsw-alias-state-error-primary,#d92d20)';
-          clearTimeout(timer);
-          timer = setTimeout(() => {
-            armed = false;
-            btn.textContent = label;
-            btn.style.color = '';
-            btn.style.borderColor = '';
-          }, 3000);
-          return;
-        }
-        clearTimeout(timer);
-        btn.disabled = true;
-        btn.textContent = busyLabel || '删除中…';
-        onConfirm().finally(() => { btn.disabled = false; });
-      });
-      return btn;
+    // ── 面内确认框（不依赖 window.confirm） ──
+    function confirmBox(title, detail, okLabel, onOk) {
+      const box = document.createElement('div');
+      box.setAttribute('data-dsh-confirm', '1');
+      box.style.cssText = 'position:fixed;inset:0;z-index:2147483001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.35);';
+      const card = document.createElement('div');
+      card.style.cssText = 'width:min(460px,calc(100vw - 32px));padding:16px 18px;border-radius:12px;' +
+        'background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#222);' +
+        'border:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,0.35));box-shadow:0 16px 40px rgba(0,0,0,0.25);' +
+        'font:13px/1.7 var(--dsh-font-family,inherit);';
+      const h = document.createElement('div');
+      h.textContent = title;
+      h.style.cssText = 'font-weight:600;margin-bottom:6px;';
+      const d = document.createElement('div');
+      d.textContent = detail;
+      d.style.cssText = 'opacity:0.8;white-space:pre-wrap;margin-bottom:14px;';
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+      const cancel = document.createElement('button');
+      cancel.textContent = '取消';
+      const ok = document.createElement('button');
+      ok.textContent = okLabel || '确定';
+      for (const [b, danger] of [[cancel, false], [ok, true]]) {
+        b.style.cssText = 'padding:5px 14px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,0.35));' +
+          'background:transparent;color:' + (danger ? 'var(--dsw-alias-state-error-primary,#d92d20)' : 'inherit') + ';font:inherit;cursor:pointer;';
+      }
+      const close = () => box.remove();
+      cancel.addEventListener('click', close);
+      ok.addEventListener('click', () => { close(); onOk(); });
+      box.addEventListener('click', (e) => { if (e.target === box) close(); });
+      row.append(cancel, ok);
+      card.append(h, d, row);
+      box.append(card);
+      document.body.appendChild(box);
     }
 
-    function rowLabel(main, sub) {
-      const wrap = document.createElement('div');
-      wrap.style.cssText = 'min-width:0;display:flex;flex-direction:column;gap:1px;flex:1;';
-      const a = document.createElement('div');
-      a.textContent = main;
-      a.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-      const b = document.createElement('div');
-      b.textContent = sub;
-      b.style.cssText = 'font-size:11px;opacity:0.65;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-      wrap.append(a, b);
-      return wrap;
+    function alertBox(text) {
+      confirmBox('清理与回收站', text, '知道了', () => { });
     }
 
-    function sectionTitle(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      div.style.cssText = 'margin:10px 0 4px;font-weight:600;font-size:12px;opacity:0.8;';
-      return div;
-    }
+    // ── 设置分区：清理与回收站 ──
+    function CleanerSection() {
+      const [data, setData] = react.useState(null);
+      const [error, setError] = react.useState(null);
+      const [busy, setBusy] = react.useState('');
+      const [nonce, setNonce] = react.useState(0);
 
-    function refreshPanel() {
-      const overlay = document.getElementById(PANEL_ID);
-      if (!overlay) return;
-      overlay.textContent = '';
-      const head = document.createElement('div');
-      head.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:4px;';
-      const title = document.createElement('div');
-      title.textContent = '清理 · 会话与工作区';
-      title.style.cssText = 'font-weight:600;flex:1;';
-      const refresh = document.createElement('button');
-      refresh.textContent = '刷新';
-      refresh.style.cssText = chipStyle;
-      refresh.addEventListener('click', refreshPanel);
-      const close = document.createElement('button');
-      close.textContent = '×';
-      close.style.cssText = chipStyle + 'min-width:24px;justify-content:center;';
-      close.addEventListener('click', closePanel);
-      head.append(title, refresh, close);
-      overlay.append(head);
-      overlay.append(panelNote('删除工作区 = 把整个项目文件夹（含全部文件，原样未改）连同它的会话记录一起搬进 DSH Recycle Bin，并写好恢复说明与恢复脚本。删除会话 = 只解除它与 dsh 的关联（会话列表里消失），磁盘上任何文件都不动。正在打开的会话会被拒绝。', null));
+      react.useEffect(() => {
+        let alive = true;
+        setError(null);
+        Promise.all([rpc('list', {}), rpc('recycle-list', {})]).then(([l, b]) => {
+          if (!alive) return;
+          if (!l || l.ok !== true) { setError((l && l.reason) || '读取失败'); setData(null); return; }
+          setData({
+            workspaces: l.workspaces || [],
+            orphans: l.orphans || [],
+            detached: l.detached || [],
+            bin: (b && b.entries) || [],
+            binPath: (b && b.bin) || l.recycleBin || '',
+          });
+        });
+        return () => { alive = false; };
+      }, [nonce]);
 
-      const busy = document.createElement('div');
-      busy.textContent = '读取中…';
-      busy.style.cssText = 'font-size:12px;opacity:0.7;';
-      overlay.append(busy);
+      const run = (key, method, args, done) => {
+        setBusy(key);
+        rpc(method, args).then((res) => {
+          setBusy('');
+          if (res && res.ok) { if (done) done(res); else setNonce((n) => n + 1); return; }
+          alertBox('操作失败：' + ((res && res.reason) || '未知错误'));
+        });
+      };
 
-      let trashEntries = [];
-      rpc('recycle-list', {}).then((r) => { if (r && r.ok) { trashEntries = r.entries || []; if (r.bin) cachedBin = r.bin; } });
+      const delWorkspace = (ws) => {
+        confirmBox(
+          '删除工作区「' + (ws.title || ws.path) + '」',
+          '将把整个项目文件夹（含里面所有文件，原样不改）连同它的会话记录一起移入：\n' +
+          (data.binPath || 'C:\\Users\\<你>\\Documents\\DSH Recycle Bin') + '\n\n' +
+          '回收条目里会写好「恢复说明.md」与「恢复.ps1」，随时可以还原。',
+          '移入回收站',
+          () => run('ws:' + ws.id, 'delete-workspace', { workspaceId: ws.id }, (res) => {
+            setNonce((n) => n + 1);
+            alertBox('已移入回收站：\n' + (res.recycleEntry || '') + '\n' + (res.recycleBin || ''));
+          }),
+        );
+      };
 
-      rpc('list', {}).then((r) => {
-        if (!overlay.isConnected) return;
-        busy.remove();
-        if (!r || r.ok !== true) {
-          overlay.append(panelNote('读取失败：' + ((r && r.reason) || '未知错误'), 'error'));
-          return;
-        }
-        const workspaces = r.workspaces || [];
-        const orphans = r.orphans || [];
-        const detached = r.detached || [];
-        const totalBytes = workspaces.reduce((s, w) => s + (w.bytes || 0), 0);
-        const totalSessions = workspaces.reduce((s, w) => s + w.sessions.length, 0);
-        overlay.append(panelNote(`${workspaces.length} 个工作区 · ${totalSessions} 个会话 · 共 ${fmtBytes(totalBytes)}` +
-          (detached.length ? ` · 已移除 ${detached.length} 个（记录保留）` : '') +
-          (orphans.length ? ` · 孤儿 ${orphans.length} 个` : ''), null));
+      const children = [];
+      children.push(react.createElement('div', { key: 'head', className: 'dshcl-head' }, [
+        react.createElement('div', { key: 't', className: 'dshcl-title' }, '清理与回收站'),
+        react.createElement('button', {
+          key: 'r', type: 'button', className: 'dshcl-btn',
+          onClick: () => setNonce((n) => n + 1), disabled: busy !== '',
+        }, '刷新'),
+      ]));
+      children.push(react.createElement('div', { key: 'note', className: 'dshcl-muted' },
+        '删除工作区 = 把整个项目文件夹与会话记录搬进 DSH Recycle Bin（可还原）；删除会话请在会话行右侧的 ⋯ 菜单里选「从列表移除」——那一步只解除关联，磁盘上的文件一个都不动。'));
 
-        for (const ws of workspaces) {
-          const group = document.createElement('div');
-          group.style.cssText = 'border-top:1px solid var(--dsw-alias-divider,rgba(128,128,128,0.25));padding:6px 0 2px;';
-          const head = document.createElement('div');
-          head.style.cssText = 'display:flex;align-items:center;gap:8px;';
-          head.append(rowLabel(
-            ws.title || '(未命名工作区)',
-            `${ws.sessions.length} 个会话 · 记录 ${fmtBytes(ws.bytes)}` +
-            (typeof ws.projectBytes === 'number' ? ` · 项目 ${fmtBytes(ws.projectBytes)}` : '') +
-            ` · ${ws.path || ''}`,
-          ));
-          if (ws.sessions.length > 0 || true) {
-            head.append(dangerButton('删除工作区（含项目）', () => {
-              return rpc('delete-workspace', { workspaceId: ws.id }).then((res) => {
-                if (res && res.ok) {
-                  alert('已搬入回收站：\n' + (res.recycleEntry || '') + '\n' + (res.recycleBin || '') +
-                    '\n\n项目文件夹与会话记录原样保留，可按里面的「恢复说明.md」还原。');
-                  refreshPanel();
-                  return;
-                }
-                alert('删除失败：' + ((res && res.reason) || '未知错误'));
-                refreshPanel();
-              });
-            }));
-          }
-          group.append(head);
+      if (error) children.push(react.createElement('div', { key: 'err', className: 'dshcl-muted' }, '读取失败：' + error));
+      else if (data === null) children.push(react.createElement('div', { key: 'loading', className: 'dshcl-muted' }, '读取中…'));
+      else {
+        const totalBytes = data.workspaces.reduce((s, w) => s + (w.bytes || 0), 0);
+        const totalSessions = data.workspaces.reduce((s, w) => s + w.sessions.length, 0);
+        children.push(react.createElement('div', { key: 'sum', className: 'dshcl-muted' },
+          `${data.workspaces.length} 个工作区 · ${totalSessions} 个会话 · 会话记录共 ${fmtBytes(totalBytes)}` +
+          (data.detached.length ? ` · 已移除 ${data.detached.length} 个（记录保留）` : '') +
+          (data.orphans.length ? ` · 孤儿 ${data.orphans.length} 个` : '')));
+
+        // 工作区
+        for (const ws of data.workspaces) {
+          const rows = [
+            react.createElement('div', { key: 'r', className: 'dshcl-row' }, [
+              react.createElement('div', { key: 'n', className: 'dshcl-name' }, [
+                react.createElement('b', { key: 't' }, ws.title || '(未命名工作区)'),
+                react.createElement('span', { key: 's', className: 'dshcl-sub' },
+                  `${ws.sessions.length} 个会话 · 记录 ${fmtBytes(ws.bytes)}` +
+                  (typeof ws.projectBytes === 'number' ? ` · 项目 ${fmtBytes(ws.projectBytes)}` : '') +
+                  ` · ${ws.path || ''}`),
+              ]),
+              react.createElement('button', {
+                key: 'd', type: 'button', className: 'dshcl-btn dshcl-btn-danger',
+                disabled: busy === 'ws:' + ws.id,
+                onClick: () => delWorkspace(ws),
+              }, busy === 'ws:' + ws.id ? '搬运中…' : '删除工作区（含项目）'),
+            ]),
+          ];
           for (const s of ws.sessions) {
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:3px 0 3px 14px;';
             const tags = [];
             if (s.open) tags.push('使用中');
             if (s.archived) tags.push('已归档');
-            const sub = [fmtBytes(s.bytes), s.turns !== null ? s.turns + ' 轮' : null,
-              s.mtime ? fmtWhen(s.mtime) : null].filter(Boolean).join(' · ');
-            row.append(rowLabel(
-              s.title || s.id,
-              sub + (tags.length ? ' · ' + tags.join('/') : ''),
-            ));
-            if (s.open) {
-              const tag = document.createElement('span');
-              tag.textContent = '使用中';
-              tag.style.cssText = 'font-size:11px;opacity:0.6;white-space:nowrap;';
-              row.append(tag);
-            } else {
-              const hint = document.createElement('span');
-              hint.textContent = '⋯';
-              hint.title = '删除会话请用会话行右侧的 ⋯ 菜单（重命名 / 分叉会话 / 归档会话 旁边）';
-              hint.style.cssText = 'font-size:12px;opacity:0.45;white-space:nowrap;';
-              row.append(hint);
-            }
-            group.append(row);
+            rows.push(react.createElement('div', { key: 's' + s.id, className: 'dshcl-row', style: { paddingLeft: 14 } }, [
+              react.createElement('div', { key: 'n', className: 'dshcl-name' }, [
+                react.createElement('span', { key: 't' }, s.title || s.id),
+                react.createElement('span', { key: 's', className: 'dshcl-sub' },
+                  [fmtBytes(s.bytes), s.turns !== null ? s.turns + ' 轮' : null, s.mtime ? fmtWhen(s.mtime) : null]
+                    .filter(Boolean).join(' · ') + (tags.length ? ' · ' + tags.join('/') : '')),
+              ]),
+              react.createElement('span', { key: 'h', className: 'dshcl-sub', title: '删除会话请用会话行右侧的 ⋯ 菜单' }, '⋯'),
+            ]));
           }
-          overlay.append(group);
+          children.push(react.createElement('div', { key: 'ws' + ws.id, className: 'dshcl-card' }, rows));
         }
 
-        if (detached.length > 0) {
-          overlay.append(sectionTitle('已从列表移除（记录仍原样保留在磁盘上，dsh 不再显示）'));
-          for (const d of detached) {
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:3px 0;';
-            row.append(rowLabel(
-              d.title || d.id,
-              [fmtBytes(d.bytes), d.mtime ? fmtWhen(d.mtime) : null].filter(Boolean).join(' · '),
-            ));
-            if (!d.open) {
-              const back = document.createElement('button');
-              back.textContent = '重新加入列表';
-              back.style.cssText = 'padding:2px 8px;border-radius:6px;border:1px solid var(--dsw-alias-divider,rgba(128,128,128,0.35));background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap;';
-              back.addEventListener('click', () => {
-                back.disabled = true;
-                rpc('attach-session', { sessionId: d.id }).then((res) => {
-                  if (res && res.ok) { refreshPanel(); return; }
-                  alert('重新加入失败：' + ((res && res.reason) || '未知错误'));
-                  back.disabled = false;
-                });
-              });
-              row.append(back);
-              row.append(dangerButton('移入回收站', () => {
-                return rpc('delete-orphan', { sessionId: d.id }).then((res) => {
-                  if (res && res.ok) { refreshPanel(); return; }
-                  alert('操作失败：' + ((res && res.reason) || '未知错误'));
-                  refreshPanel();
-                });
-              }, '确认移入？', '搬运中…'));
-            }
-            overlay.append(row);
+        // 已从列表移除（记录仍保留）
+        if (data.detached.length > 0) {
+          const rows = [react.createElement('div', { key: 'h', className: 'dshcl-muted' }, '已从列表移除（记录仍原样保留在磁盘上，dsh 不再显示）')];
+          for (const d of data.detached) {
+            rows.push(react.createElement('div', { key: d.id, className: 'dshcl-row' }, [
+              react.createElement('div', { key: 'n', className: 'dshcl-name' }, [
+                react.createElement('span', { key: 't' }, d.title || d.id),
+                react.createElement('span', { key: 's', className: 'dshcl-sub' },
+                  [fmtBytes(d.bytes), d.mtime ? fmtWhen(d.mtime) : null].filter(Boolean).join(' · ')),
+              ]),
+              react.createElement('button', {
+                key: 'back', type: 'button', className: 'dshcl-btn', disabled: busy === 'back:' + d.id,
+                onClick: () => run('back:' + d.id, 'attach-session', { sessionId: d.id }),
+              }, busy === 'back:' + d.id ? '加入中…' : '重新加入列表'),
+              react.createElement('button', {
+                key: 'bin', type: 'button', className: 'dshcl-btn dshcl-btn-danger', disabled: busy === 'bin:' + d.id,
+                onClick: () => confirmBox('移入回收站', '把这条会话记录搬到 DSH Recycle Bin？\n' + (d.title || d.id) + '\n\n记录会原样保留，可随时还原。', '移入回收站',
+                  () => run('bin:' + d.id, 'delete-orphan', { sessionId: d.id })),
+              }, '移入回收站'),
+            ]));
           }
+          children.push(react.createElement('div', { key: 'detached', className: 'dshcl-card' }, rows));
         }
 
-        if (orphans.length > 0) {
-          overlay.append(sectionTitle('孤儿会话（不在任何工作区登记里，多为接口任务残留）'));
-          for (const o of orphans) {
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:3px 0;';
-            row.append(rowLabel(o.id, [fmtBytes(o.bytes), o.mtime ? fmtWhen(o.mtime) : null].filter(Boolean).join(' · ')));
-            if (!o.open) {
-              row.append(dangerButton('移入回收站', () => {
-                return rpc('delete-orphan', { sessionId: o.id }).then((res) => {
-                  if (res && res.ok) { refreshPanel(); return; }
-                  alert('操作失败：' + ((res && res.reason) || '未知错误'));
-                  refreshPanel();
-                });
-              }, '确认移入？', '搬运中…'));
-            }
-            overlay.append(row);
+        // 孤儿
+        if (data.orphans.length > 0) {
+          const CAP = 20;
+          const rows = [react.createElement('div', { key: 'h', className: 'dshcl-muted' }, '孤儿会话（不在任何工作区登记里，多为接口任务残留）')];
+          for (const o of data.orphans.slice(0, CAP)) {
+            rows.push(react.createElement('div', { key: o.id, className: 'dshcl-row' }, [
+              react.createElement('div', { key: 'n', className: 'dshcl-name' }, [
+                react.createElement('span', { key: 't' }, o.id),
+                react.createElement('span', { key: 's', className: 'dshcl-sub' },
+                  [fmtBytes(o.bytes), o.mtime ? fmtWhen(o.mtime) : null].filter(Boolean).join(' · ')),
+              ]),
+              react.createElement('button', {
+                key: 'bin', type: 'button', className: 'dshcl-btn', disabled: busy === 'or:' + o.id,
+                onClick: () => confirmBox('移入回收站', '把这个孤儿会话记录搬到 DSH Recycle Bin？\n' + o.id, '移入回收站',
+                  () => run('or:' + o.id, 'delete-orphan', { sessionId: o.id })),
+              }, '移入回收站'),
+            ]));
           }
+          if (data.orphans.length > CAP) {
+            rows.push(react.createElement('div', { key: 'more', className: 'dshcl-muted' },
+              `…… 还有 ${data.orphans.length - CAP} 个孤儿记录未列出（共 ${data.orphans.length} 个）`));
+          }
+          children.push(react.createElement('div', { key: 'orphans', className: 'dshcl-card' }, rows));
         }
 
-        if (trashEntries.length > 0) {
-          const details = document.createElement('details');
-          details.style.cssText = 'margin-top:10px;';
-          const summary = document.createElement('summary');
-          summary.textContent = `DSH Recycle Bin（${trashEntries.length} 条，可还原）`;
-          summary.style.cssText = 'cursor:pointer;font-size:12px;opacity:0.8;';
-          details.append(summary);
-          const KIND_LABEL = { workspace: '工作区（含项目文件夹）', session: '会话记录', orphan: '孤儿会话记录' };
-          for (const t of trashEntries) {
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:3px 0;';
-            const kind = KIND_LABEL[t.kind] || '回收条目';
-            row.append(rowLabel(
-              `${kind} · ${t.title || t.sessionId}`,
-              [fmtBytes(t.bytes), t.when ? t.when.slice(0, 19).replace('T', ' ') : null,
-                t.projectPath || null].filter(Boolean).join(' · '),
-            ));
-            const btn = document.createElement('button');
-            btn.textContent = t.kind === 'workspace' ? '还原项目' : '恢复';
-            btn.style.cssText = 'padding:2px 8px;border-radius:6px;border:1px solid var(--dsw-alias-divider,rgba(128,128,128,0.35));background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap;';
-            btn.addEventListener('click', () => {
-              btn.disabled = true;
-              rpc('restore', { name: t.name }).then((res) => {
-                if (res && res.ok) { refreshPanel(); return; }
-                alert('恢复失败：' + ((res && res.reason) || '未知错误'));
-                btn.disabled = false;
-              });
-            });
-            row.append(btn);
-            details.append(row);
-          }
-          overlay.append(details);
+        // 回收站
+        const binRows = [react.createElement('div', { key: 'h', className: 'dshcl-muted' },
+          'DSH Recycle Bin' + (data.binPath ? '：' + data.binPath : '') + (data.bin.length ? `（${data.bin.length} 条，可还原）` : '（空）'))];
+        const KIND = { workspace: '工作区（含项目文件夹）', session: '会话记录', orphan: '孤儿记录' };
+        for (const t of data.bin) {
+          binRows.push(react.createElement('div', { key: t.name, className: 'dshcl-row' }, [
+            react.createElement('div', { key: 'n', className: 'dshcl-name' }, [
+              react.createElement('span', { key: 't' }, `${KIND[t.kind] || '回收条目'} · ${t.title || t.sessionId}`),
+              react.createElement('span', { key: 's', className: 'dshcl-sub' },
+                [fmtBytes(t.bytes), t.when ? t.when.slice(0, 19).replace('T', ' ') : null, t.projectPath || null]
+                  .filter(Boolean).join(' · ')),
+            ]),
+            react.createElement('button', {
+              key: 'r', type: 'button', className: 'dshcl-btn', disabled: busy === 'rs:' + t.name,
+              onClick: () => run('rs:' + t.name, 'restore', { name: t.name }),
+            }, busy === 'rs:' + t.name ? '还原中…' : (t.kind === 'workspace' ? '还原项目' : '恢复')),
+          ]));
         }
-      }).catch((e) => {
-        busy.remove();
-        overlay.append(panelNote('读取异常：' + String(e && e.message !== undefined ? e.message : e), 'error'));
-      });
+        children.push(react.createElement('div', { key: 'bin', className: 'dshcl-card' }, binRows));
+      }
+
+      return react.createElement('div', { className: 'dshcl-wrap' }, children);
     }
 
     // ── 行 ⋯ 菜单装饰器 ──
@@ -341,11 +288,11 @@ window.__ModuleLoader__.load({
       'stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
       '<path d="M6.6 6.9v4.1M9.4 6.9v4.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
     const DANGER = 'var(--dsw-alias-state-error-primary,#d92d20)';
-    let cachedBin = '';
     const SESSION_TRIGGER_RE = /^会话[“"](.+?)[”"]的操作$/;
     const WORKSPACE_TRIGGER_RE = /^工作区[“"](.+?)[”"]的操作$/;
     let lastSessionTrigger = null;
     let lastWorkspaceTrigger = null;
+    let lastBinPath = '';
 
     function rememberTrigger(ev) {
       const t = ev.target;
@@ -357,8 +304,7 @@ window.__ModuleLoader__.load({
       if (m) {
         const row = btn.closest('[role="treeitem"]');
         const group = row && typeof row.closest === 'function' ? row.closest('div[class*="groupSection"]') : null;
-        const groupTitle = group ? String(group.innerText || '').split('\n')[0].trim() : '';
-        lastSessionTrigger = { title: m[1].trim(), workspaceTitle: groupTitle, at: Date.now() };
+        lastSessionTrigger = { title: m[1].trim(), workspaceTitle: group ? String(group.innerText || '').split('\n')[0].trim() : '', at: Date.now() };
         return;
       }
       m = WORKSPACE_TRIGGER_RE.exec(label);
@@ -371,14 +317,11 @@ window.__ModuleLoader__.load({
       } catch (e) { /* ignore */ }
     }
 
-    /** 用产品自己的菜单条目做模板，克隆出一个同款条目。
-     *  注意：产品给图标 span 设了自己的 color，所以红色必须写在**图标层**，
-     *  写在按钮上只会把字染红、图标仍然是灰的（这是踩过的坑）。 */
+    /** 克隆产品自己的菜单条目做模板；红色只写在图标层（产品给图标 span 设了自己的 color）。 */
     function makeItem(templateBtn, label, opts) {
       const wrap = templateBtn.parentElement.cloneNode(true);
       const btn = wrap.querySelector('button[role="menuitem"]') || wrap;
       btn.removeAttribute('style');
-      // 非破坏性条目不继承模板的 danger（红色）类
       if (!(opts && opts.danger)) {
         for (const el of [wrap, btn]) {
           const cls = String(el.className || '');
@@ -397,45 +340,8 @@ window.__ModuleLoader__.load({
       return wrap;
     }
 
-    /** 面内确认框（不依赖 window.confirm，WebView 里更稳）。 */
-    function confirmBox(title, detail, okLabel, onOk) {
-      const box = document.createElement('div');
-      box.style.cssText = 'position:fixed;inset:0;z-index:2147483001;display:flex;align-items:center;justify-content:center;' +
-        'background:rgba(0,0,0,0.35);';
-      const card = document.createElement('div');
-      card.style.cssText = 'width:min(460px,calc(100vw - 32px));padding:16px 18px;border-radius:12px;' +
-        'background:var(--dsw-alias-surface-primary,#fff);color:var(--dsw-alias-label-primary,#222);' +
-        'border:1px solid var(--dsw-alias-divider,rgba(128,128,128,0.35));box-shadow:0 16px 40px rgba(0,0,0,0.25);' +
-        'font:13px/1.7 var(--dsh-font-family,inherit);';
-      const h = document.createElement('div');
-      h.textContent = title;
-      h.style.cssText = 'font-weight:600;margin-bottom:6px;';
-      const d = document.createElement('div');
-      d.textContent = detail;
-      d.style.cssText = 'opacity:0.8;white-space:pre-wrap;margin-bottom:14px;';
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
-      const cancel = document.createElement('button');
-      cancel.textContent = '取消';
-      const ok = document.createElement('button');
-      ok.textContent = okLabel || '确定';
-      for (const [b, danger] of [[cancel, false], [ok, true]]) {
-        b.style.cssText = 'padding:5px 14px;border-radius:8px;border:1px solid var(--dsw-alias-divider,rgba(128,128,128,0.35));' +
-          'background:transparent;color:' + (danger ? DANGER : 'inherit') + ';font:inherit;cursor:pointer;';
-      }
-      const close = () => box.remove();
-      cancel.addEventListener('click', close);
-      ok.addEventListener('click', () => { close(); onOk(); });
-      box.addEventListener('click', (e) => { if (e.target === box) close(); });
-      row.append(cancel, ok);
-      card.append(h, d, row);
-      box.append(card);
-      document.body.appendChild(box);
-    }
-
     function decorateMenus() {
-      const menus = document.querySelectorAll('[role="menu"]');
-      for (const menu of menus) {
+      for (const menu of document.querySelectorAll('[role="menu"]')) {
         if (menu.getAttribute('data-dsh-cleaner') === '1') continue;
         const items = [...menu.querySelectorAll('button[role="menuitem"]')];
         if (items.length === 0) continue;
@@ -445,18 +351,18 @@ window.__ModuleLoader__.load({
         if (!isSessionMenu && !isWorkspaceMenu) continue;
         menu.setAttribute('data-dsh-cleaner', '1');
 
-        if (isSessionMenu && !labels.includes('从列表移除')) {
+        if (isSessionMenu) {
           const template = items[items.length - 1];
           const wrap = makeItem(template, '从列表移除', {
             iconColor: DANGER,
             onClick: (ev) => {
               ev.preventDefault(); ev.stopPropagation();
               const who = lastSessionTrigger && Date.now() - lastSessionTrigger.at < 120000 ? lastSessionTrigger : null;
-              if (!who) { alert('无法确定是哪个会话：请重新点开该会话行的 ⋯ 菜单。'); return; }
+              if (!who) { alertBox('无法确定是哪个会话：请重新点开该会话行的 ⋯ 菜单。'); return; }
               closeMenus();
               rpc('detach-title', { title: who.title, workspaceTitle: who.workspaceTitle }).then((res) => {
-                if (res && res.ok) { refreshPanel(); return; }
-                alert('移除失败：' + ((res && res.reason) || '未知错误'));
+                if (res && res.ok) return;
+                alertBox('移除失败：' + ((res && res.reason) || '未知错误'));
               });
             },
           });
@@ -470,38 +376,22 @@ window.__ModuleLoader__.load({
             native.addEventListener('click', (ev) => {
               ev.preventDefault(); ev.stopPropagation();
               const who = lastWorkspaceTrigger && Date.now() - lastWorkspaceTrigger.at < 120000 ? lastWorkspaceTrigger : null;
-              if (!who) { alert('无法确定是哪个工作区：请重新点开该工作区行的 ⋯ 菜单。'); return; }
+              if (!who) { alertBox('无法确定是哪个工作区：请重新点开该工作区行的 ⋯ 菜单。'); return; }
               closeMenus();
               confirmBox(
                 '删除工作区「' + who.title + '」',
                 '将把整个项目文件夹（含里面所有文件，原样不改）连同它的会话记录一起移入：\n' +
-                (cachedBin || 'C:\\Users\\<你>\\Documents\\DSH Recycle Bin') + '\n\n' +
+                (lastBinPath || 'C:\\Users\\<你>\\Documents\\DSH Recycle Bin') + '\n\n' +
                 '回收条目里会写好「恢复说明.md」与「恢复.ps1」，随时可以还原。',
                 '移入回收站',
                 () => {
                   rpc('delete-workspace-by-title', { title: who.title }).then((res) => {
-                    if (res && res.ok) { refreshPanel(); return; }
-                    alert('删除失败：' + ((res && res.reason) || '未知错误'));
+                    if (res && res.ok) { alertBox('已移入回收站：\n' + (res.recycleEntry || '')); return; }
+                    alertBox('删除失败：' + ((res && res.reason) || '未知错误'));
                   });
                 },
               );
             }, true);
-          }
-          if (!labels.includes('清理与回收站…')) {
-            const template = items[items.length - 1];
-            const wrap = makeItem(template, '清理与回收站…', {
-              onClick: (ev) => {
-                ev.preventDefault(); ev.stopPropagation();
-                closeMenus();
-                togglePanel();
-              },
-            });
-            const btn = wrap.querySelector('button[role="menuitem"]') || wrap;
-            const iconEl = btn.querySelector('span[class*="itemIcon"]');
-            if (iconEl) iconEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-              '<path d="M3 6h10v6.2c0 .7-.6 1.3-1.3 1.3H4.3c-.7 0-1.3-.6-1.3-1.3V6Z" stroke="currentColor" stroke-width="1.3"/>' +
-              '<path d="M2.2 3.6h11.6M6.2 3.6V2.8c0-.4.3-.8.8-.8h2c.4 0 .8.3.8.8v.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
-            template.parentElement.parentElement.appendChild(wrap);
           }
         }
       }
@@ -523,10 +413,16 @@ window.__ModuleLoader__.load({
     }
 
     // ── plugin body ──
-    // 不再往会话头部加「清理」芯片：删除会话在工作区/会话行的 ⋯ 菜单里，
-    // 面板（工作区删除结果、已移除记录、回收站）从工作区菜单的「清理与回收站…」打开。
     function apply(ctx) {
+      installStyles();
       installMenuDecorator(ctx);
+      rpc('list', {}).then((r) => { if (r && r.ok && r.recycleBin) lastBinPath = r.recycleBin; });
+      const slots = ctx.get('slots');
+      if (slots === undefined) return;
+      slots.inject('settings.section', () => slots.register(
+        { name: 'settings.section', id: 'cleaner', order: 45, label: () => '清理与回收站' },
+        () => CleanerSection(),
+      ));
     }
 
     exports.apply = apply;
