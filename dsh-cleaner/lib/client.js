@@ -371,15 +371,28 @@ window.__ModuleLoader__.load({
       } catch (e) { /* ignore */ }
     }
 
-    /** 用产品自己的菜单条目做模板，克隆出一个同款条目（含 danger 红色与垃圾桶图标）。 */
+    /** 用产品自己的菜单条目做模板，克隆出一个同款条目。
+     *  注意：产品给图标 span 设了自己的 color，所以红色必须写在**图标层**，
+     *  写在按钮上只会把字染红、图标仍然是灰的（这是踩过的坑）。 */
     function makeItem(templateBtn, label, opts) {
       const wrap = templateBtn.parentElement.cloneNode(true);
       const btn = wrap.querySelector('button[role="menuitem"]') || wrap;
+      btn.removeAttribute('style');
+      // 非破坏性条目不继承模板的 danger（红色）类
+      if (!(opts && opts.danger)) {
+        for (const el of [wrap, btn]) {
+          const cls = String(el.className || '');
+          if (/danger/i.test(cls)) el.className = cls.split(/\s+/).filter((c) => !/danger/i.test(c)).join(' ');
+        }
+      }
       const labelEl = btn.querySelector('span[class*="itemLabel"]') || btn;
       labelEl.textContent = label;
+      labelEl.style.color = '';
       const iconEl = btn.querySelector('span[class*="itemIcon"]');
-      if (iconEl) iconEl.innerHTML = TRASH_SVG;
-      btn.style.color = DANGER;
+      if (iconEl) {
+        iconEl.innerHTML = TRASH_SVG;
+        iconEl.style.color = (opts && opts.iconColor) ? opts.iconColor : '';
+      }
       if (opts && opts.onClick) btn.addEventListener('click', opts.onClick, true);
       return wrap;
     }
@@ -435,6 +448,7 @@ window.__ModuleLoader__.load({
         if (isSessionMenu && !labels.includes('从列表移除')) {
           const template = items[items.length - 1];
           const wrap = makeItem(template, '从列表移除', {
+            iconColor: DANGER,
             onClick: (ev) => {
               ev.preventDefault(); ev.stopPropagation();
               const who = lastSessionTrigger && Date.now() - lastSessionTrigger.at < 120000 ? lastSessionTrigger : null;
@@ -483,7 +497,6 @@ window.__ModuleLoader__.load({
               },
             });
             const btn = wrap.querySelector('button[role="menuitem"]') || wrap;
-            btn.style.color = 'inherit';
             const iconEl = btn.querySelector('span[class*="itemIcon"]');
             if (iconEl) iconEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
               '<path d="M3 6h10v6.2c0 .7-.6 1.3-1.3 1.3H4.3c-.7 0-1.3-.6-1.3-1.3V6Z" stroke="currentColor" stroke-width="1.3"/>' +
