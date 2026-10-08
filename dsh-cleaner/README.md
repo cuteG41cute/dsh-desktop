@@ -30,6 +30,11 @@ dsh 原生没有删除会话/工作区的入口，本插件在 dsh 进程内补�
 
 ## 边界与说明
 
+- **宿主入口必须 `export default`**：cordis 加载器接受「函数」或「带 apply 方法的对象」作为模块值，
+  只有命名导出会被当成裸命名空间对象 → `invalid plugin ... received object`，
+  且**整个插件树中止加载、dsh web 直接退出**（桌面症状：窗口 ERR_CONNECTION_REFUSED，
+  真正的错误只在 `logs\server.err.log`）。这是 dsh-cleaner 首次上线时踩过的真实坑——
+  语法/导入检查都发现不了它，装完新插件务必看一眼 server.err.log。
 - 删除是**移入回收目录**，不是硬删除；确认没问题后可在面板「回收目录」里查看，
   想彻底释放空间直接清空该目录即可。
 - 正在被打开的会话（agents 表里有活体）拒绝删除——先切到别的会话。
