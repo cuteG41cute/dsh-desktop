@@ -517,6 +517,69 @@ export class CleanerService extends Service {
     }
   }
 
+  /**
+   * 按标题解除关联（供会话行 ⋯ 菜单里的「从列表移除」使用）：
+   * 菜单在 DOM 里与行没有连接，只有 ⋯ 按钮 aria-label 里的标题可用。
+   * 同名会话会有歧义——此时用所在分组的标题（工作区）区分，仍歧义则拒绝并说明。
+   */
+  async detachByTitle(title, workspaceTitle) {
+    const want = String(title || '').trim()
+    if (want === '') throw new Error('缺少会话标题')
+    const proj = this.readProjections()
+    const archivedSet = new Set((this.ctx.workspaceRegistry.archivedSessionIds || []).map(String))
+    const hits = []
+    for (const w of this.ctx.workspaceRegistry.list()) {
+      let handle = null
+      try { handle = this.ctx.workspaceRegistry.get(String(w.id)) } catch { continue }
+      const views = (handle ? [...handle.sessionIds] : []).map((sid) => this.sessionView(String(sid), proj, archivedSet))
+      for (const v of views) {
+        const t = (v.title || '').trim()
+        if (t === want || v.id === want) hits.push({ handle, view: v, workspace: String(handle.title || w.title || '') })
+      }
+    }
+    if (hits.length === 0) throw new Error(`列表里找不到标题为「${want}」的会话（可能已被移除）`)
+    let target = hits[0]
+    if (hits.length > 1) {
+      const hint = String(workspaceTitle || '').trim()
+      const narrowed = hint === '' ? [] : hits.filter((h) => h.workspace.trim() === hint)
+      if (narrowed.length === 1) target = narrowed[0]
+      else throw new Error(`有 ${hits.length} 个同名会话「${want}」，无法确定是哪一个：请在「清理」面板里操作（那里按工作区分组）`)
+    }
+    this.assertNotOpen(target.view.id)
+    await target.handle.detachSession(target.view.id)
+    return {
+      ok: true,
+      detached: true,
+      filesUntouched: true,
+      sessionId: target.view.id,
+      title: want,
+      workspace: target.workspace,
+      note: '仅解除关联：会话记录仍原样保留在磁盘上',
+    }
+  }
+
+  /** 把一条"已从列表移除"的记录重新登记回工作区（产品会校验 cwd，只有对的那个工作区能成功）。 */
+  async attachSession(sessionId) {
+    sessionId = String(sessionId)
+    if (sessionId === '') throw new Error('缺少 sessionId')
+    if (this.sessionDirs(sessionId).length === 0) {
+      throw new Error(`磁盘上找不到会话「${sessionId}」的记录，无法重新加入列表`)
+    }
+    const errors = []
+    for (const w of this.ctx.workspaceRegistry.list()) {
+      let handle = null
+      try { handle = this.ctx.workspaceRegistry.get(String(w.id)) } catch { continue }
+      if (!handle || typeof handle.attachSession !== 'function') continue
+      try {
+        await handle.attachSession(sessionId)
+        return { ok: true, sessionId, workspaceId: String(handle.id), workspace: String(handle.title || '') }
+      } catch (error) {
+        errors.push(`${handle.title || handle.id}: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    throw new Error(`没有工作区能重新接纳这个会话（记录里的 cwd 与登记的工作区路径都对不上）：${errors.slice(0, 3).join(' / ')}`)
+  }
+
   async deleteOrphan(sessionId) {
     sessionId = String(sessionId)
     this.assertNotOpen(sessionId)
@@ -718,6 +781,10 @@ export class CleanerService extends Service {
         return { ok: true, recycleBin: recycleBin(), ...this.listWorkspaces() }
       case 'delete-session':
         return await this.deleteSession(args.sessionId)
+      case 'detach-title':
+        return await this.detachByTitle(args.title, args.workspaceTitle)
+      case 'attach-session':
+        return await this.attachSession(args.sessionId)
       case 'delete-workspace':
         return await this.deleteWorkspace(args.workspaceId)
       case 'delete-orphan':

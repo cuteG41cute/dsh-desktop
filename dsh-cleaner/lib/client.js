@@ -224,19 +224,17 @@ window.__ModuleLoader__.load({
               s.title || s.id,
               sub + (tags.length ? ' · ' + tags.join('/') : ''),
             ));
-            if (!s.open) {
-              row.append(dangerButton('从列表移除', () => {
-                return rpc('delete-session', { sessionId: s.id }).then((res) => {
-                  if (res && res.ok) { refreshPanel(); return; }
-                  alert('移除失败：' + ((res && res.reason) || '未知错误'));
-                  refreshPanel();
-                });
-              }, '确认移除？', '移除中…'));
-            } else {
+            if (s.open) {
               const tag = document.createElement('span');
               tag.textContent = '使用中';
               tag.style.cssText = 'font-size:11px;opacity:0.6;white-space:nowrap;';
               row.append(tag);
+            } else {
+              const hint = document.createElement('span');
+              hint.textContent = '⋯';
+              hint.title = '删除会话请用会话行右侧的 ⋯ 菜单（重命名 / 分叉会话 / 归档会话 旁边）';
+              hint.style.cssText = 'font-size:12px;opacity:0.45;white-space:nowrap;';
+              row.append(hint);
             }
             group.append(row);
           }
@@ -253,6 +251,18 @@ window.__ModuleLoader__.load({
               [fmtBytes(d.bytes), d.mtime ? fmtWhen(d.mtime) : null].filter(Boolean).join(' · '),
             ));
             if (!d.open) {
+              const back = document.createElement('button');
+              back.textContent = '重新加入列表';
+              back.style.cssText = 'padding:2px 8px;border-radius:6px;border:1px solid var(--dsw-alias-divider,rgba(128,128,128,0.35));background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap;';
+              back.addEventListener('click', () => {
+                back.disabled = true;
+                rpc('attach-session', { sessionId: d.id }).then((res) => {
+                  if (res && res.ok) { refreshPanel(); return; }
+                  alert('重新加入失败：' + ((res && res.reason) || '未知错误'));
+                  back.disabled = false;
+                });
+              });
+              row.append(back);
               row.append(dangerButton('移入回收站', () => {
                 return rpc('delete-orphan', { sessionId: d.id }).then((res) => {
                   if (res && res.ok) { refreshPanel(); return; }
@@ -334,8 +344,91 @@ window.__ModuleLoader__.load({
       ]);
     }
 
+    // ── 会话行 ⋯ 菜单装饰器：把「从列表移除」加进产品自己的菜单 ──
+    // 菜单是挂在 body 上的 portal，与行没有 DOM 连接；身份线索 = ⋯ 按钮的
+    // aria-label「会话“<标题>”的操作」，所在分组标题（工作区）用于消歧。
+    const TRIGGER_RE = /^会话[“"](.+?)[”"]的操作$/;
+    let lastTrigger = null;
+
+    function rememberTrigger(ev) {
+      const t = ev.target;
+      if (!t || typeof t.closest !== 'function') return;
+      const btn = t.closest('button[aria-label]');
+      if (!btn) return;
+      const m = TRIGGER_RE.exec(btn.getAttribute('aria-label') || '');
+      if (!m) return;
+      const row = btn.closest('[role="treeitem"]');
+      const group = row && typeof row.closest === 'function' ? row.closest('div[class*="groupSection"]') : null;
+      const groupTitle = group ? String(group.innerText || '').split('\n')[0].trim() : '';
+      lastTrigger = { title: m[1].trim(), workspaceTitle: groupTitle, at: Date.now() };
+    }
+
+    function decorateMenus() {
+      const menus = document.querySelectorAll('[role="menu"]');
+      for (const menu of menus) {
+        if (menu.getAttribute('data-dsh-cleaner') === '1') continue;
+        const items = [...menu.querySelectorAll('button[role="menuitem"]')];
+        const labels = items.map((b) => (b.innerText || '').trim());
+        const isSessionMenu = labels.some((l) => l === '重命名') &&
+          labels.some((l) => /分叉|归档/.test(l));
+        if (!isSessionMenu || items.length === 0) continue;
+        if (items.some((b) => (b.innerText || '').trim() === '从列表移除')) { menu.setAttribute('data-dsh-cleaner', '1'); continue; }
+        const template = items[items.length - 1];
+        const wrap = template.parentElement && template.parentElement.cloneNode(true);
+        if (!wrap) continue;
+        const btn = wrap.querySelector('button[role="menuitem"]') || wrap;
+        const labelEl = btn.querySelector('span[class*="itemLabel"]') || btn;
+        labelEl.textContent = '从列表移除';
+        const iconEl = btn.querySelector('span[class*="itemIcon"]');
+        if (iconEl) {
+          iconEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+            '<circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.3"/>' +
+            '<path d="M5.2 8h5.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+        }
+        btn.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const who = lastTrigger && Date.now() - lastTrigger.at < 120000 ? lastTrigger : null;
+          if (!who) { alert('无法确定是哪个会话：请重新点开该会话行的 ⋯ 菜单。'); return; }
+          rpc('detach-title', { title: who.title, workspaceTitle: who.workspaceTitle }).then((res) => {
+            closeMenus();
+            if (res && res.ok) {
+              refreshPanel();
+              return;
+            }
+            alert('移除失败：' + ((res && res.reason) || '未知错误'));
+          });
+        }, true);
+        menu.setAttribute('data-dsh-cleaner', '1');
+        if (template.parentElement) template.parentElement.parentElement.appendChild(wrap);
+        else menu.appendChild(wrap);
+      }
+    }
+
+    function closeMenus() {
+      try {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+      } catch (e) { /* ignore */ }
+    }
+
+    let menuObserver = null;
+    function installMenuDecorator(ctx) {
+      document.addEventListener('pointerdown', rememberTrigger, true);
+      document.addEventListener('click', rememberTrigger, true);
+      menuObserver = new MutationObserver(() => decorateMenus());
+      menuObserver.observe(document.body, { childList: true, subtree: true });
+      const timer = setInterval(decorateMenus, 800);
+      ctx.effect(() => () => {
+        document.removeEventListener('pointerdown', rememberTrigger, true);
+        document.removeEventListener('click', rememberTrigger, true);
+        if (menuObserver) menuObserver.disconnect();
+        clearInterval(timer);
+      });
+    }
+
     // ── plugin body ──
     function apply(ctx) {
+      installMenuDecorator(ctx);
       const slots = ctx.get('slots');
       if (slots === undefined) return;
       slots.inject('conversation.session.header.utilities', () => slots.register(
