@@ -70,8 +70,14 @@ C:\Users\<你>\Documents\DSH Recycle Bin\
   - 项目路径包含本进程当前工作目录（避免把正在运行的自己搬走）。
 - 跨盘搬运自动退化为「复制 + 删除」（`EXDEV`），内容与时间戳保持一致。
 - 还原时的保护：原位置已存在同名文件夹 / 会话目录时**拒绝覆盖**并提示，由你决定怎么处理。
-- 投影缓存（`storages/session_projcache.json`）里的旧行不动，由产品自行清理/忽略；
-  工作区删除调用的是产品登记服务，登记变更会自动广播。
+- 投影缓存有**两种形态**，必须都读（`projectionOf()`）：
+  - 旧：`storages/session_projcache.json`（整表一个文件，某个版本之后不再写）；
+  - 新：`storages/session_projcache/sessions/<会话id>.json`（每会话一个文件，外层包一层 `record`）。
+
+  而且**旧文件带 UTF-8 BOM** —— `JSON.parse` 见到 BOM 直接抛错，被 `try/catch` 吞掉后表现为"整表为空"。
+  只读旧文件 + 不剥 BOM 的组合，症状就是面板里标题/轮次全是 `null`、会话行「从列表移除」报
+  **「列表里找不到标题为 X 的会话」**（宿主按标题定位，拿不到标题就找不到人）。两条都已修。
+  投影里的旧行不动，由产品自行清理/忽略；工作区删除调用的是产品登记服务，登记变更会自动广播。
 - 通道：客户端 → `POST /dsh-cleaner/api`（宿主 webServer 精确路由），与
   dsh-time-stamp / netmon 同一条经过验证的第三方通道；`selftest` 会在 `%TEMP%`
   里跑一遍「临时项目 → 回收站 → 还原」的完整循环，用于随时自检。

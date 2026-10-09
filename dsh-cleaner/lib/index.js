@@ -130,15 +130,45 @@ export class CleanerService extends Service {
     return join(dshHome(), 'sessions')
   }
 
-  /** 读取会话投影缓存（标题/统计），失败时返回空表——面板降级为只显示 id。 */
+  /**
+   * 读一个 JSON 文件。DSH 写出来的投影文件带 UTF-8 BOM，
+   * 而 JSON.parse 见到 BOM 会直接抛错 —— 所以先剥掉再解析。
+   */
+  readJson(file) {
+    const raw = readFileSync(file, 'utf8')
+    return JSON.parse(raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw)
+  }
+
+  /**
+   * 旧形态的会话投影表：storages/session_projcache.json（整个表一个文件）。
+   * 当前 DSH 已经改成「每个会话一个文件」，见 projectionOf()；这里保留作为回退。
+   */
   readProjections() {
     try {
-      const raw = readFileSync(join(dshHome(), 'storages', 'session_projcache.json'), 'utf8')
-      const parsed = JSON.parse(raw)
+      const parsed = this.readJson(join(dshHome(), 'storages', 'session_projcache.json'))
       return (parsed && parsed.tables && parsed.tables.sessions) || {}
     } catch {
       return {}
     }
+  }
+
+  /**
+   * 单个会话的投影（标题 / 统计）。
+   * DSH 换过一次存储形态：
+   *   · 早期：storages/session_projcache.json —— 整表一个文件，某个版本之后就不再写了；
+   *   · 现在：storages/session_projcache/sessions/<会话id>.json —— 每个会话一个文件，外层多包一层 record。
+   * 只读旧文件的话，「最近新建的会话」在宿主眼里标题永远是 null —— 症状就是
+   * 「从列表移除」报「列表里找不到标题为 X 的会话」，面板里的标题/轮次也全是空。
+   * 所以按会话 id 去读当前形态，读不到再回退旧表（两种形态同时存在时以新为准）。
+   */
+  projectionOf(sessionId, flatTable) {
+    try {
+      const file = join(dshHome(), 'storages', 'session_projcache', 'sessions', `${sessionId}.json`)
+      const parsed = this.readJson(file)
+      const rec = parsed && parsed.record ? parsed.record : null
+      if (rec && rec.rows) return { identity: rec.identity || {}, rows: rec.rows }
+    } catch { }
+    return (flatTable && flatTable[String(sessionId)]) || null
   }
 
   /** 一个会话 id 在磁盘上的全部目录（正常只有一个；历史残留可能多处）。 */
@@ -321,14 +351,15 @@ export class CleanerService extends Service {
     }
   }
 
-  /** 会话的展示信息：标题/统计来自投影缓存，体积与时间来自磁盘。 */
-  sessionView(sessionId, proj, archivedSet) {
-    const p = (proj && proj[sessionId]) || null
+  /** 会话的展示信息：标题/统计来自投影缓存（新旧两种形态都读），体积与时间来自磁盘。 */
+  sessionView(sessionId, flatTable, archivedSet) {
+    const p = this.projectionOf(sessionId, flatTable)
     const rows = p && p.rows ? p.rows : {}
     const identity = p && p.identity ? p.identity : {}
     const stats = rows.sessionStats && rows.sessionStats.val ? rows.sessionStats.val : {}
     const usage = rows.tokenUsage && rows.tokenUsage.val && rows.tokenUsage.val.totals
       ? rows.tokenUsage.val.totals : {}
+    const listMeta = rows.sessionListMetadata && rows.sessionListMetadata.val ? rows.sessionListMetadata.val : {}
     let bytes = 0
     let mtime = 0
     for (const dir of this.sessionDirs(sessionId)) {
@@ -336,13 +367,15 @@ export class CleanerService extends Service {
       bytes += s.bytes
       if (s.mtime > mtime) mtime = s.mtime
     }
+    const lastPromptAt = typeof listMeta.lastPromptAt === 'number' ? listMeta.lastPromptAt
+      : (typeof identity.lastPromptAt === 'number' ? identity.lastPromptAt : null)
     return {
       id: sessionId,
       title: rows.title && rows.title.val ? rows.title.val : null,
       bytes,
       mtime,
       turns: typeof stats.turns === 'number' ? stats.turns : null,
-      lastPromptAt: typeof identity.lastPromptAt === 'number' ? identity.lastPromptAt : null,
+      lastPromptAt,
       createdAt: typeof identity.createdAt === 'number' ? identity.createdAt : null,
       outputTokens: typeof usage.outputTokens === 'number' ? usage.outputTokens : null,
       archived: archivedSet ? archivedSet.has(sessionId) : false,
@@ -352,7 +385,7 @@ export class CleanerService extends Service {
 
   /** 所有工作区的可删除视图 + 孤儿会话清单。 */
   listWorkspaces() {
-    const proj = this.readProjections()
+    const flat = this.readProjections()
     const archivedSet = new Set((this.ctx.workspaceRegistry.archivedSessionIds || []).map(String))
     const accounted = new Set()
     const workspaces = []
@@ -366,7 +399,7 @@ export class CleanerService extends Service {
       const sessions = sessionIds.map((sid) => {
         const key = String(sid)
         accounted.add(key)
-        return this.sessionView(key, proj, archivedSet)
+        return this.sessionView(key, flat, archivedSet)
       })
       let projectBytes = 0
       try {
@@ -396,7 +429,7 @@ export class CleanerService extends Service {
           const name = entry.name
           if (accounted.has(name) || seenOrphans.has(name)) continue
           seenOrphans.add(name)
-          const view = this.sessionView(name, proj, archivedSet)
+          const view = this.sessionView(name, flat, archivedSet)
           if (name.startsWith('session-')) detached.push(view)
           else orphans.push(view)
         }
@@ -525,13 +558,13 @@ export class CleanerService extends Service {
   async detachByTitle(title, workspaceTitle) {
     const want = String(title || '').trim()
     if (want === '') throw new Error('缺少会话标题')
-    const proj = this.readProjections()
+    const flat = this.readProjections()
     const archivedSet = new Set((this.ctx.workspaceRegistry.archivedSessionIds || []).map(String))
     const hits = []
     for (const w of this.ctx.workspaceRegistry.list()) {
       let handle = null
       try { handle = this.ctx.workspaceRegistry.get(String(w.id)) } catch { continue }
-      const views = (handle ? [...handle.sessionIds] : []).map((sid) => this.sessionView(String(sid), proj, archivedSet))
+      const views = (handle ? [...handle.sessionIds] : []).map((sid) => this.sessionView(String(sid), flat, archivedSet))
       for (const v of views) {
         const t = (v.title || '').trim()
         if (t === want || v.id === want) hits.push({ handle, view: v, workspace: String(handle.title || w.title || '') })
