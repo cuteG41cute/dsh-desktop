@@ -65,6 +65,15 @@ window.__ModuleLoader__.load({
     const valueStyle = { color: 'var(--dsw-alias-label-primary, #222)' }
     const rowStyle = { display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 4 }
 
+    // ── 设置行的原生外观 ──
+    // 与产品「通用设置」里的行逐值对齐（实测：行 padding 16px 0 + 底部 1px 分隔线、
+    // 文本列 gap 4 + 右侧留 48px、标题 14/22/400、说明 12/18 且用 label-tertiary）。
+    const ROW = { display: 'flex', alignItems: 'center', gap: 8, padding: '16px 0', borderBottom: '1px solid var(--dsw-alias-border-l2, rgba(0,0,0,0.1))', width: '100%' }
+    const ROW_TEXT = { display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 auto', minWidth: 0, paddingRight: 48 }
+    const ROW_TITLE = { fontSize: 14, lineHeight: '22px', fontWeight: 400, color: 'var(--dsw-alias-label-primary, #222)' }
+    const ROW_DESC = { fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary, #999)' }
+    const ROW_CONTROL = { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }
+
     function row(label, value, mono) {
       return react.createElement('div', { key: 'r-' + label, style: rowStyle }, [
         react.createElement('span', { key: 'l', style: { ...labelStyle, flex: '0 0 84px' } }, label),
@@ -319,11 +328,13 @@ window.__ModuleLoader__.load({
               if (result && result.ok === true) pull()
             })
           }
-          return react.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, [
-            react.createElement('div', { key: 'title', style: { fontWeight: 600 } }, text),
-            react.createElement('div', { key: 'desc', style: { ...labelStyle, fontSize: 12 } },
-              '开关按项目独立控制：这里切的是「当前项目」，其它项目互不影响。任何 write/edit 覆盖已存在文件之前，自动把原文备份进该项目 .dsh-backup/（源文件名+时间戳，每个文件只保留最近若干代）。'),
-            react.createElement('div', { key: 'row', style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, [
+          return react.createElement('div', { style: ROW }, [
+            react.createElement('div', { key: 'text', style: ROW_TEXT }, [
+              react.createElement('div', { key: 'title', style: ROW_TITLE }, text),
+              react.createElement('div', { key: 'desc', style: ROW_DESC },
+                '开关按项目独立控制：这里切的是「当前项目」，其它项目互不影响。任何 write/edit 覆盖已存在文件之前，自动把原文备份进该项目 .dsh-backup/（源文件名+时间戳，每个文件只保留最近若干代）。'),
+            ]),
+            react.createElement('div', { key: 'control', style: ROW_CONTROL }, [
               react.createElement('button', {
                 key: 'flip',
                 style: { ...chipStyle, cursor: 'pointer' },
