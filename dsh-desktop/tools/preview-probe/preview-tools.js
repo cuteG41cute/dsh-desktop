@@ -1,7 +1,9 @@
 // dsh-desktop 注入脚本：右侧栏「图片 / PDF」预览增强
 //   · 作用范围**仅限右侧栏里的图片 / PDF 预览**；文本 / 代码 / 日志 / 文件列表等
 //     一律交还给产品自己的滚动与滑动条，我们完全不介入（不加类、不接管滚轮）
-//   · 图片 / PDF：滚轮 = 缩放（以光标为锚点）、左键拖动 = 平移、双击 = 适宽 ↔ 1:1
+//   · 图片：滚轮 = 缩放（以光标为锚点）、左键拖动 = 平移、双击 = 适宽 ↔ 1:1
+//   · PDF：**Ctrl + 滚轮** = 缩放（单滚轮保持上下滑动）、左键拖动 = 平移、
+//     双击 = 适宽 ↔ 100%；缩放是**全局**的（所有页一起），且可以放大到超出显示区域
 //   · 预览区右侧与底部使用加粗的可拖动滑动条（14px，覆盖产品的 8px 细条）
 //   · 右侧栏收起 / 预览关闭 / 切换成文本类文件 → 立即解绑，原生行为完全恢复
 (function () {
@@ -9,6 +11,7 @@
   window.__dshPreviewTools = true;
 
   var MIN = 0.15, MAX = 8, STEP = 0.0015, PAD = 8;
+  var PDF_PAGE = '[data-pdf-page]';
   var VP = 'dsh-pv-vp', PAN = 'dsh-pv-pan', BADGE = 'dsh-pv-badge', STYLE = 'dsh-pv-style';
   // 文本类预览的标志（产品自己的渲染器）：出现即说明这不是图片/PDF，我们不介入
   var TEXT_MARK = '[data-textpreview-plain], [data-textpreview-page], pre, [data-code-preview]';
@@ -96,6 +99,7 @@
         try { vp.removeEventListener(st.on[i][0], st.on[i][1], st.on[i][2]); } catch (e) {}
       }
       try { if (st.frame && st.frame.style) st.frame.style.zoom = ''; } catch (e) {}
+      try { if (st.pdf) { pdfClear(st); pdfReclip(st); } } catch (e) {}
       state.delete(vp);
     }
     vp.classList.remove(VP, PAN);
@@ -164,10 +168,176 @@
     return Math.round(k * 100);
   }
 
+  // ───────────────────────── PDF：全局缩放（不用 CSS zoom） ─────────────────────────
+  // 产品把 PDF 每一页渲染成 <div data-pdf-page><canvas>，画布宽度是
+  // width:min(var(--pdf-page-width), 100%)，而页容器与正文容器都带 overflow-x:hidden。
+  // 于是图片那套 frame.style.zoom 在 PDF 上有三个硬伤：
+  //   ① frame 只是**第一页**的容器 → 只放大第一页；
+  //   ② 画布宽度是百分比，CSS zoom 会连它一起缩掉（数字涨到几百，画面反而缩回一屏）；
+  //   ③ overflow-x:hidden → 超出的部分被裁掉，根本滚不到。
+  // 这里改走「按页写绝对像素宽度」：canvas 宽度 = 页面自然宽度(--pdf-page-width) × k，
+  // 并把页 / 正文容器的 overflow 临时放开，让 [data-textpreview-body] 自己去滚。
+  // k 以**页面 100%（96dpi 原始尺寸）**为基准，所以 100% 就是真正的 1:1。
+  function pdfNodes(vp) {
+    var pages = vp.querySelectorAll(PDF_PAGE);
+    var canvases = [];
+    for (var i = 0; i < pages.length; i++) {
+      var c = pages[i].querySelector('canvas');
+      if (c) canvases.push(c);
+    }
+    return canvases.length ? { pages: pages, canvases: canvases, natural: [] } : null;
+  }
+  function pdfNatural(canvas) {
+    var raw = '';
+    try { raw = canvas.style.getPropertyValue('--pdf-page-width') || ''; } catch (e) {}
+    var n = parseFloat(raw);
+    return (n > 40) ? n : 0;
+  }
+  function pdfUnclip(st) {          // 放开中间容器的裁剪（记下原内联值，解绑时逐字还原）
+    for (var i = 0; i < st.pdf.pages.length; i++) {
+      var el = st.pdf.pages[i];
+      while (el && el !== st.vp && el.nodeType === 1) {
+        if (st.unclipped.indexOf(el) < 0) {
+          st.unclipped.push(el);
+          el.setAttribute('data-dsh-pv-overflow', el.style.overflow || '');
+          el.style.overflow = 'visible';
+        }
+        el = el.parentElement;
+      }
+    }
+  }
+  function pdfReclip(st) {
+    for (var i = 0; i < st.unclipped.length; i++) {
+      var el = st.unclipped[i];
+      var prev = el.getAttribute('data-dsh-pv-overflow') || '';
+      if (prev) el.style.overflow = prev; else el.style.removeProperty('overflow');
+      el.removeAttribute('data-dsh-pv-overflow');
+    }
+    st.unclipped = [];
+  }
+  function pdfClear(st) {           // 交还产品自己的响应式宽度
+    for (var i = 0; i < st.pdf.canvases.length; i++) {
+      var c = st.pdf.canvases[i];
+      c.style.removeProperty('width');
+      c.style.removeProperty('max-width');
+      c.style.removeProperty('height');
+    }
+  }
+  function pdfApply(st, k) {
+    for (var i = 0; i < st.pdf.canvases.length; i++) {
+      var node = st.pdf.canvases[i];
+      var nat = st.pdf.natural[i] || 0;
+      if (!nat) { node.style.removeProperty('width'); node.style.removeProperty('max-width'); continue; }
+      node.style.maxWidth = 'none';
+      node.style.height = 'auto';
+      node.style.width = Math.round(nat * k * 100) / 100 + 'px';
+    }
+    st.zoom = k;
+  }
+  function pdfNaturalWidths(st) {   // 采集每页自然宽度（产品渲染时写在画布上的 --pdf-page-width）
+    var list = [];
+    for (var i = 0; i < st.pdf.canvases.length; i++) {
+      var nat = pdfNatural(st.pdf.canvases[i]);
+      if (!nat && i === 0) {
+        // 只有第一页值得兜底（绑定条件就要求它已经渲染出尺寸）：万一产品不再写
+        // --pdf-page-width，就用「当前宽度 ÷ 当前倍率」反推。
+        var cur = st.pdf.canvases[i].getBoundingClientRect().width;
+        nat = (cur > 0 && st.zoom > 0) ? cur / st.zoom : 0;
+      }
+      // 后面的页是产品**滚动到位才渲染**的：这时它还没有 --pdf-page-width，
+      // 绝对不要去猜尺寸（默认画布 300px 会把该页定成另一个比例）——
+      // 记 0，等它渲染出来再由 pdfKeepUp 按同一个倍率补上。
+      list.push(nat);
+    }
+    st.pdf.natural = list;
+    return list;
+  }
+  // 画布真正能用的宽度 = **页面容器的内容宽**（视口宽 − 正文容器内边距 − 页容器内边距）。
+  // 不能拿「视口宽 − 一个估计值」凑：产品那两层容器还有 8px + 12px 的内边距，
+  // 少算就会让「适宽」反而宽出几十像素、多出一条横向滚动条。
+  function pdfAvailable(st) {
+    var c = st.pdf.canvases[0];
+    var host = c && c.parentElement;
+    if (host) {
+      var cs = getComputedStyle(host);
+      var pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+      var w = host.clientWidth - pad;
+      if (w > 40) return w;
+    }
+    return Math.max(40, st.vp.clientWidth - PAD * 2);
+  }
+  function pdfFitK(st) {            // 适宽：第一页正好铺满可用宽度（不留横向滚动条）
+    var nat = st.pdf.natural[0] || 0;
+    if (!nat) return st.zoom;
+    return Math.max(MIN, Math.min(MAX, pdfAvailable(st) / nat));
+  }
+  function pdfBaseK(st) {           // 产品默认布局（未覆盖宽度）对应的倍率
+    var nat = st.pdf.natural[0] || 0;
+    if (!nat) return 1;
+    var w = 0;
+    for (var i = 0; i < st.pdf.canvases.length; i++) {
+      var r = st.pdf.canvases[i].getBoundingClientRect();
+      if (r.width > w) w = r.width;
+    }
+    return w > 0 ? w / nat : 1;
+  }
+  function pdfIsFit(st) {
+    return Math.abs(st.zoom - pdfFitK(st)) < 0.02;
+  }
+  // 以光标为锚点缩放：内容尺寸与 k 成正比，所以按「光标处的相对坐标」换算滚动位置 ——
+  // 缩放前后各量一次，不依赖任何关于内边距 / 居中方式的假设。
+  function zoomPdfAt(st, k, cx, cy) {
+    k = Math.max(MIN, Math.min(MAX, k));
+    st.pdfZoomed = true;            // 从这里开始才由我们接管宽度
+    var vp = st.vp, r = vp.getBoundingClientRect();
+    var px = (typeof cx === 'number') ? cx - r.left : r.width / 2;
+    var py = (typeof cy === 'number') ? cy - r.top : r.height / 2;
+    var c0 = st.pdf.canvases[0].getBoundingClientRect();
+    var ox0 = (c0.left - r.left) + vp.scrollLeft, oy0 = (c0.top - r.top) + vp.scrollTop;
+    var w0 = c0.width || 1, h0 = c0.height || 1;
+    var tx = (vp.scrollLeft + px - ox0) / w0, ty = (vp.scrollTop + py - oy0) / h0;
+    pdfApply(st, k);
+    var c1 = st.pdf.canvases[0].getBoundingClientRect();   // getBoundingClientRect 会先刷新布局
+    var ox1 = (c1.left - r.left) + vp.scrollLeft, oy1 = (c1.top - r.top) + vp.scrollTop;
+    vp.scrollLeft = ox1 + tx * (c1.width || 1) - px;
+    vp.scrollTop = oy1 + ty * (c1.height || 1) - py;
+    return Math.round(k * 100);
+  }
+  function setupPdf(st, vp) {       // 绑定 / 换文件 / 尺寸变化后重建 PDF 状态
+    var pdf = pdfNodes(vp);
+    st.pdf = pdf;
+    if (!pdf) return false;
+    st.frame = pdf.pages[0];        // 拖动平移只需要一个几何参照
+    st.zoom = 1;
+    st.pdfZoomed = false;           // 用户还没缩放时，绝不去写内联宽度（保持产品自己的响应式排版）
+    pdfNaturalWidths(st);
+    pdfUnclip(st);
+    st.zoom = pdfBaseK(st);         // 产品默认排出来的倍率（窄面板≈适宽，宽面板＝1:1）
+    return true;
+  }
+  // 后几页渲染完成（画布拿到 --pdf-page-width）后按**同一个倍率**补齐，
+  // 否则放大状态下滚动出来的新页会是另一个尺寸。
+  function pdfKeepUp(st) {
+    var fresh = pdfNodes(st.vp);
+    if (!fresh) return false;
+    var beforeCount = st.pdf.canvases.length;
+    var beforeNat = st.pdf.natural.join(',');
+    st.pdf.pages = fresh.pages;
+    st.pdf.canvases = fresh.canvases;
+    pdfReclip(st);
+    pdfUnclip(st);
+    pdfNaturalWidths(st);
+    var changed = st.pdf.canvases.length !== beforeCount || st.pdf.natural.join(',') !== beforeNat;
+    // 只有用户已经在缩放，才需要把新渲染出来的页按当前倍率补齐；
+    // 否则产品自己的响应式排版更准，我们什么都不该写。
+    if (changed && st.pdfZoomed) { pdfApply(st, st.zoom); return true; }
+    return false;
+  }
   function bind(vp, media, kind) {
     if (state.has(vp)) return false;
     var st = { vp: vp, media: media, frame: media.parentElement || media, zoom: 1,
-               drag: false, lx: 0, ly: 0, on: [] };
+               drag: false, lx: 0, ly: 0, on: [], pdf: null, unclipped: [] };
+    setupPdf(st, vp);                             // PDF 走独立分支（不是 PDF 时 st.pdf = null）
     state.set(vp, st);
     vp.classList.add(VP);
     if (media.tagName === 'IMG') media.draggable = false;
@@ -175,9 +345,13 @@
     on(vp, st, 'wheel', function (e) {
       if (e.shiftKey) return;                       // Shift+滚轮：交给浏览器做水平滚动
       if (!e.deltaY) return;
+      // PDF：必须 Ctrl + 滚轮才缩放；单滚轮交还给产品做上下滑动
+      // （否则一次手势既缩放又滑动，而且缩放还会带着滚动位置一起跑）
+      if (st.pdf && !e.ctrlKey) return;
       e.preventDefault(); e.stopPropagation();
       var k = st.zoom * Math.exp(-e.deltaY * STEP);
-      showBadge(vp, applyZoom(st, k, e.clientX, e.clientY) + '%');
+      var pct = st.pdf ? zoomPdfAt(st, k, e.clientX, e.clientY) : applyZoom(st, k, e.clientX, e.clientY);
+      showBadge(vp, pct + '%');
     }, { passive: false, capture: true });
 
     on(vp, st, 'mousedown', function (e) {
@@ -190,6 +364,12 @@
       e.preventDefault();
     }, true);
     on(vp, st, 'dblclick', function (e) {
+      if (st.pdf) {
+        var fitPdf = pdfFitK(st);
+        var toPdf = pdfIsFit(st) ? 1 : fitPdf;     // 适宽 ↔ 100%（1:1）
+        showBadge(vp, (toPdf === 1 ? '1:1 · ' : '适宽 · ') + zoomPdfAt(st, toPdf, e.clientX, e.clientY) + '%');
+        return;
+      }
       var fit = fitScale(st);
       var target = Math.abs(st.zoom - fit) < 0.02 ? 1 : fit;
       showBadge(vp, (target === 1 ? '1:1 · ' : '适宽 · ') + applyZoom(st, target, e.clientX, e.clientY) + '%');
@@ -197,7 +377,7 @@
 
     if (!window.__dshPreviewHint) {
       window.__dshPreviewHint = true;
-      showBadge(vp, '滚轮缩放 · 拖动平移 · 双击适宽', 2800);
+      showBadge(vp, st.pdf ? 'Ctrl+滚轮缩放 · 拖动平移 · 双击适宽/1:1' : '滚轮缩放 · 拖动平移 · 双击适宽', 2800);
     }
     post({ type: 'dsh-preview-bound', kind: kind || '', w: vp.clientWidth, h: vp.clientHeight, sw: vp.scrollWidth, sh: vp.scrollHeight });
     return true;
@@ -209,15 +389,35 @@
     var st = state.get(vp);
     if (!st || st.media === media) return false;
     try { if (st.frame && st.frame.style) st.frame.style.zoom = ''; } catch (e) {}
+    try { if (st.pdf) { pdfClear(st); pdfReclip(st); } } catch (e) {}
     st.media = media;
     st.frame = media.parentElement || media;
     st.zoom = 1;
     st.drag = false;
     vp.classList.remove(PAN);
     if (media.tagName === 'IMG') media.draggable = false;
+    setupPdf(st, vp);              // PDF ↔ 图片互切 / 换另一个 PDF：重建尺寸状态
     post({ type: 'dsh-preview-rebound', kind: kind || '' });
     return true;
   }
+
+  // 面板宽度变了：PDF 的宽度本来由产品 CSS 决定，我们写了绝对像素后会把它冻住 ——
+  // 所以尺寸变化时先把宽度交还产品、量准自然宽度，再按当前倍率写回去
+  //（当时处于「适宽」就继续保持适宽）。图片用的是 CSS zoom，不受影响。
+  window.addEventListener('resize', function () {
+    var list = document.querySelectorAll('.' + VP);
+    for (var i = 0; i < list.length; i++) {
+      var st = state.get(list[i]);
+      if (!st || !st.pdf || !st.pdfZoomed || !liveState(st)) continue;
+      try {
+        var wasFit = pdfIsFit(st);
+        pdfClear(st);
+        pdfNaturalWidths(st);
+        st.zoom = wasFit ? pdfFitK(st) : st.zoom;
+        pdfApply(st, st.zoom);
+      } catch (e) {}
+    }
+  }, true);
 
   window.addEventListener('mousemove', function (e) {
     var list = document.querySelectorAll('.' + VP);
@@ -250,6 +450,8 @@
       if (liveViewport(vp) !== vp) continue;
       var host = vp.closest('[data-document-preview]');
       var kind = host ? (host.getAttribute('data-document-preview') || '') : '';
+      var pdf = pdfNodes(vp);
+      if (pdf) return { vp: vp, media: pdf.canvases[0], kind: kind + '#pdf' };
       if (vp.querySelector(TEXT_MARK)) return { vp: vp, media: null, kind: kind + '#text' };
       var media = vp.querySelector(MEDIA_MARK);
       if (!media) return { vp: vp, media: null, kind: kind + '#none' };
@@ -274,6 +476,10 @@
       if (list[i] !== target || liveViewport(list[i]) !== list[i]) unbind(list[i]);
     }
     if (target && !bind(target, found.media, found.kind)) refresh(target, found.media, found.kind);
+    if (target && found.kind.indexOf('#pdf') >= 0) {
+      var bound = state.get(target);
+      if (bound && bound.pdf && liveState(bound)) { try { pdfKeepUp(bound); } catch (e) {} }
+    }
   }
 
   var timer = 0;

@@ -14,3 +14,4 @@ dsh-desktop/linux/build/deb/DEBIAN/prerm text eol=lf
 *.dll binary
 *.ico binary
 *.png binary
+*.pdf binary
