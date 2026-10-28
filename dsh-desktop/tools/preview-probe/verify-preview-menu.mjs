@@ -1,4 +1,5 @@
-// 验证：右栏图片预览的右键菜单（真实产品页面 + 真实右键事件）
+// 验证：右栏**所有预览**的右键菜单与「保存到…」（真实产品页面 + 真实右键事件）
+// 覆盖：大图 / 小图（未绑定缩放）/ PDF / 文本（Markdown）
 // 每个用例前整页重载，避免「多个预览标签同时存在」把探测指向非激活标签。
 import { spawn } from 'node:child_process'
 import { readFileSync, mkdirSync, existsSync } from 'node:fs'
@@ -251,7 +252,7 @@ async function main() {
     await sleep(300)
     const sent1 = await sentJson()
     console.log('  发出:', JSON.stringify(sent1.filter((s) => s.type !== 'dsh-preview-bound')))
-    const saveMsg = sent1.find((s) => s.type === 'dsh-image-save')
+    const saveMsg = sent1.find((s) => s.type === 'dsh-save-file')
     check('点「保存到…」把保存请求发给宿主', !!saveMsg)
     check('送出的绝对路径 = 刚打开的那个文件',
       !!saveMsg && /^[A-Za-z]:[\\/]/.test(decB64(saveMsg.pathB64)) && decB64(saveMsg.pathB64).endsWith('docs\\banner.png'), decB64(saveMsg && saveMsg.pathB64))
@@ -260,14 +261,14 @@ async function main() {
 
     // 宿主回执
     const savedPath = 'C:\\Users\\twinblade\\Desktop\\banner.png'
-    await cdp.eval(`window.__emit(${JSON.stringify({ type: 'dsh-image-save-result', requestId: saveMsg.requestId, ok: true, pathB64: Buffer.from(savedPath, 'utf8').toString('base64') })})`)
+    await cdp.eval(`window.__emit(${JSON.stringify({ type: 'dsh-save-file-result', requestId: saveMsg.requestId, ok: true, pathB64: Buffer.from(savedPath, 'utf8').toString('base64') })})`)
     await sleep(200)
     const badge = await cdp.eval('window.__m.badge()')
     check('回执后提示「已保存：<路径>」', !!badge && badge.indexOf('已保存') === 0 && badge.indexOf('banner.png') > 0, badge)
-    await cdp.eval(`window.__emit({ type: 'dsh-image-save-result', requestId: 'x', ok: false, reason: 'cancelled' })`)
+    await cdp.eval(`window.__emit({ type: 'dsh-save-file-result', requestId: 'x', ok: false, reason: 'cancelled' })`)
     await sleep(150)
     check('取消时提示「已取消保存」', (await cdp.eval('window.__m.badge()')) === '已取消保存')
-    await cdp.eval(`window.__emit(${JSON.stringify({ type: 'dsh-image-save-result', requestId: 'y', ok: false, reason: 'error', messageB64: Buffer.from('磁盘已满', 'utf8').toString('base64') })})`)
+    await cdp.eval(`window.__emit(${JSON.stringify({ type: 'dsh-save-file-result', requestId: 'y', ok: false, reason: 'error', messageB64: Buffer.from('磁盘已满', 'utf8').toString('base64') })})`)
     await sleep(150)
     check('失败时原文显示宿主错误（中文不乱码）', String(await cdp.eval('window.__m.badge()')).indexOf('磁盘已满') > 0, await cdp.eval('window.__m.badge()'))
 
@@ -279,7 +280,7 @@ async function main() {
     await cdp.eval('window.__sent.length = 0')
     await cdp.key('s', 'KeyS', 83, 2)
     await sleep(250)
-    check('图片预览里 Ctrl+S 直接保存（不用先开菜单）', (await sentJson()).some((s) => s.type === 'dsh-image-save'))
+    check('图片预览里 Ctrl+S 直接保存（不用先开菜单）', (await sentJson()).some((s) => s.type === 'dsh-save-file'))
 
     await cdp.rightClick(p1.x, p1.y)
     await cdp.click((await cdp.eval(`window.__m.itemPos('复制图片')`)).x, (await cdp.eval(`window.__m.itemPos('复制图片')`)).y)
@@ -318,9 +319,18 @@ async function main() {
     check('PDF 预览已就位', k3.pdfPages > 0, k3)
     const pdfPos = await cdp.eval(`(() => { var vp = window.__m.activeVp(); var c = vp && vp.querySelector('[data-pdf-page] canvas'); if (!c) return null; var r = c.getBoundingClientRect(); return { x: Math.round(r.left + 40), y: Math.round(r.top + 40) }; })()`)
     await cdp.rightClick(pdfPos.x, pdfPos.y)
-    check('PDF 上右键不弹我们的菜单', (await cdp.eval('window.__m.menu()')) === null)
-    const pdfPrevented = await cdp.eval(`(() => { var vp = window.__m.activeVp(); var c = vp.querySelector('[data-pdf-page] canvas'); var r = c.getBoundingClientRect(); var ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 40, clientY: r.top + 40 }); c.dispatchEvent(ev); return ev.defaultPrevented; })()`)
-    check('PDF 的右键没有被我们 preventDefault（产品菜单照常）', pdfPrevented === false, pdfPrevented)
+    const m3 = await cdp.eval('window.__m.menu()')
+    console.log('  PDF 菜单:', JSON.stringify(m3))
+    check('PDF 右键也有菜单（能保存）', !!m3 && m3.items.some((t) => t.startsWith('保存到')), m3)
+    check('PDF 菜单有缩放项、没有「复制图片」',
+      !!m3 && m3.items.some((t) => t.startsWith('适应宽度')) && !m3.items.some((t) => t.startsWith('复制图片')), m3 && m3.items)
+    await cdp.eval('window.__sent.length = 0')
+    const pdfSave = await cdp.eval(`window.__m.itemPos('保存到')`)
+    await cdp.click(pdfSave.x, pdfSave.y)
+    await sleep(300)
+    const pdfMsg = (await sentJson()).find((s) => s.type === 'dsh-save-file')
+    check('PDF 的保存消息带的是它自己的路径',
+      !!pdfMsg && decB64(pdfMsg.pathB64).endsWith('three-pages.pdf'), decB64(pdfMsg && pdfMsg.pathB64))
 
     /* ================= 用例 4：文本不接管 ================= */
     console.log('\n【用例 4】文本预览 README.md')
@@ -328,9 +338,29 @@ async function main() {
     const k4 = await cdp.eval('window.__m.kind()')
     console.log('  预览:', JSON.stringify(k4))
     check('文本预览不绑定', k4.bound === false, k4)
-    const textPrevented = await cdp.eval(`(() => { var vp = window.__m.activeVp(); if (!vp) return 'no-vp'; var r = vp.getBoundingClientRect(); var ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 40, clientY: r.top + 40 }); vp.dispatchEvent(ev); return ev.defaultPrevented; })()`)
-    check('文本预览的右键没有被接管', textPrevented === false, textPrevented)
-    check('文本预览不弹我们的菜单', (await cdp.eval('window.__m.menu()')) === null)
+    const tpos = await cdp.eval(`(() => { var vp = window.__m.activeVp(); if (!vp) return null; var r = vp.getBoundingClientRect(); return { x: Math.round(r.left + 40), y: Math.round(r.top + 40) }; })()`)
+    await cdp.rightClick(tpos.x, tpos.y)
+    const m4 = await cdp.eval('window.__m.menu()')
+    console.log('  文本菜单:', JSON.stringify(m4))
+    check('文本右键也有菜单（能保存）', !!m4 && m4.items.some((t) => t.startsWith('保存到')), m4)
+    check('文本菜单保留「复制 / 全选」',
+      !!m4 && m4.items[0].indexOf('复制') === 0 && m4.items[1].indexOf('全选') === 0, m4 && m4.items)
+    check('文本菜单没有图片 / 缩放项',
+      !!m4 && !m4.items.some((t) => t.startsWith('复制图片')) && !m4.items.some((t) => t.startsWith('适应宽度')), m4 && m4.items)
+    // 全选 → 保存
+    const allPos = await cdp.eval(`window.__m.itemPos('全选')`)
+    await cdp.click(allPos.x, allPos.y)
+    await sleep(250)
+    const selLen = await cdp.eval('String(window.getSelection()).length')
+    check('「全选」真的选中了预览里的文本', selLen > 100, selLen)
+    await cdp.eval('window.__sent.length = 0')
+    await cdp.rightClick(tpos.x, tpos.y)
+    const txtSave = await cdp.eval(`window.__m.itemPos('保存到')`)
+    await cdp.click(txtSave.x, txtSave.y)
+    await sleep(300)
+    const txtMsg = (await sentJson()).find((s) => s.type === 'dsh-save-file')
+    check('文本的保存消息带的是它自己的路径',
+      !!txtMsg && decB64(txtMsg.pathB64).endsWith('README.md'), decB64(txtMsg && txtMsg.pathB64))
 
     const errs = cdp.events.filter((e) => e.method === 'Runtime.exceptionThrown')
     console.log('\n未捕获异常 =', errs.length || 0)

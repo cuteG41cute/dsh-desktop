@@ -438,7 +438,8 @@ namespace DshDesktop
             if (string.IsNullOrWhiteSpace(json)) return;
 
             // 右栏图片预览的右键菜单动作（保存 / 复制 / 显示）：交给图片处理器，其它消息照旧
-            if (json.Contains("\"dsh-image-save\"") || json.Contains("\"dsh-copy-image\"") || json.Contains("\"dsh-reveal\""))
+            if (json.Contains("\"dsh-save-file\"") || json.Contains("\"dsh-image-save\"") ||
+                json.Contains("\"dsh-copy-image\"") || json.Contains("\"dsh-reveal\""))
             {
                 HandleImageMessage(json);
                 return;
@@ -523,12 +524,12 @@ namespace DshDesktop
                 {
                     using (var dlg = new SaveFileDialog())
                     {
-                        dlg.Title = "保存图片";
+                        string ext = Path.GetExtension(fileName).TrimStart('.');
+                        dlg.Title = IsImageExt(ext) ? "保存图片" : "另存为";
                         // 默认目录 = 桌面（用户要求）
                         dlg.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
                         dlg.FileName = fileName;
-                        string ext = Path.GetExtension(fileName).TrimStart('.');
-                        dlg.Filter = ImageFilter(ext);
+                        dlg.Filter = FileFilter(ext);
                         if (!string.IsNullOrEmpty(ext)) dlg.DefaultExt = ext;
                         dlg.AddExtension = true;
                         dlg.OverwritePrompt = true;
@@ -594,18 +595,27 @@ namespace DshDesktop
 
         private static string SafeFileName(string name)
         {
-            string n = string.IsNullOrWhiteSpace(name) ? "image.png" : Path.GetFileName(name.Trim());
+            string n = string.IsNullOrWhiteSpace(name) ? "file" : Path.GetFileName(name.Trim());
             foreach (char c in Path.GetInvalidFileNameChars()) n = n.Replace(c.ToString(), "");
-            if (string.IsNullOrWhiteSpace(n)) n = "image.png";
-            if (string.IsNullOrEmpty(Path.GetExtension(n))) n += ".png";
+            if (string.IsNullOrWhiteSpace(n)) n = "file";
             return n;
         }
 
-        private static string ImageFilter(string ext)
+        private static bool IsImageExt(string ext)
         {
-            const string common = "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.svg;*.ico;*.tif;*.tiff;*.avif";
+            if (string.IsNullOrEmpty(ext)) return false;
+            const string images = "png;jpg;jpeg;gif;webp;bmp;svg;ico;tif;tiff;avif";
+            return (images + ";").IndexOf(ext.ToLowerInvariant() + ";") >= 0;
+        }
+
+        // 图片给出「当前格式 / 图片 / 所有文件」三档；其它类型（文本、代码、PDF、压缩包…）
+        // 只给「当前格式 / 所有文件」，标题也从「保存图片」换成中性的「另存为」。
+        private static string FileFilter(string ext)
+        {
+            const string images = "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.svg;*.ico;*.tif;*.tiff;*.avif";
             string own = string.IsNullOrEmpty(ext) ? "" : "当前格式 (*." + ext + ")|*." + ext + "|";
-            return own + "图片 (" + common + ")|" + common + "|所有文件 (*.*)|*.*";
+            string img = IsImageExt(ext) ? "图片 (" + images + ")|" + images + "|" : "";
+            return own + img + "所有文件 (*.*)|*.*";
         }
 
         private string DecodeB64Field(string json, string field)
@@ -632,7 +642,7 @@ namespace DshDesktop
 
         private void ReplySaveResult(string requestId, bool ok, string path, string reason, string message)
         {
-            string sb = "{\"type\":\"dsh-image-save-result\",\"requestId\":\"" + requestId + "\",\"ok\":" + (ok ? "true" : "false");
+            string sb = "{\"type\":\"dsh-save-file-result\",\"requestId\":\"" + requestId + "\",\"ok\":" + (ok ? "true" : "false");
             if (ok) sb += ",\"pathB64\":\"" + B64(path) + "\"";
             else
             {
@@ -971,8 +981,9 @@ namespace DshDesktop
 //   · PDF：**Ctrl + 滚轮** = 缩放（单滚轮保持上下滑动）、左键拖动 = 平移、
 //     双击 = 适宽 ↔ 100%；缩放是**全局**的（所有页一起），且可以放大到超出显示区域
 //   · 预览区右侧与底部使用加粗的可拖动滑动条（14px，覆盖产品的 8px 细条）
-//   · 图片预览上**右键**：保存到…（宿主弹 Windows 另存为对话框，默认桌面）/ 复制图片 /
-//     复制文件路径 / 适应宽度 / 实际大小 / 在资源管理器中显示（文本、代码、PDF 的右键菜单不动）
+//   · **任何**预览（图片 / PDF / 文本 / 代码 / Markdown）右键都有菜单：
+//     保存到…（宿主弹 Windows 另存为对话框，默认桌面）/ 复制文件路径 / 在资源管理器中显示；
+//     图片另有「复制图片」与缩放项，文本另有「复制 / 全选」（不牺牲原来的文本操作）
 //   · 右侧栏收起 / 预览关闭 / 切换成文本类文件 → 立即解绑，原生行为完全恢复
 (function () {
   if (window.__dshPreviewTools) return;
@@ -1446,24 +1457,25 @@ namespace DshDesktop
     }
     return '';
   }
-  function imageDetail(target) {
-    var frame = target && target.closest ? target.closest('[data-image-preview]') : null;
-    if (!frame) return null;
-    var vp = frame.closest('[data-textpreview-body]');
-    if (!vp || !vp.closest('[data-document-preview]') || liveViewport(vp) !== vp) return null;
-    var img = frame.querySelector('img');
-    if (!img || !img.naturalWidth) return null;
-    return { vp: vp, img: img, frame: frame, path: previewFilePath(vp) };
+  // 预览里现在展示的是什么文件：image / pdf / text（文本、代码、日志、Markdown 都算 text）
+  function previewDetailFor(vp) {
+    if (!vp || liveViewport(vp) !== vp) return null;
+    var img = vp.querySelector('[data-image-preview] img');
+    var pdf = vp.querySelectorAll('[data-pdf-page]').length > 0;
+    var kind = (img && img.naturalWidth) ? 'image' : (pdf ? 'pdf' : 'text');
+    if (kind === 'text' && !(vp.textContent || '').trim() && !vp.querySelector('img, canvas')) return null;
+    return { vp: vp, kind: kind, img: kind === 'image' ? img : null, pdf: kind === 'pdf', path: previewFilePath(vp) };
   }
-  function currentImageDetail() {
+  function detailOfTarget(target) {
+    if (!target || !target.closest) return null;
+    var vp = target.closest('[data-textpreview-body]');
+    return vp ? previewDetailFor(vp) : null;
+  }
+  function currentDetail() {
     var vps = document.querySelectorAll('[data-textpreview-body]');
     for (var i = 0; i < vps.length; i++) {
-      if (liveViewport(vps[i]) !== vps[i]) continue;
-      var frame = vps[i].querySelector('[data-image-preview]');
-      if (!frame) continue;
-      var img = frame.querySelector('img');
-      if (!img || !img.naturalWidth) continue;
-      return { vp: vps[i], img: img, frame: frame, path: previewFilePath(vps[i]) };
+      var d = previewDetailFor(vps[i]);
+      if (d) return d;
     }
     return null;
   }
@@ -1499,13 +1511,24 @@ namespace DshDesktop
     var c = { el: box, vp: detail.vp, items: [], idx: -1 };
     var name = detail.path ? baseName(detail.path) : 'image.png';
 
-    box.appendChild(menuItem(c, '保存到…', 'Ctrl+S', false, function () { saveImage(detail, name); }));
-    box.appendChild(menuItem(c, '复制图片', '', false, function () { copyImage(detail); }));
-    box.appendChild(menuItem(c, '复制文件路径', '', !detail.path, function () { copyPath(detail); }));
-    if (st) {
+    // 文本类：先给「复制 / 全选」，别让右键变成只能保存（原来的选词复制习惯要留住）
+    if (detail.kind === 'text') {
+      box.appendChild(menuItem(c, '复制', 'Ctrl+C', false, function () { copySelection(detail); }));
+      box.appendChild(menuItem(c, '全选', 'Ctrl+A', false, function () { selectAllText(detail); }));
       box.appendChild(menuSep());
-      box.appendChild(menuItem(c, '适应宽度', '', false, function () { try { applyZoom(st, fitScale(st), x, y); } catch (e) {} }));
-      box.appendChild(menuItem(c, '实际大小（100%）', '', false, function () { try { applyZoom(st, 1, x, y); } catch (e) {} }));
+    }
+    box.appendChild(menuItem(c, '保存到…', 'Ctrl+S', false, function () { saveFile(detail, name); }));
+    if (detail.kind === 'image') box.appendChild(menuItem(c, '复制图片', '', false, function () { copyImage(detail); }));
+    box.appendChild(menuItem(c, '复制文件路径', '', !detail.path, function () { copyPath(detail); }));
+    if (st && (detail.kind === 'image' || detail.kind === 'pdf')) {
+      box.appendChild(menuSep());
+      if (detail.kind === 'image') {
+        box.appendChild(menuItem(c, '适应宽度', '', false, function () { try { applyZoom(st, fitScale(st), x, y); } catch (e) {} }));
+        box.appendChild(menuItem(c, '实际大小（100%）', '', false, function () { try { applyZoom(st, 1, x, y); } catch (e) {} }));
+      } else {
+        box.appendChild(menuItem(c, '适应宽度', '', false, function () { try { zoomPdfAt(st, pdfFitK(st), x, y); } catch (e) {} }));
+        box.appendChild(menuItem(c, '实际大小（100%）', '', false, function () { try { zoomPdfAt(st, 1, x, y); } catch (e) {} }));
+      }
     }
     box.appendChild(menuSep());
     box.appendChild(menuItem(c, '在资源管理器中显示', '', !detail.path, function () { revealFile(detail); }));
@@ -1528,9 +1551,9 @@ namespace DshDesktop
   }
 
   // ── 动作 ──
-  function saveImage(detail, name) {
+  function saveFile(detail, name) {
     var br = webviewBridge(), id = 'save-' + (++reqSeq);
-    var msg = { type: 'dsh-image-save', requestId: id, nameB64: b64utf8(name || 'image.png') };
+    var msg = { type: 'dsh-save-file', requestId: id, nameB64: b64utf8(name || 'file') };
     if (br) {
       pending[id] = { vp: detail.vp };
       if (detail.path) {
@@ -1538,7 +1561,8 @@ namespace DshDesktop
         br.postMessage(JSON.stringify(msg));
         return;
       }
-      // 万一取不到原文件路径：把字节送过去（32MB 上限，够用且不会把消息通道撑爆）
+      // 万一取不到原文件路径：只有图片能从 blob 拿到字节（32MB 上限），其它类型直接说明
+      if (!detail.img) { delete pending[id]; showBadge(detail.vp, '拿不到这个文件的原路径，无法保存', 2800); return; }
       fetch(detail.img.currentSrc || detail.img.src)
         .then(function (r) { return r.blob(); })
         .then(function (blob) {
@@ -1553,7 +1577,8 @@ namespace DshDesktop
         .catch(function () { delete pending[id]; showBadge(detail.vp, '保存失败：读取图片失败', 2600); });
       return;
     }
-    // 普通浏览器（没有宿主）：退回 <a download>，由浏览器自己的下载行为处理
+    // 普通浏览器（没有宿主）：图片退回 <a download>；其它类型没有可下载的 blob，直接说明
+    if (!detail.img) { showBadge(detail.vp, '要在桌面窗口里才能保存这个文件（浏览器里没有宿主）', 2800); return; }
     var a = document.createElement('a');
     a.href = detail.img.currentSrc || detail.img.src;
     a.download = name || 'image.png';
@@ -1579,6 +1604,19 @@ namespace DshDesktop
       })
       .then(function () { showBadge(detail.vp, '已复制图片', 1400); })
       .catch(function () { showBadge(detail.vp, '复制图片失败', 2200); });
+  }
+  function copySelection(detail) {
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    showBadge(detail.vp, ok ? '已复制选中内容' : '没有选中内容', 1600);
+  }
+  function selectAllText(detail) {
+    try {
+      var sel = window.getSelection(), range = document.createRange();
+      range.selectNodeContents(detail.vp);
+      sel.removeAllRanges(); sel.addRange(range);
+      showBadge(detail.vp, '已全选', 1200);
+    } catch (e) {}
   }
   function copyPath(detail) {
     if (!detail.path) return;
@@ -1613,7 +1651,7 @@ namespace DshDesktop
     if (p) delete pending[m.requestId];
     var vp = p && p.vp && p.vp.isConnected ? p.vp : document.querySelector('[data-textpreview-body]');
     if (!vp) return;
-    if (m.type === 'dsh-image-save-result') {
+    if (m.type === 'dsh-save-file-result') {
       if (m.ok) {
         var saved = m.pathB64 ? unb64utf8(m.pathB64) : '';
         showBadge(vp, saved ? '已保存：' + saved : '已保存', 3000);
@@ -1632,8 +1670,11 @@ namespace DshDesktop
 
   // ── 触发与关闭 ──
   document.addEventListener('contextmenu', function (e) {
-    var detail = imageDetail(e.target);
-    if (!detail) { closeCtxMenu(); return; }      // 文本 / 代码 / PDF：完全交给产品
+    var t = e.target;
+    // 可编辑 / 链接 / 表单控件：原生菜单更有用（粘贴、复制链接…），不抢
+    if (t && t.closest && t.closest('a, input, textarea, select, [contenteditable=""true""]')) { closeCtxMenu(); return; }
+    var detail = detailOfTarget(t);
+    if (!detail) { closeCtxMenu(); return; }      // 不在右栏预览里：完全交给产品
     e.preventDefault();
     e.stopPropagation();
     openCtxMenu(detail, e.clientX, e.clientY);
@@ -1653,10 +1694,10 @@ namespace DshDesktop
       var el = document.activeElement;
       if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
       if (String(e.key).toLowerCase() !== 's') return;
-      var detail = currentImageDetail();
+      var detail = currentDetail();
       if (!detail) return;
       e.preventDefault(); e.stopPropagation();
-      saveImage(detail, detail.path ? baseName(detail.path) : 'image.png');
+      saveFile(detail, detail.path ? baseName(detail.path) : (detail.kind === 'image' ? 'image.png' : 'file'));
     }
   }, true);
   window.addEventListener('blur', closeCtxMenu);
