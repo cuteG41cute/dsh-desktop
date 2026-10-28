@@ -42,6 +42,34 @@
 | 双击 | 「100%」实际只有 595px | 真 100% = 793px（= `--pdf-page-width`） |
 | Ctrl+滚轮是否触发整个 WebView 缩放 | — | dpr / `visualViewport.scale` 未变 |
 
+### 图片右键菜单（保存 / 复制 / 显示，2026-10-28）
+
+图片预览上右键 → 自绘菜单（`#dsh-pv-menu`，挂在 `body`，颜色走产品的主题 token；方向键移动、Esc 关闭）：
+**保存到…**（Ctrl+S）、复制图片、复制文件路径、（已绑定时）适应宽度 / 实际大小、在资源管理器中显示。
+
+- **保存**：页面把预览头部 `title` 上的**原文件绝对路径**（产品自己展示的那条）用 **base64** 发给宿主，
+  `App.cs` 弹 **Windows 原生「另存为」对话框**（`InitialDirectory = 桌面`、文件名预填、类型按扩展名预选），
+  确认后 `File.Copy` 原文件 —— 逐字节一致，不是把页面里的图重新编码。base64 是为了绕开
+  Windows 路径里的反斜杠与 JSON 转义的纠缠；回执里的路径 / 错误文本也同样 base64（宿主不需要手写 JSON 转义）。
+- **复制图片**：宿主导航到剪贴板 —— `DataObject` 同时放**图片位图 + 文件**（粘到 Word/聊天窗口是图，粘到资源管理器是文件）；
+  SVG / 动图这类 `Image.FromStream` 解不开的只给文件。
+- **文本 / 代码 / PDF 一律不接管**（连 `contextmenu` 的 `preventDefault` 都不做），原生菜单照旧。
+- 测试缝：`DSH_DESKTOP_SAVE_TO=<目录>` 让保存跳过对话框直接落盘（自动化测试用）。
+
+实测（真实桌面窗口，`DSH_DESKTOP_SAVE_TO`）：
+
+| 检查 | 结果 |
+| --- | --- |
+| 右键菜单 | 6 项、挂在 `body`、完整在窗口内、Esc/方向键可用 |
+| 保存到… | 宿主落盘 `banner.png`，**sha256 与源文件一致**、大小一致、页面提示「已保存：<路径>」 |
+| Ctrl+S | 不开菜单也能直接落盘，字节一致 |
+| 原生对话框 | PrintWindow 截图可见「保存图片」标题 + 地址栏 **用户 › twinblade › 桌面** + 文件名预填 `banner`、类型 `PNG 图片文件`；关闭后页面提示「已取消保存」 |
+| 复制图片 | 剪贴板同时有 `banner.png`（FileDropList）与位图 |
+| 复制文件路径 | 剪贴板文本 = 绝对路径 |
+| 小图（225×225，未绑定缩放） | 菜单照样有保存，但**不提供缩放项** |
+| PDF / 文本预览 | 不弹我们的菜单，右键也没被 `preventDefault` |
+| 控制台 | 零未捕获异常 |
+
 ## 脚本
 
 | 文件 | 用途 |
@@ -50,6 +78,7 @@
 | `embed.mjs` | 镜像 ⇄ App.cs 内嵌副本同步/校验：`node embed.mjs`（检查）/ `--write`（写入）/ `--expect <文件>`（与指定文件对比） |
 | `verify-scope.mjs` | **作用范围验证器**：document-start 注入 + 真实滚轮/拖动，逐项核对「对话区/文本/日志=原生，图片/PDF=增强，收起右栏=全部失效」 |
 | `verify-pdf-zoom.mjs` | **PDF 缩放验证器**：真实页面/真实窗口里的 PDF 三件事（全局、可超出显示区域、Ctrl+滚轮），`--edge`（无头，自己登录并注入）/ `--attach <端口>`（附着到真实窗口）/ `--observe`（只记录不断言，用来对比旧版） |
+| `verify-image-menu.mjs` | **图片右键菜单验证器**：无头真实页面上注入脚本 + 假宿主桥，用真实右键事件核对菜单项、发出的保存消息（路径/文件名）、回执提示，以及「PDF/文本不接管」 |
 | `fixtures/three-pages.pdf` | 验证用 3 页 A4 夹具（由 `.tmp` 里的 make-pdf 生成，已入库，可直接用） |
 | `drive.mjs` | 无头 Edge + CDP：自己登录 3080、打开右栏文件预览、用**真实鼠标事件**测缩放/平移，可 `--apply` 注入脚本 |
 | `attach.mjs` | 附着到**正在运行的桌面窗口**（先用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9340` 启动）做同样的实测 |

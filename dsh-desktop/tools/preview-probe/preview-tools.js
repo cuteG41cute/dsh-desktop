@@ -5,6 +5,8 @@
 //   · PDF：**Ctrl + 滚轮** = 缩放（单滚轮保持上下滑动）、左键拖动 = 平移、
 //     双击 = 适宽 ↔ 100%；缩放是**全局**的（所有页一起），且可以放大到超出显示区域
 //   · 预览区右侧与底部使用加粗的可拖动滑动条（14px，覆盖产品的 8px 细条）
+//   · 图片预览上**右键**：保存到…（宿主弹 Windows 另存为对话框，默认桌面）/ 复制图片 /
+//     复制文件路径 / 适应宽度 / 实际大小 / 在资源管理器中显示（文本、代码、PDF 的右键菜单不动）
 //   · 右侧栏收起 / 预览关闭 / 切换成文本类文件 → 立即解绑，原生行为完全恢复
 (function () {
   if (window.__dshPreviewTools) return;
@@ -13,6 +15,7 @@
   var MIN = 0.15, MAX = 8, STEP = 0.0015, PAD = 8;
   var PDF_PAGE = '[data-pdf-page]';
   var VP = 'dsh-pv-vp', PAN = 'dsh-pv-pan', BADGE = 'dsh-pv-badge', STYLE = 'dsh-pv-style';
+  var MENU = 'dsh-pv-menu';
   // 文本类预览的标志（产品自己的渲染器）：出现即说明这不是图片/PDF，我们不介入
   var TEXT_MARK = '[data-textpreview-plain], [data-textpreview-page], pre, [data-code-preview]';
   // 图片 / PDF 的媒体元素候选（PDF 渲染成 canvas / embed / object / img 都认）
@@ -43,7 +46,20 @@
       '#' + BADGE + '{position:fixed;z-index:2147483000;padding:3px 8px;border-radius:6px;' +
       'font:12px/1.6 var(--dsh-font-family,sans-serif);background:rgba(20,20,20,.82);color:#fff;' +
       'pointer-events:none;opacity:0;transition:opacity .18s}' +
-      '#' + BADGE + '.show{opacity:1}';
+      '#' + BADGE + '.show{opacity:1}' +
+      // 右键菜单：用产品的主题 token，深浅色都跟着走；hover 用中性叠加，不挑主题
+      '#' + MENU + '{position:fixed;z-index:2147483000;min-width:216px;padding:5px;border-radius:10px;' +
+      'background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#1f2328);' +
+      'border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));' +
+      'box-shadow:0 12px 32px rgba(0,0,0,.18),0 2px 6px rgba(0,0,0,.08);' +
+      'font:13px/1.5 var(--dsh-font-family,system-ui,sans-serif);user-select:none}' +
+      '#' + MENU + ' .dshm-mi{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border:0;' +
+      'border-radius:6px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:default}' +
+      '#' + MENU + ' .dshm-mi:hover:not([disabled]),#' + MENU + ' .dshm-mi.dshm-focus:not([disabled])' +
+      '{background:rgba(127,127,127,.18)}' +
+      '#' + MENU + ' .dshm-mi[disabled]{opacity:.4}' +
+      '#' + MENU + ' .dshm-hint{margin-left:auto;font-size:12px;color:var(--dsw-alias-label-tertiary,#8a8f98)}' +
+      '#' + MENU + ' .dshm-sep{height:1px;margin:4px 8px;background:var(--dsw-alias-border-l2,rgba(0,0,0,.10))}';
     document.head.appendChild(st);
   }
 
@@ -419,6 +435,269 @@
     }
   }, true);
 
+  // ───────────────────── 右键菜单（只认右栏里的图片预览） ─────────────────────
+  // 图片预览上的右键菜单：保存到… / 复制图片 / 复制文件路径 / 适应宽度 / 实际大小 / 在资源管理器中显示。
+  // 「保存」不在页面里落盘 —— 交给宿主（App.cs）弹 Windows 的另存为对话框（默认桌面），
+  // 页面只负责把**原文件路径**（或退化时把图片字节）用 base64 送过去：
+  // base64 只有 [A-Za-z0-9+/=]，不会被 JSON 转义搞坏（Windows 路径里的反斜杠是这里的头号坑）。
+  // 文本 / 代码 / PDF 的右键菜单一律不接管（连 preventDefault 都不做）。
+  var ctx = null;                  // { el, vp, items, idx }
+  var reqSeq = 0, pending = {};    // requestId → { vp, name }
+
+  function webviewBridge() {
+    try {
+      if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) return window.chrome.webview;
+    } catch (e) {}
+    return null;
+  }
+  function b64utf8(s) {
+    var bytes = new TextEncoder().encode(String(s == null ? '' : s));
+    var out = '';
+    for (var i = 0; i < bytes.length; i += 4096) out += String.fromCharCode.apply(null, bytes.subarray(i, i + 4096));
+    return btoa(out);
+  }
+  function unb64utf8(s) {
+    try {
+      var bin = atob(s), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    } catch (e) { return ''; }
+  }
+  function baseName(p) { var at = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')); return at < 0 ? p : p.slice(at + 1); }
+
+  // 原文件路径：产品把完整路径写在预览头部的 title 上（.dhJKeW_path[title="C:\...\a.png"]）。
+  // [data-textpreview-url] 是 dsh-resource://file/session/<sid>/<工作区相对路径>，拿不到绝对路径。
+  function previewFilePath(vp) {
+    var host = vp && vp.closest ? vp.closest('[data-document-preview]') : null;
+    if (!host) return '';
+    var nodes = host.querySelectorAll('[title]');
+    for (var i = 0; i < nodes.length; i++) {
+      var t = (nodes[i].getAttribute('title') || '').trim();
+      if (t.length < 4 || t.length > 800) continue;
+      if (/^(https?|blob|data|dsh-resource):/i.test(t)) continue;
+      if (!/^[A-Za-z]:[\\/]/.test(t) && t.charAt(0) !== '/' && !/^\\\\/.test(t)) continue;
+      return t;
+    }
+    return '';
+  }
+  function imageDetail(target) {
+    var frame = target && target.closest ? target.closest('[data-image-preview]') : null;
+    if (!frame) return null;
+    var vp = frame.closest('[data-textpreview-body]');
+    if (!vp || !vp.closest('[data-document-preview]') || liveViewport(vp) !== vp) return null;
+    var img = frame.querySelector('img');
+    if (!img || !img.naturalWidth) return null;
+    return { vp: vp, img: img, frame: frame, path: previewFilePath(vp) };
+  }
+  function currentImageDetail() {
+    var vps = document.querySelectorAll('[data-textpreview-body]');
+    for (var i = 0; i < vps.length; i++) {
+      if (liveViewport(vps[i]) !== vps[i]) continue;
+      var frame = vps[i].querySelector('[data-image-preview]');
+      if (!frame) continue;
+      var img = frame.querySelector('img');
+      if (!img || !img.naturalWidth) continue;
+      return { vp: vps[i], img: img, frame: frame, path: previewFilePath(vps[i]) };
+    }
+    return null;
+  }
+
+  function closeCtxMenu() {
+    if (ctx && ctx.el && ctx.el.parentNode) ctx.el.parentNode.removeChild(ctx.el);
+    ctx = null;
+  }
+  function menuSep() { var d = document.createElement('div'); d.className = 'dshm-sep'; return d; }
+  function menuItem(ctxObj, label, hint, disabled, run) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'dshm-mi';
+    b.textContent = label;
+    if (hint) { var h = document.createElement('span'); h.className = 'dshm-hint'; h.textContent = hint; b.appendChild(h); }
+    if (disabled) b.disabled = true;
+    // 用 mousedown 阻止默认行为：菜单项不抢焦点、也不让外部 mousedown 先把菜单关掉
+    b.addEventListener('mousedown', function (e) { e.preventDefault(); e.stopPropagation(); });
+    b.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      closeCtxMenu();
+      if (!disabled) run();
+    });
+    ctxObj.items.push(b);
+    return b;
+  }
+  function openCtxMenu(detail, x, y) {
+    closeCtxMenu();
+    var box = document.createElement('div');
+    box.id = MENU;
+    box.setAttribute('role', 'menu');
+    var st = state.get(detail.vp);
+    var c = { el: box, vp: detail.vp, items: [], idx: -1 };
+    var name = detail.path ? baseName(detail.path) : 'image.png';
+
+    box.appendChild(menuItem(c, '保存到…', 'Ctrl+S', false, function () { saveImage(detail, name); }));
+    box.appendChild(menuItem(c, '复制图片', '', false, function () { copyImage(detail); }));
+    box.appendChild(menuItem(c, '复制文件路径', '', !detail.path, function () { copyPath(detail); }));
+    if (st) {
+      box.appendChild(menuSep());
+      box.appendChild(menuItem(c, '适应宽度', '', false, function () { try { applyZoom(st, fitScale(st), x, y); } catch (e) {} }));
+      box.appendChild(menuItem(c, '实际大小（100%）', '', false, function () { try { applyZoom(st, 1, x, y); } catch (e) {} }));
+    }
+    box.appendChild(menuSep());
+    box.appendChild(menuItem(c, '在资源管理器中显示', '', !detail.path, function () { revealFile(detail); }));
+
+    document.body.appendChild(box);
+    var r = box.getBoundingClientRect();
+    box.style.left = Math.min(Math.max(6, x), Math.max(6, window.innerWidth - r.width - 6)) + 'px';
+    box.style.top = Math.min(Math.max(6, y), Math.max(6, window.innerHeight - r.height - 6)) + 'px';
+    ctx = c;
+  }
+  function moveFocus(step) {
+    if (!ctx) return;
+    var enabled = ctx.items.filter(function (b) { return !b.disabled; });
+    if (!enabled.length) return;
+    var cur = enabled.indexOf(ctx.items[ctx.idx]);
+    var next = cur < 0 ? (step > 0 ? 0 : enabled.length - 1) : (cur + step + enabled.length) % enabled.length;
+    if (ctx.items[ctx.idx]) ctx.items[ctx.idx].classList.remove('dshm-focus');
+    ctx.idx = ctx.items.indexOf(enabled[next]);
+    ctx.items[ctx.idx].classList.add('dshm-focus');
+  }
+
+  // ── 动作 ──
+  function saveImage(detail, name) {
+    var br = webviewBridge(), id = 'save-' + (++reqSeq);
+    var msg = { type: 'dsh-image-save', requestId: id, nameB64: b64utf8(name || 'image.png') };
+    if (br) {
+      pending[id] = { vp: detail.vp };
+      if (detail.path) {
+        msg.pathB64 = b64utf8(detail.path);          // 常规路径：宿主直接复制原文件（逐字节一致，且不限大小）
+        br.postMessage(JSON.stringify(msg));
+        return;
+      }
+      // 万一取不到原文件路径：把字节送过去（32MB 上限，够用且不会把消息通道撑爆）
+      fetch(detail.img.currentSrc || detail.img.src)
+        .then(function (r) { return r.blob(); })
+        .then(function (blob) {
+          if (blob.size > 32 * 1024 * 1024) { delete pending[id]; showBadge(detail.vp, '图片太大，无法用这种方式保存', 2600); return; }
+          return blob.arrayBuffer().then(function (buf) {
+            var bytes = new Uint8Array(buf), out = '';
+            for (var i = 0; i < bytes.length; i += 4096) out += String.fromCharCode.apply(null, bytes.subarray(i, i + 4096));
+            msg.data = btoa(out);
+            br.postMessage(JSON.stringify(msg));
+          });
+        })
+        .catch(function () { delete pending[id]; showBadge(detail.vp, '保存失败：读取图片失败', 2600); });
+      return;
+    }
+    // 普通浏览器（没有宿主）：退回 <a download>，由浏览器自己的下载行为处理
+    var a = document.createElement('a');
+    a.href = detail.img.currentSrc || detail.img.src;
+    a.download = name || 'image.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+  function copyImage(detail) {
+    var br = webviewBridge();
+    if (br && detail.path) {
+      var id = 'copy-' + (++reqSeq);
+      pending[id] = { vp: detail.vp };
+      br.postMessage(JSON.stringify({ type: 'dsh-copy-image', requestId: id, pathB64: b64utf8(detail.path) }));
+      return;
+    }
+    if (!navigator.clipboard || !window.ClipboardItem) { showBadge(detail.vp, '这个环境不支持复制图片', 2200); return; }
+    fetch(detail.img.currentSrc || detail.img.src)
+      .then(function (r) { return r.blob(); })
+      .then(function (blob) {
+        var item = {};
+        item[blob.type || 'image/png'] = blob;
+        return navigator.clipboard.write([new ClipboardItem(item)]);
+      })
+      .then(function () { showBadge(detail.vp, '已复制图片', 1400); })
+      .catch(function () { showBadge(detail.vp, '复制图片失败', 2200); });
+  }
+  function copyPath(detail) {
+    if (!detail.path) return;
+    var done = function () { showBadge(detail.vp, '已复制文件路径', 1400); };
+    var fail = function () { showBadge(detail.vp, '复制失败', 2000); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(detail.path).then(done, fail);
+      return;
+    }
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = detail.path;
+      ta.style.cssText = 'position:fixed;opacity:0;left:-9999px';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy') ? done() : fail();
+      ta.remove();
+    } catch (e) { fail(); }
+  }
+  function revealFile(detail) {
+    if (!detail.path) return;
+    var br = webviewBridge();
+    if (!br) { showBadge(detail.vp, '只能在桌面窗口里打开所在文件夹', 2400); return; }
+    br.postMessage(JSON.stringify({ type: 'dsh-reveal', pathB64: b64utf8(detail.path) }));
+  }
+
+  // ── 宿主回执 ──
+  function onHostMessage(e) {
+    var m = e && e.data;
+    if (typeof m === 'string') { try { m = JSON.parse(m); } catch (err) { return; } }
+    if (!m || typeof m !== 'object') return;
+    var p = pending[m.requestId] || null;
+    if (p) delete pending[m.requestId];
+    var vp = p && p.vp && p.vp.isConnected ? p.vp : document.querySelector('[data-textpreview-body]');
+    if (!vp) return;
+    if (m.type === 'dsh-image-save-result') {
+      if (m.ok) {
+        var saved = m.pathB64 ? unb64utf8(m.pathB64) : '';
+        showBadge(vp, saved ? '已保存：' + saved : '已保存', 3000);
+      } else if (m.reason === 'cancelled') {
+        showBadge(vp, '已取消保存', 1200);
+      } else {
+        showBadge(vp, '保存失败：' + (m.messageB64 ? unb64utf8(m.messageB64) : (m.message || '未知错误')), 3000);
+      }
+    } else if (m.type === 'dsh-copy-image-result') {
+      showBadge(vp, m.ok ? '已复制图片' : '复制图片失败', 1500);
+    }
+  }
+  if (webviewBridge()) {
+    try { window.chrome.webview.addEventListener('message', onHostMessage); } catch (e) {}
+  }
+
+  // ── 触发与关闭 ──
+  document.addEventListener('contextmenu', function (e) {
+    var detail = imageDetail(e.target);
+    if (!detail) { closeCtxMenu(); return; }      // 文本 / 代码 / PDF：完全交给产品
+    e.preventDefault();
+    e.stopPropagation();
+    openCtxMenu(detail, e.clientX, e.clientY);
+  }, true);
+  document.addEventListener('mousedown', function (e) {
+    if (ctx && !(ctx.el && ctx.el.contains(e.target))) closeCtxMenu();
+  }, true);
+  document.addEventListener('keydown', function (e) {
+    if (ctx) {
+      if (e.key === 'Escape') { closeCtxMenu(); e.preventDefault(); e.stopPropagation(); return; }
+      if (e.key === 'ArrowDown') { moveFocus(1); e.preventDefault(); e.stopPropagation(); return; }
+      if (e.key === 'ArrowUp') { moveFocus(-1); e.preventDefault(); e.stopPropagation(); return; }
+      if (e.key === 'Enter' && ctx.idx >= 0 && ctx.items[ctx.idx]) { ctx.items[ctx.idx].click(); e.preventDefault(); return; }
+    }
+    // 图片预览里的 Ctrl+S = 保存到…（焦点在输入框里时不抢）
+    if (e.ctrlKey || e.metaKey) {
+      var el = document.activeElement;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if (String(e.key).toLowerCase() !== 's') return;
+      var detail = currentImageDetail();
+      if (!detail) return;
+      e.preventDefault(); e.stopPropagation();
+      saveImage(detail, detail.path ? baseName(detail.path) : 'image.png');
+    }
+  }, true);
+  window.addEventListener('blur', closeCtxMenu);
+  window.addEventListener('resize', function () { closeCtxMenu(); }, true);
+  document.addEventListener('scroll', function () { if (ctx) closeCtxMenu(); }, true);
+  document.addEventListener('wheel', function () { if (ctx) closeCtxMenu(); }, true);
+
   window.addEventListener('mousemove', function (e) {
     var list = document.querySelectorAll('.' + VP);
     for (var i = 0; i < list.length; i++) {
@@ -476,6 +755,7 @@
       if (list[i] !== target || liveViewport(list[i]) !== list[i]) unbind(list[i]);
     }
     if (target && !bind(target, found.media, found.kind)) refresh(target, found.media, found.kind);
+    if (ctx && (!ctx.vp || !ctx.vp.isConnected || liveViewport(ctx.vp) !== ctx.vp)) closeCtxMenu();
     if (target && found.kind.indexOf('#pdf') >= 0) {
       var bound = state.get(target);
       if (bound && bound.pdf && liveState(bound)) { try { pdfKeepUp(bound); } catch (e) {} }
