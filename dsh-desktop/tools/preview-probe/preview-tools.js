@@ -446,6 +446,13 @@
   // 文件夹不一样（目标处只拿到一个空目录条目），所以宿主同时把路径塞进 Text / text/uri-list，
   // 这里在 drop 的**捕获阶段**读到「这是目录」→ 拦下产品的附件处理、把路径写进输入框。
   var dragWatch = null;
+  // Linux 桌面版（WebKitGTK）没有宿主 OLE 拖放，但 WebKit 自己会把 HTML5 拖拽交给桌面 ——
+  // 所以这条路上改成「把行标成可拖 + dragstart 里写 text/uri-list」，资源管理器（Nautilus/Dolphin）照样能接。
+  var IS_WEBKIT = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.dsh);
+  function fileUri(p) {
+    var s = String(p || '').replace(/\\/g, '/');
+    return 'file:///' + s.replace(/^\/+/, '');
+  }
 
   function dragSourceInfo(target) {
     if (!target || !target.closest) return null;
@@ -488,6 +495,7 @@
         if (fired) return;
         if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < 6) return;
         var br = webviewBridge();
+        if (IS_WEBKIT) { fired = true; stopDragWatch(); return; }   // WebKit：交给原生拖拽
         if (!br) return;                       // 浏览器里没有宿主：拖出去做不到，保持原行为
         fired = true;
         try { if (el && el.setAttribute) el.setAttribute('draggable', 'false'); } catch (e1) {}
@@ -505,10 +513,31 @@
     document.addEventListener('mousemove', watch.move, true);
     document.addEventListener('mouseup', watch.up, true);
   }, true);
-  // 这些元素上的原生 HTML5 拖拽一律不要（否则浏览器自己也会起一个「拖动元素」的幽灵）
+  // Windows（WebView2）：这些元素上的原生 HTML5 拖拽一律不要（拖出由宿主 OLE 负责）
+  // Linux（WebKitGTK）：反过来 —— 就是靠原生 HTML5 拖拽，dragstart 里写 text/uri-list / text/plain
   document.addEventListener('dragstart', function (e) {
-    if (dragSourceInfo(e.target)) { e.preventDefault(); e.stopPropagation(); }
+    var info = dragSourceInfo(e.target);
+    if (!info) return;
+    if (!IS_WEBKIT) { e.preventDefault(); e.stopPropagation(); return; }
+    try {
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/uri-list', fileUri(info.path));
+      e.dataTransfer.setData('text/plain', info.path);
+    } catch (err) {}
   }, true);
+  if (IS_WEBKIT) {
+    // 产品会重渲染文件树 → 定期把可拖来源标成 draggable（标过的不重复处理）
+    var markTimer = 0;
+    var markDraggables = function () {
+      var nodes = document.querySelectorAll('li[data-files-entry][data-files-path], [data-presented-file]');
+      for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i].getAttribute('draggable') === 'true') continue;
+        nodes[i].setAttribute('draggable', 'true');
+      }
+    };
+    markTimer = window.setInterval(markDraggables, 800);
+    setTimeout(markDraggables, 60);
+  }
 
   function dropPath(dt) {
     var t = '';
@@ -572,7 +601,23 @@
   }
   document.addEventListener('drop', function (e) {
     var dt = e.dataTransfer;
-    if (!dt || !dropHasDirectory(dt)) return;      // 普通文件：完全交给产品（变成待发送附件）
+    if (!dt) return;
+    // WebKit 这条路上，页面自己拖的文件只有 uri（没有 Files）→ 请宿主读字节，再合成一次 drop
+    var types = [];
+    try { types = [].slice.call(dt.types || []); } catch (err) {}
+    var hasFiles = types.indexOf('Files') >= 0;
+    if (IS_WEBKIT && !hasFiles && types.indexOf('text/uri-list') >= 0) {
+      var p0 = dropPath(dt);
+      if (p0) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        var br0 = webviewBridge();
+        if (br0) br0.postMessage(JSON.stringify({ type: 'dsh-read-file', pathB64: b64utf8(p0) }));
+        return;
+      }
+    }
+    if (!dropHasDirectory(dt)) return;             // 普通文件：完全交给产品（变成待发送附件）
     var p = dropPath(dt);
     e.preventDefault();
     e.stopPropagation();
@@ -818,6 +863,9 @@
   }
 
   // ── 宿主回执 ──
+  function vpLate() {
+    return document.querySelector('[data-textpreview-body]') || document.querySelector('[data-composer-card]') || document.body;
+  }
   function onHostMessage(e) {
     var m = e && e.data;
     if (typeof m === 'string') { try { m = JSON.parse(m); } catch (err) { return; } }
@@ -835,6 +883,18 @@
       } else {
         showBadge(vp, '保存失败：' + (m.messageB64 ? unb64utf8(m.messageB64) : (m.message || '未知错误')), 3000);
       }
+    } else if (m.type === 'dsh-read-file-result') {
+      if (!m.ok || !m.dataB64) { showBadge(vpLate(), '读取文件失败：' + (m.message || '未知错误'), 2600); return; }
+      try {
+        var bin = atob(m.dataB64), bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        var name = m.nameB64 ? unb64utf8(m.nameB64) : 'file';
+        var file = new File([bytes], name);
+        var dtx = new DataTransfer();
+        dtx.items.add(file);
+        var ev2 = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dtx });
+        document.body.dispatchEvent(ev2);
+      } catch (err) { showBadge(vpLate(), '附件插入失败', 2400); }
     } else if (m.type === 'dsh-copy-image-result') {
       showBadge(vp, m.ok ? '已复制图片' : '复制图片失败', 1500);
     }

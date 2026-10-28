@@ -160,12 +160,29 @@
 
 ## Linux 版（deepin / Ubuntu / Debian）
 
-Windows 版的完整功能已移植到 Linux（GTK + WebKitGTK 原生窗口）：
+Linux 端与 Windows 端**同一套注入脚本**（`tools/preview-probe/preview-tools.js`），
+窗口层换成了 GTK3 + WebKitGTK；**便携安装**：Node 与 dsh 都装进你指定的目录，不碰系统。
 
-- 源码与说明：`linux/` 目录（`dsh-desktop` 启动器 + `dsh-desktop.py` 窗口 + `install.sh` 免 root 安装）；
-- 安装包：Release 附件中的 `dsh-desktop_1.2.8_amd64.deb`（apt 安装）与 `dsh-desktop-linux-1.2.8.tar.gz`（免 root）；
-- 功能对照与已知差异见 `linux/README.md`，真机验证步骤见 `linux/测试指南.md`；
-- 打包脚本：`linux/build/build-linux.py`（产出到 `dist\`，Windows/Linux 都能跑）；
+```bash
+# 装到 ~/.local/opt/deepseek-harness（默认），目录可自己指定
+bash linux/install.sh --prefix /opt/deepseek-harness
+# 首次联网装一次，之后：应用菜单里的「DeepSeek Harness」或 bin/dsh-desktop
+bash linux/install.sh --prefix /opt/deepseek-harness --warmup   # 装完顺便预热服务
+bash linux/install.sh --prefix /opt/deepseek-harness --uninstall # 卸载 = 删那一个目录
+```
+
+| 能力 | Windows | Linux |
+| --- | --- | --- |
+| 预览缩放（图片滚轮 / PDF Ctrl+滚轮）、平移、加粗滑动条 | ✅ | ✅（同一份注入脚本） |
+| 图片右键菜单 + 原生「保存到…」（默认桌面） | ✅ WebView2 + SaveFileDialog | ✅ WebKitGTK + GTK FileChooser |
+| 拖到文件管理器保存 / 拖进输入框（文件→附件、文件夹→路径） | ✅ 宿主 OLE 拖放 | ✅ WebKit 原生 HTML5 拖拽 + `text/uri-list` |
+| 会话拖拽分离窗口、多窗口、标题镜像、window.open | ✅ | ✅ |
+| 单实例、托盘、加载进度、Web 认证 cookie | ✅ | ✅ |
+| 安装方式 | MSI / installer.ps1（Node 走系统） | `install.sh`：**Node/dsh 都装在指定前缀里** |
+
+系统层仍需要 `python3 + python3-gi + gir1.2-gtk-3.0 + gir1.2-webkit2-4.1`（GUI 库无法便携化，
+安装器会检查并给出 apt 命令）。细节与验证清单见 `linux/README.md`；
+打包脚本：`linux/build/build-linux.py`（产出到 `dist\`，Windows/Linux 都能跑）；
 - 已修复：软链启动路径、Deepin 密钥环弹窗（ephemeral WebContext）。
 
 ## MSI 安装包（推荐分发方式）

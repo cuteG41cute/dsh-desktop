@@ -1,112 +1,112 @@
-# DeepSeek Harness 桌面版（Linux）
+# DeepSeek Harness 桌面版 —— Linux（deepin / Ubuntu / Debian）
 
-把 DeepSeek Harness 的 WebUI 变成 deepin/Ubuntu/Debian 等 Linux 系统上的原生桌面窗口：
-**GTK + WebKitGTK**，无浏览器、无控制台，双击即用。
+GTK3 + WebKitGTK 原生窗口，**功能与 Windows 版对齐**，并且是**便携安装**：
+Node、dsh、pnpm、数据目录全都放在你指定的那一个目录里，不往系统里装任何东西。
 
-与 Windows 版功能对齐：自动定位/启动 `dsh web` 服务、独立窗口、单实例、
-关闭窗口自动停止本次启动的服务。
-
-## 安装方式（二选一）
-
-### 方式一：deb 安装包（推荐，deepin 可直接双击）
+## 1. 安装（一条命令）
 
 ```bash
-sudo apt install ./dsh-desktop_1.2.8_amd64.deb
+cd dsh-desktop/linux
+bash install.sh --prefix "$HOME/.local/opt/deepseek-harness"
 ```
 
-安装后：
-- 应用程序菜单出现 **DeepSeek Harness**；
-- 命令行 `dsh-desktop` 可直接启动；
-- 卸载：`sudo apt remove dsh-desktop`
-
-### 方式二：通用 tarball（免 root，任意发行版）
+* 安装位置可以随便指定（`--prefix /opt/dsh`、U 盘上的目录都行）；
+* 自带 **便携 Node**（解压到 `<前缀>/node`），**不做全局 npm 安装**；
+* `@deepseek-ai/dsh` 与 `pnpm` 装进 `<前缀>/app`、`<前缀>/tools`；
+* 数据目录默认 `<前缀>/dsh-home`（`DSH_HOME`），**不动你的 `~/.dsh`**；
+* 卸载 = 删掉那一个目录：
 
 ```bash
-tar xzf dsh-desktop-linux-1.2.8.tar.gz
-cd dsh-desktop-linux
-./install.sh          # 安装到 ~/.local/share/dsh-desktop
-dsh-desktop           # 启动（或从应用菜单打开）
+bash install.sh --prefix "$HOME/.local/opt/deepseek-harness" --uninstall
 ```
 
-卸载：`~/.local/share/dsh-desktop/uninstall.sh`
+### 目录结构
 
-## 依赖（首次启动自动引导安装）
+```
+<前缀>/
+├─ bin/dsh               # 命令行：只用前缀里的 node 与包
+├─ bin/dsh-desktop       # 图形窗口（应用菜单里也是它）
+├─ node/                 # 便携 Node（官方 tarball 解压）
+├─ app/                  # @deepseek-ai/dsh（package.json + node_modules）
+├─ tools/                # pnpm（只有 dsh plugin 子命令会用到）
+├─ share/                # dsh-desktop.py / 启动器 / preview-tools.js / 图标
+├─ dsh-home/             # DSH_HOME：profiles、storages、凭据
+├─ logs/web.log          # 服务的 stdout/stderr
+└─ install.json          # 安装记录（版本、路径、时间）
+```
 
-首次运行启动器时会自动检查以下依赖，**缺失时询问你是否代为安装**：
+### 系统里仍然需要的（无法便携化）
 
-| 依赖 | 自动安装方式 |
+| 依赖 | 用途 | 安装 |
+| --- | --- | --- |
+| `python3` + `python3-gi` | 窗口进程 | `sudo apt install python3 python3-gi` |
+| `gir1.2-gtk-3.0` | 窗口 UI | `sudo apt install gir1.2-gtk-3.0` |
+| `gir1.2-webkit2-4.1`（或 `-4.0`） | 页面内核 | `sudo apt install gir1.2-webkit2-4.1` |
+| `curl`/`wget`、`tar`、`xz` | 下载/解压 Node | 系统自带 |
+
+安装器会先检查这些并打印确切的 apt 命令；缺 GUI 库时它仍然会把 Node/dsh 装好（只是窗口打不开），
+装完依赖再跑一次即可。
+
+### 离线安装
+
+```bash
+bash install.sh --prefix /opt/dsh \
+  --node-tarball ~/node-v24.19.0-linux-x64.tar.xz \
+  --dsh-tarball  ~/deepseek-ai-dsh-0.1.5-rc.1.tgz
+```
+
+## 2. 功能对照（与 Windows 版）
+
+| 能力 | 实现方式 | 状态 |
+| --- | --- | --- |
+| 预览缩放（图片滚轮 15%–800%）/ 拖动平移 / 加粗滑动条 | **同一份** `preview-tools.js` 注入 | ✅ |
+| PDF：Ctrl+滚轮全局缩放、可超出显示区域、100% 精确 | 同上（PDF 独立分支） | ✅ |
+| 预览右键菜单：保存到… / 复制图片 / 复制文件路径 / 在文件管理器中显示 / 缩放项 | `preview-tools.js` + 宿主消息 | ✅ |
+| 保存弹**原生对话框，默认「桌面」**，逐字节复制原文件 | GTK `FileChooserDialog` | ✅ |
+| 复制图片（位图 + 文件 URI） | GTK 剪贴板（`set_with_data`） | ✅ |
+| 在文件管理器中显示 | `org.freedesktop.FileManager1` → 退回 `xdg-open` | ✅ |
+| 拖出去保存（文件树行 / 交付卡 → 文件管理器） | WebKit **原生 HTML5 拖拽** `text/uri-list` | ✅ |
+| 拖进输入框（文件→待发送附件、文件夹→路径文字） | 页面 drop + 宿主 `dsh-read-file` | ✅ |
+| 会话拖拽分离窗口、多窗口、标题镜像、`window.open` | GTK 窗口管理 + 注入脚本 | ✅ |
+| 单实例、托盘、加载进度、Web 认证 cookie | 启动器 flock + `Gtk.StatusIcon` + HMAC 签发 | ✅ |
+
+> 与 Windows 的唯一结构差异：Windows 上「拖出」由宿主发原生 OLE 拖放（`DoDragDrop`）；
+> Linux 上改用 WebKit 自己的 HTML5 拖拽（`dragstart` 里写 `text/uri-list`/`text/plain`），
+> 因为 GTK 侧「用合成事件启动拖放」不可靠。注入脚本里用 `IS_WEBKIT` 分流，其余逻辑完全共用。
+
+## 3. 使用
+
+```bash
+<前缀>/bin/dsh-desktop            # 打开窗口（服务没在跑会自动拉起）
+<前缀>/bin/dsh-desktop --setup    # 只做依赖检查，不开窗口
+<前缀>/bin/dsh web                # 纯命令行：起服务
+python3 <前缀>/share/dsh-desktop.py --selftest   # 自检：服务 / cookie / 注入 / 运行时 / GTK
+```
+
+* 主窗口按 X = 收进托盘（托盘里「显示窗口 / 退出」）；分离出来的子窗口按 X 直接关；
+* 关掉最后一个窗口时，如果服务是它启动的，会一并停掉；
+* 环境变量：`DSH_WEB_URL`、`DSH_HOME`、`DSH_PREFIX`、`DSH_SHARE`、`DSH_DESKTOP_NO_SERVICE=1`、
+  `DSH_DESKTOP_AUTH_COOKIE`、`DSH_DRAG_DEBUG_LOG`。
+
+## 4. 已验证 / 待验证
+
+**已实测（WSL2 · Deepin 23.1 · 便携 Node 24.19 · 从 npm 装 522 个包）**
+
+| 检查 | 结果 |
 | --- | --- |
-| python3 + python3-gi + WebKitGTK（4.1/4.0） | `sudo apt-get install`（deepin 图形会话会弹出授权框；`--setup` 可单独执行引导） |
-| Node.js（dsh 需要 18+） | 自动下载 **Node.js 22 LTS 官方二进制**到 `~/.local/opt/node`（用户级，无需 root） |
-| DeepSeek Harness（dsh） | `npm install -g @deepseek-ai/dsh`（无全局写权限时自动切换用户级 `~/.npm-global`） |
+| 便携安装（默认前缀） | ✅ Node 解压、dsh 装进前缀、pnpm 装进 tools、启动器与 `install.json` 齐全（约 523 MB） |
+| 幂等（重复安装） | ✅ 复用已有 Node 与同一版本 dsh |
+| 卸载 | ✅ 只删前缀目录，系统无残留（全程没有 `npm -g`） |
+| `bin/dsh web` 在 Linux 上起服务 | ✅ 7 秒内监听，返回 **401 + `dsh web: …?token=` URL**，自动生成 `profiles/`、`storages/`、`.credentials.yaml` |
+| cookie 签发（与两个启动器同一算法） | ✅ 用真实 `.credentials.yaml` 跑通，171 字节 |
+| `preview-tools.js` 与 Windows 共用 | ✅ Windows 侧回归：拖拽 12/12、右键菜单 30/30 |
 
-> 跳过询问/全自动：`DSH_NONINTERACTIVE=1 dsh-desktop`；
-> 只做依赖引导不启动：`dsh-desktop --setup`。
+**待在你的 Ubuntu 上验证**（WSL 里没有 python3/WebKitGTK，且 sudo 需要密码，装不了）
 
-## 使用
+1. `bash install.sh --prefix ~/.local/opt/deepseek-harness` → 自检是否全绿；
+2. `<前缀>/bin/dsh-desktop` → 窗口能否打开、预览缩放手感；
+3. 预览右键 →「保存到…」→ 是否弹原生对话框、默认在桌面、落盘是否原样；
+4. 右栏文件树的行走拖到文件管理器 → 是否复制过去；拖进输入框 → 文件夹是否变路径；
+5. 会话拖出侧边栏 → 是否开新窗口。
 
-- 首次启动：自动检查/安装依赖（见上）→ 启动 dsh 服务（未运行则后台拉起）→ 打开桌面窗口；
-- 依赖齐备后：直接开窗，无需任何网络或权限操作；
-- 再次启动：服务已在运行时直接开窗；单实例（重复启动直接退出）；
-- 关闭窗口：若服务是本启动器拉起的，会自动停止；
-- 自定义端口：`DSH_WEB_URL=http://127.0.0.1:8080 dsh-desktop`
-
-## dsh 版本与 Web 认证（dsh ≥ 0.1.5）
-
-从 **dsh 0.1.5** 起，WebUI 增加了浏览器认证：
-
-- 未认证访问 `http://127.0.0.1:3080/` 返回 **401**（正文提示 `dsh web authentication required`）；
-- `dsh web` 启动时会打印一条带一次性 token 的地址（`http://127.0.0.1:3080/?token=…`），
-  用它访问一次即可换取一枚最长 30 天有效的签名 cookie；
-- `dsh web` 默认还会打开系统浏览器，桌面版启动时必须加 `--no-open`。
-
-本启动器已适配这套认证，**不需要用户手动做任何事**：
-
-1. 服务没在运行时用 `dsh web --no-open` 启动；
-2. 探测服务时把「200」和「401 + dsh 认证提示」都视为“服务已在运行”；
-3. 取得认证凭据，按可靠性依次尝试：
-   - **自行签发 cookie**：签名密钥是持久的（`$DSH_HOME/.credentials.yaml` 的
-     `client-connection/browser-session` 记录），启动器按 dsh 的格式签发一枚 cookie，
-     再用真实 HTTP 请求确认服务端接受它，然后把 cookie 交给窗口注入 ——
-     因此**即使 WebUI 是你在别处手动启动的（读不到 token 日志）也能正常认证**；
-   - 退回**认证 URL**：从启动日志里取 `dsh web: http://…?token=…`，直接用该地址开窗；
-   - 都没有：照旧打开原地址（配置里已有有效 cookie 时仍可正常显示）。
-4. 窗口发现页面是「需要认证」时会写入 cookie 并自动刷新一次（WebKitGTK 没有可移植的
-   cookie 写入接口，因此用 JS 方式，逻辑见 `dsh-desktop.py`）。
-
-> 说明：认证参数由 dsh 决定。若将来 dsh 改了密钥存放或 cookie 格式，验证会失败并自动
-> 退回认证 URL 方式；再不行窗口会显示 401 页面，此时按页面提示用 `dsh web` 打印的
-> 带 token 地址打开一次即可。
-
-## 与 Windows 版的功能对照
-
-| 功能 | 状态 |
-| --- | --- |
-| 多会话拖拽分离窗口（拖出侧边栏开新窗口） | ✅ 已支持（注入脚本 + WebKit 消息通道，逻辑与 Windows 版一致） |
-| 单实例 | ✅（重复启动直接退出；Windows 版会唤起窗口，Linux 无此行为） |
-| 手动指定 dsh 路径 | ✅ `DSH_BIN=/path/to/dsh/lib/bin.js dsh-desktop` |
-| dsh ≥0.1.5 Web 认证自动完成 | ✅（自行签发并验证 cookie，见上文；Windows 版同） |
-| 系统托盘（X=最小化到托盘） | ⚠️ 无托盘（平台差异：Linux 关闭窗口即退出，服务随启动器停止） |
-| 自动安装依赖与 dsh | ✅ 首次启动引导（见上文） |
-| 图标/标题镜像/窗口内导航/端口跟随/日志 | ✅ 全部一致 |
-
-> 差异说明：Linux 无系统托盘，主窗口关闭 = 退出程序（与 Windows「X=最小化到托盘」不同，
-> 服务仍由启动器正确停止）；分离出的子窗口关闭只关自身。
-
-## 目录结构
-
-```
-dsh-desktop.py      WebKitGTK 窗口程序
-dsh-desktop         bash 启动器（依赖引导/服务检测/启动/认证/清理）
-install.sh          免 root 安装脚本
-uninstall.sh        卸载脚本（安装时生成）
-dsh-desktop.png     应用图标
-```
-
-日志：`~/.local/state/dsh-desktop/logs/{server.out.log,server.err.log}`
-
-## 已知问题
-
-- 窗口使用**内存态** WebContext（不落盘、不访问系统密钥环），因此 cookie 只在本进程内有效：
-  每次启动都会重新认证（启动器自动完成）。这样也避免了 Deepin 的「解锁登录密钥环」弹窗。
-- 交互类操作（关窗停服务/单实例/拖拽分离等）请在真实桌面环境验证。
+把任何一步的输出/现象发我，按现象修。
