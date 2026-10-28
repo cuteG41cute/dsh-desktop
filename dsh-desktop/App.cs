@@ -1028,8 +1028,9 @@ namespace DshDesktop
 //   · **任何**预览（图片 / PDF / 文本 / 代码 / Markdown）右键都有菜单：
 //     保存到…（宿主弹 Windows 另存为对话框，默认桌面）/ 复制文件路径 / 在资源管理器中显示；
 //     图片另有「复制图片」与缩放项，文本另有「复制 / 全选」（不牺牲原来的文本操作）
-//   · **拖拽**：文件树行 / 交付卡 / 预览都能拖出去（由宿主发起原生 OLE 拖放，资源管理器、
-//     桌面、聊天窗口都接得住）；文件夹落回输入框时变成一段路径文字
+//   · **拖拽**：只有「右栏文件树的行」和「会话里的交付卡」能拖出去（由宿主发起原生 OLE 拖放，
+//     资源管理器、桌面、聊天窗口都接得住）；文件夹落回输入框时变成一段路径文字。
+//     **预览不参与拖拽** —— 预览里的左键拖动是平移手势，保存走右键菜单
 //   · 右侧栏收起 / 预览关闭 / 切换成文本类文件 → 立即解绑，原生行为完全恢复
 (function () {
   if (window.__dshPreviewTools) return;
@@ -1481,12 +1482,8 @@ namespace DshDesktop
       var t = btn ? (btn.getAttribute('title') || '').trim() : '';
       if (isAbsolutePath(t)) return { path: t, isDir: false };
     }
-    // 3) 预览本身：拖预览 = 拖那个文件
-    var vp = target.closest('[data-textpreview-body]');
-    if (vp && liveViewport(vp) === vp) {
-      var fp = previewFilePath(vp);
-      if (fp) return { path: fp, isDir: false };
-    }
+    // 注意：**预览不是拖拽源**。预览里左键拖动是给「平移」用的（图片 / PDF 的增强手势），
+    // 保存也已经有了右键菜单 —— 把它也当拖拽源会把平移抢掉，所以这里只认上面两类来源。
     return null;
   }
 

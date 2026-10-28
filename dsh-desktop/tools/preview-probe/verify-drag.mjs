@@ -250,6 +250,28 @@ async function main() {
       const drag3 = sent3.filter((s) => s.type === 'dsh-drag-out').pop()
       console.log('  发出:', JSON.stringify(drag3 || null))
       check('交付卡也能拖出（路径来自 title）', !!drag3 && /README\.md$/.test(dec(drag3.pathB64) || ''), dec(drag3 && drag3.pathB64))
+
+      // ── 3b) 预览里拖动**不应该**触发拖出（预览的拖动是平移手势，保存走右键菜单）──
+      console.log('\n【3b】预览里拖动（应当没有拖拽）')
+      const openRow = await cdp.eval(`window.__dd.rowPoint('README.md') || window.__dd.rowPoint('App.cs')`)
+      if (openRow) {
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: openRow.x, y: openRow.y, button: 'left', clickCount: 1, buttons: 1 })
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: openRow.x, y: openRow.y, button: 'left', clickCount: 1, buttons: 0 })
+        await sleep(2600)
+      }
+      const vpPt = await cdp.eval(`(() => { var vp = window.__dd.activeVp(); if (!vp) return null; var r = vp.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + 80) }; })()`)
+      check('预览已打开（能定位到预览区域）', !!vpPt, vpPt)
+      if (vpPt) {
+        await cdp.eval('window.__sent.length = 0')
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: vpPt.x, y: vpPt.y, button: 'left', clickCount: 1, buttons: 1 })
+        for (let i = 1; i <= 8; i++) { await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: vpPt.x + i * 12, y: vpPt.y + i * 5, button: 'left', buttons: 1 }); await sleep(40) }
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: vpPt.x + 96, y: vpPt.y + 40, button: 'left', clickCount: 1, buttons: 0 })
+        await sleep(500)
+        const sent3b = await cdp.eval('window.__sent ? window.__sent.map(function (s) { return JSON.parse(s); }) : []')
+        const drag3b = sent3b.filter((s) => s.type === 'dsh-drag-out')
+        console.log('  预览里拖动发出的消息:', JSON.stringify(drag3b))
+        check('预览里拖动不再发出 dsh-drag-out', drag3b.length === 0, drag3b)
+      }
       await cdp.eval(`document.querySelectorAll('[data-presented-file]').forEach(function (el) { if (el.style.zIndex === '99999') el.remove(); })`)
 
     } else {
