@@ -437,6 +437,13 @@ namespace DshDesktop
             try { json = e.TryGetWebMessageAsString(); } catch { }
             if (string.IsNullOrWhiteSpace(json)) return;
 
+            // 拖出到系统（原生 OLE 拖放）：这条必须先于别的判断，否则名字里带 save/copy 的会被误伤
+            if (json.Contains("\"dsh-drag-out\""))
+            {
+                StartFileDrag(json);
+                return;
+            }
+
             // 右栏图片预览的右键菜单动作（保存 / 复制 / 显示）：交给图片处理器，其它消息照旧
             if (json.Contains("\"dsh-save-file\"") || json.Contains("\"dsh-image-save\"") ||
                 json.Contains("\"dsh-copy-image\"") || json.Contains("\"dsh-reveal\""))
@@ -491,6 +498,43 @@ namespace DshDesktop
         // 不会被 JSON 转义搞坏 —— Windows 路径里的反斜杠是这里的头号坑）；
         // 回执同理：路径与错误文本也用 base64 回传，于是宿主侧不需要手写 JSON 转义。
         // 测试缝：DSH_DESKTOP_SAVE_TO=<目录> 时跳过对话框、直接存进该目录（自动化测试用）。
+        // ───────────────────────── 拖出到系统：原生 OLE 拖放 ─────────────────────────
+        // 页面拖不了真文件（拿不到文件句柄），所以这里替它发起 CF_HDROP 拖放：
+        // 资源管理器 / 桌面 / 微信都能接，落下去是**复制**（只给 Copy，不会把工作区里的文件搬走）。
+        // 同一次拖放落回本窗口时，WebView2 会把文件交给页面 → 产品把它变成待发送附件；
+        // 文件夹靠同时塞进 Text / text/uri-list 的那条路径，由页面写进输入框。
+        // 测试缝：DSH_DRAG_TEST=1 → 不真的拖，只把数据对象的格式回报给页面；
+        //         DSH_DRAG_DEBUG_LOG=<文件> → 每次拖出记一行。
+        private void StartFileDrag(string json)
+        {
+            string src = DecodeB64Field(json, "pathB64");
+            if (string.IsNullOrEmpty(src)) return;
+            if (!File.Exists(src) && !Directory.Exists(src)) return;
+
+            var data = new DataObject();
+            var files = new System.Collections.Specialized.StringCollection();
+            files.Add(src);
+            try { data.SetFileDropList(files); } catch { }
+            try { data.SetText(src); } catch { }
+            try { data.SetData("text/uri-list", new Uri(src).AbsoluteUri); } catch { }
+
+            string log = Environment.GetEnvironmentVariable("DSH_DRAG_DEBUG_LOG");
+            if (!string.IsNullOrEmpty(log))
+            {
+                try { File.AppendAllText(log, DateTime.Now.ToString("HH:mm:ss.fff") + "\t" + src + "\r\n"); } catch { }
+            }
+
+            if (Environment.GetEnvironmentVariable("DSH_DRAG_TEST") == "1")
+            {
+                ReplyPage("{\"type\":\"dsh-drag-out-test\",\"ok\":true,\"pathB64\":\"" + B64(src) +
+                          "\",\"formatsB64\":\"" + B64(string.Join(",", data.GetFormats())) + "\"}");
+                return;
+            }
+
+            try { DoDragDrop(data, DragDropEffects.Copy); }
+            catch { }
+        }
+
         private void HandleImageMessage(string json)
         {
             string requestId = ExtractField(json, "requestId") ?? "";
@@ -984,6 +1028,8 @@ namespace DshDesktop
 //   · **任何**预览（图片 / PDF / 文本 / 代码 / Markdown）右键都有菜单：
 //     保存到…（宿主弹 Windows 另存为对话框，默认桌面）/ 复制文件路径 / 在资源管理器中显示；
 //     图片另有「复制图片」与缩放项，文本另有「复制 / 全选」（不牺牲原来的文本操作）
+//   · **拖拽**：文件树行 / 交付卡 / 预览都能拖出去（由宿主发起原生 OLE 拖放，资源管理器、
+//     桌面、聊天窗口都接得住）；文件夹落回输入框时变成一段路径文字
 //   · 右侧栏收起 / 预览关闭 / 切换成文本类文件 → 立即解绑，原生行为完全恢复
 (function () {
   if (window.__dshPreviewTools) return;
@@ -1410,6 +1456,158 @@ namespace DshDesktop
         pdfApply(st, st.zoom);
       } catch (e) {}
     }
+  }, true);
+
+  // ───────────────────── 拖拽：拖出去（宿主 OLE）/ 拖进来（路径文字） ─────────────────────
+  // 页面拿不到「真正的文件句柄」，所以拖出去只能交给宿主：App.cs 用 CF_HDROP 起一个原生 OLE 拖放。
+  // 这样资源管理器 / 桌面 / 聊天窗口都能接，落地是**复制**（只给 Copy 效果，不会把工作区里的文件搬走）。
+  // 同一次拖放落回本窗口时，WebView2 会把 CF_HDROP 转成 Files 交给产品 → 变成待发送附件；
+  // 文件夹不一样（目标处只拿到一个空目录条目），所以宿主同时把路径塞进 Text / text/uri-list，
+  // 这里在 drop 的**捕获阶段**读到「这是目录」→ 拦下产品的附件处理、把路径写进输入框。
+  var dragWatch = null;
+
+  function dragSourceInfo(target) {
+    if (!target || !target.closest) return null;
+    // 1) 右栏文件树的行（文件 / 文件夹都算）
+    var row = target.closest('li[data-files-entry][data-files-path]');
+    if (row && row.closest('[data-sidebar-right-panel]')) {
+      var p = row.getAttribute('data-files-path') || '';
+      if (p) return { path: p, isDir: row.getAttribute('data-files-entry') === 'directory' };
+    }
+    // 2) 会话里的交付 / 文件卡片：绝对路径挂在预览按钮的 title 上
+    var card = target.closest('[data-presented-file]');
+    if (card) {
+      var btn = card.querySelector('button[title]');
+      var t = btn ? (btn.getAttribute('title') || '').trim() : '';
+      if (isAbsolutePath(t)) return { path: t, isDir: false };
+    }
+    // 3) 预览本身：拖预览 = 拖那个文件
+    var vp = target.closest('[data-textpreview-body]');
+    if (vp && liveViewport(vp) === vp) {
+      var fp = previewFilePath(vp);
+      if (fp) return { path: fp, isDir: false };
+    }
+    return null;
+  }
+
+  function isAbsolutePath(t) {
+    return !!t && (/^[A-Za-z]:[\\/]/.test(t) || t.charAt(0) === '/' || t.slice(0, 2) === '\\\\');
+  }
+
+  function stopDragWatch() {
+    if (!dragWatch) return;
+    document.removeEventListener('mousemove', dragWatch.move, true);
+    document.removeEventListener('mouseup', dragWatch.up, true);
+    dragWatch = null;
+  }
+  document.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    var info = dragSourceInfo(e.target);
+    if (!info) return;
+    stopDragWatch();
+    var sx = e.clientX, sy = e.clientY, fired = false, el = e.target;
+    var watch = {
+      move: function (ev) {
+        if (fired) return;
+        if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < 6) return;
+        var br = webviewBridge();
+        if (!br) return;                       // 浏览器里没有宿主：拖出去做不到，保持原行为
+        fired = true;
+        try { if (el && el.setAttribute) el.setAttribute('draggable', 'false'); } catch (e1) {}
+        stopDragWatch();
+        br.postMessage(JSON.stringify({
+          type: 'dsh-drag-out',
+          pathB64: b64utf8(info.path),
+          nameB64: b64utf8(baseName(info.path)),
+          isDir: !!info.isDir
+        }));
+      },
+      up: function () { stopDragWatch(); }
+    };
+    dragWatch = watch;
+    document.addEventListener('mousemove', watch.move, true);
+    document.addEventListener('mouseup', watch.up, true);
+  }, true);
+  // 这些元素上的原生 HTML5 拖拽一律不要（否则浏览器自己也会起一个「拖动元素」的幽灵）
+  document.addEventListener('dragstart', function (e) {
+    if (dragSourceInfo(e.target)) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
+
+  function dropPath(dt) {
+    var t = '';
+    try { t = dt.getData('text/plain') || ''; } catch (e) {}
+    if (!t) {
+      try {
+        var uri = String(dt.getData('text/uri-list') || '').split(/\r?\n/)[0];
+        t = decodeURIComponent(uri.replace(/^file:\/\/\//i, '').replace(/\//g, '\\'));
+      } catch (e) {}
+    }
+    t = (t || '').trim();
+    return isAbsolutePath(t) ? t : '';
+  }
+  function dropHasDirectory(dt) {
+    try {
+      var items = dt.items || [];
+      for (var i = 0; i < items.length; i++) {
+        var en = items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : null;
+        if (en && en.isDirectory) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  // 写进输入框：Lexical 认 execCommand('insertText')，这样它的内部状态也会同步
+  // 写进输入框。坑：产品用的是 Lexical，它按**自己的选区**处理输入 ——
+  // 光 focus() 不够（Lexical 内部没有选区 → 插不进去），得先在末尾「合成一次真实点击」，
+  // 再走 execCommand('insertText')；而且它是**异步**重渲染的，插完要过一两百毫秒才看得到。
+  function insertIntoComposer(txt, done) {
+    var input = document.querySelector('[data-composer-input]');
+    if (!input) { if (done) done(false); return; }
+    try { input.focus(); } catch (e) {}
+    try {
+      var r = input.getBoundingClientRect();
+      var opts = { bubbles: true, cancelable: true, clientX: r.right - 12, clientY: r.bottom - 12, button: 0, buttons: 1, composed: true };
+      try { input.dispatchEvent(new PointerEvent('pointerdown', opts)); } catch (e) {}
+      input.dispatchEvent(new MouseEvent('mousedown', opts));
+      try { input.dispatchEvent(new PointerEvent('pointerup', opts)); } catch (e) {}
+      input.dispatchEvent(new MouseEvent('mouseup', opts));
+      input.dispatchEvent(new MouseEvent('click', opts));
+      var sel = window.getSelection(), range = document.createRange();
+      range.selectNodeContents(input);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (e) {}
+    try { document.execCommand('insertText', false, txt); } catch (e) {}
+    // 异步确认：Lexical 重渲染之后文本里应该有我们插的路径；没有就退化成「复制到剪贴板」
+    setTimeout(function () {
+      var ok = false;
+      try { ok = (document.querySelector('[data-composer-input]').textContent || '').indexOf(txt) >= 0; } catch (e) {}
+      if (!ok) {
+        try { navigator.clipboard.writeText(txt); } catch (e) {}
+        note('已复制文件夹路径，在输入框里 Ctrl+V 粘贴');
+      }
+      if (done) done(ok);
+    }, 260);
+  }
+  function note(txt) {
+    var host = document.querySelector('[data-textpreview-body]') || document.querySelector('[data-composer-card]') || document.body;
+    try { showBadge(host, txt, 2200); } catch (e) {}
+  }
+  document.addEventListener('drop', function (e) {
+    var dt = e.dataTransfer;
+    if (!dt || !dropHasDirectory(dt)) return;      // 普通文件：完全交给产品（变成待发送附件）
+    var p = dropPath(dt);
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+    if (!p) { note('这个文件夹的路径拿不到（请从右侧文件列表拖）'); return; }
+    // 注意：不能在 drop 事件里直接改 Lexical 的内容（拖放处理期间编辑命令会被忽略），
+    // 挪到下一个宏任务再插 —— 实测这一步是关键。
+    setTimeout(function () {
+      insertIntoComposer(p, function (ok) {
+        if (ok) note('已把文件夹路径写进输入框');
+      });
+    }, 300);
   }, true);
 
   // ───────────────────── 右键菜单（只认右栏里的图片预览） ─────────────────────

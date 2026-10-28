@@ -74,6 +74,23 @@
 | 复制文件路径 | 剪贴板文本 = 绝对路径 |
 | 控制台 | 零未捕获异常 |
 
+### 拖拽（拖出去保存 / 拖进输入框发送，2026-10-28）
+
+- **拖出去**：文件树行 / 交付卡 / 预览 → 注入脚本把绝对路径发给宿主，宿主 `DoDragDrop`（`FileDrop` + 文本 + `text/uri-list`），
+  资源管理器等落地即**复制**（只给 `Copy`）。
+- **拖回来**：普通文件由 WebView2 转成 `Files`，产品的附件管线接住（待发送附件）；
+  **文件夹**在 drop 的捕获阶段被我们拦下，把路径写进输入框（Lexical 需要「合成点击 + 延后一个任务 + execCommand」，
+  插不进就自动复制到剪贴板并提示 `Ctrl+V`）。
+- 测试缝：`DSH_DRAG_TEST=1`（宿主只回报数据格式、不真拖）、`DSH_DRAG_DEBUG_LOG=<文件>`。
+
+| 检查 | 结果 |
+| --- | --- |
+| 文件树行拖出 | 发出 `dsh-drag-out`，路径 = 该文件绝对路径、`isDir=false` |
+| 文件树文件夹行拖出 | 同上、`isDir=true` |
+| 交付卡拖出 | 路径来自卡片预览按钮的 `title` |
+| 文件夹落回输入框 | 路径写进输入框、不产生附件、提示「已把文件夹路径写进输入框」 |
+| 真实宿主（`DSH_DRAG_TEST=1`） | 收到路径，数据对象格式 = `text/uri-list, FileDrop, FileNameW, FileName, UnicodeText` |
+
 ## 脚本
 
 | 文件 | 用途 |
@@ -83,6 +100,7 @@
 | `verify-scope.mjs` | **作用范围验证器**：document-start 注入 + 真实滚轮/拖动，逐项核对「对话区/文本/日志=原生，图片/PDF=增强，收起右栏=全部失效」 |
 | `verify-pdf-zoom.mjs` | **PDF 缩放验证器**：真实页面/真实窗口里的 PDF 三件事（全局、可超出显示区域、Ctrl+滚轮），`--edge`（无头，自己登录并注入）/ `--attach <端口>`（附着到真实窗口）/ `--observe`（只记录不断言，用来对比旧版） |
 | `verify-preview-menu.mjs` | **预览右键菜单验证器**：无头真实页面上注入脚本 + 假宿主桥，用真实右键事件核对「图片 / 小图 / PDF / 文本」四类预览的菜单项、发出的保存消息（路径 / 文件名）、回执提示，以及文本的「复制 / 全选」 |
+| `verify-drag.mjs` | **拖拽验证器**：`--edge` 用真实鼠标事件核对「文件行 / 文件夹行 / 交付卡」拖出时发出的路径与 `isDir`，以及文件夹落回输入框是否变成路径文字；`--attach <端口>` 附着真实窗口，用 `DSH_DRAG_TEST=1` 核对宿主拿到的路径与数据对象格式 |
 | `fixtures/three-pages.pdf` | 验证用 3 页 A4 夹具（由 `.tmp` 里的 make-pdf 生成，已入库，可直接用） |
 | `drive.mjs` | 无头 Edge + CDP：自己登录 3080、打开右栏文件预览、用**真实鼠标事件**测缩放/平移，可 `--apply` 注入脚本 |
 | `attach.mjs` | 附着到**正在运行的桌面窗口**（先用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9340` 启动）做同样的实测 |
