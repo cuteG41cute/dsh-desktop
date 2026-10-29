@@ -303,6 +303,43 @@ def load_preview_tools():
 
 
 # ---------------------------------------------------------------------------
+# 弹窗 / 外部链接
+# ---------------------------------------------------------------------------
+def _origin(url):
+    try:
+        p = urllib.parse.urlsplit(url or '')
+        return (p.scheme, p.netloc)
+    except Exception:
+        return ('', '')
+
+
+def same_origin(a, b):
+    """是不是同一个站点（scheme+host:port）。用于判断弹窗该留在应用内还是交给系统浏览器。"""
+    oa = _origin(a)
+    return oa == _origin(b) and bool(oa[1])
+
+
+def open_external(url):
+    """把链接交给系统默认浏览器。
+
+    登录页（OAuth/账号登录）必须在真浏览器里完成 —— 它要写自己的 cookie、可能还要
+    开新标签继续跳转；放在 WebView 弹窗里做只会把流程搅乱（实测：点了「登录账号」
+    后弹窗一闪就关，登录页从没打开过）。
+    """
+    if not url or not url.lower().startswith(('http://', 'https://')):
+        return False
+    for cmd in (['xdg-open', url], ['gio', 'open', url]):
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+            return True
+        except Exception:
+            continue
+    sys.stderr.write('[dsh-desktop] 无法打开系统浏览器，请手动访问：%s\n' % url)
+    return False
+
+
+# ---------------------------------------------------------------------------
 # 自检（不需要图形界面）
 # ---------------------------------------------------------------------------
 def selftest():
@@ -349,6 +386,25 @@ def selftest():
     else:
         print('  ✗ 找不到 preview-tools.js（期望在 %s）' % PREVIEW_JS)
         ok = False
+
+    print('\n[4b] 弹窗 / 外部链接')
+    src = ''
+    try:
+        with open(os.path.abspath(__file__), 'r', encoding='utf-8') as fh:
+            src = fh.read()
+    except Exception:
+        pass
+    popup_marks = (
+        ('弹窗按请求的地址打开（不是又开一个应用窗口）', 'req.get_uri()'),
+        ('站外弹窗不注入 DSH 脚本', 'inject=False'),
+        ('主窗口拒绝页面发起的 window.close()', '_on_view_close'),
+    )
+    for label, mark in popup_marks:
+        if mark in src:
+            print('  ✓ ' + label)
+        else:
+            print('  ✗ %s（缺 %s）' % (label, mark))
+            ok = False
 
     print('\n[5] 便携运行时')
     node = find_node()
@@ -407,7 +463,7 @@ def run_gui():
 
     # ---------------- WebView ----------------
     class DshWebView(WebKit2.WebView):
-        def __init__(self, url, window):
+        def __init__(self, url, window, inject=True):
             WebKit2.WebView.__init__(self, web_context=context)
             self.window = window
             ucm = self.get_user_content_manager()
@@ -431,7 +487,10 @@ def run_gui():
                 self.set_property('settings', settings)
             except Exception:
                 pass
-            self._install_scripts()
+            # inject=False 用于站外弹窗（登录页等第三方页面）：不注入 DSH 的注入脚本，
+            # 免得预览增强/拖拽/分离那些逻辑去改人家的页面
+            if inject:
+                self._install_scripts()
             self.connect('load-changed', self._on_load_changed)
             self.connect('create', self._on_create)
             self.load_uri(url)
@@ -499,16 +558,44 @@ def run_gui():
             self.run_js(script)
 
         def _on_create(self, view, action):
-            win = DshWindow(WEB_URL, primary=False)
+            """页面要开新窗口时（window.open / target=_blank）。
+
+            - **站内**链接：在应用内新开一个窗口（保留会话分离/多窗口体验）；
+            - **站外**链接（登录页、文档、外部站点）：交给系统浏览器。
+
+            旧实现无脑把新窗口指向 WEB_URL，于是「登录账号」开出来的弹窗其实是又一个
+            应用窗口，登录页从没被打开，弹窗还会被页面自己 window.close() 关掉。
+            """
+            uri = ''
+            try:
+                req = action.get_request() if action is not None else None
+                uri = req.get_uri() if req is not None else ''
+            except Exception:
+                uri = ''
+            if not uri:
+                return None
+            if not uri.lower().startswith(('http://', 'https://')):
+                # mailto: / 自定义协议 之类，交给系统处理
+                open_external(uri)
+                return None
+            if same_origin(uri, WEB_URL):
+                win = DshWindow(uri, primary=False)
+            else:
+                # 站外（登录页等）：真的开一个弹窗去加载它。
+                # window.opener / postMessage 仍然有效，登录完成后页面自己 window.close()
+                # 只关掉这个弹窗，不会带走主窗口。
+                win = DshWindow(uri, primary=False, inject=False)
+                sys.stderr.write('[dsh-desktop] 弹窗打开外部页面：%s\n' % uri)
             win.show_all()
             return win.web
 
     # ---------------- 窗口 ----------------
     class DshWindow(Gtk.Window):
-        def __init__(self, url, primary=False):
+        def __init__(self, url, primary=False, inject=True):
             Gtk.Window.__init__(self, title=APP_NAME)
             self.url = url
             self.primary = primary
+            self.inject = inject
             self.auth_done = False
             self.set_default_size(1440, 900)
             self.set_position(Gtk.WindowPosition.CENTER)
@@ -522,7 +609,7 @@ def run_gui():
             self.cookie_value = ('%s=%s' % (ck[0], ck[1])) if ck else ''
 
             overlay = Gtk.Overlay()
-            self.web = DshWebView(url, self)
+            self.web = DshWebView(url, self, inject)
             overlay.add(self.web)
             self.spinner_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
             self.spinner_box.set_valign(Gtk.Align.CENTER)
@@ -541,6 +628,16 @@ def run_gui():
             windows.append(self)
             if primary:
                 app.primary = self
+                # 页面脚本里的 window.close() 不能把主窗口关掉：登录/登出流程在弹窗里
+                # 关闭自己是可以的，但顶层窗口被关就等于"应用自己退出了"（实测踩过）。
+                try:
+                    self.web.connect('close', self._on_view_close)
+                except Exception:
+                    pass
+
+        def _on_view_close(self, *_args):
+            """WebKitWebView::close —— 返回 True 表示"我处理了，别关"。"""
+            return True
 
         def set_progress(self, value):
             if value <= 0:
