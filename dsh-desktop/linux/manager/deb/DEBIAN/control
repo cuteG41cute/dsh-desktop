@@ -1,0 +1,18 @@
+Package: dsh-manager
+Version: 1.0.0
+Section: devel
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.8), python3-gi, gir1.2-gtk-3.0
+Recommends: gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0, curl | wget, tar, xz-utils
+Installed-Size: 520
+Maintainer: cuteG41cute <cuteG41Cute@users.noreply.github.com>
+Homepage: https://github.com/cuteG41cute/dsh-desktop
+Description: DeepSeek Harness 管理器（多实例 / 多版本 / 便携）
+ 一个图形界面管理多个 DeepSeek Harness 实例：新建（自选目录、端口、dsh 与 Node
+ 版本）、启动 / 停止服务、打开桌面窗口、更新版本、修复、卸载。
+ .
+ 每个实例自带便携 Node 与 dsh，全部装在你选的目录里（默认 ~/.local/opt/...），
+ 数据目录是实例目录下的 dsh-home；管理器不会向系统安装任何 Node 或全局 npm 包。
+ .
+ 包内同时带有桌面窗口（GTK3 + WebKitGTK），打开窗口需要 gir1.2-webkit2-4.1/4.0。

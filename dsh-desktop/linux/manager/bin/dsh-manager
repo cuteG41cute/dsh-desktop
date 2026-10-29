@@ -1,0 +1,11 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+"""dsh-manager 入口（deb 安装到 /usr/bin/dsh-manager）。"""
+import sys
+
+sys.path.insert(0, '/usr/lib/dsh-manager')
+
+from dsh_manager.cli import main  # noqa: E402
+
+if __name__ == '__main__':
+    sys.exit(main())

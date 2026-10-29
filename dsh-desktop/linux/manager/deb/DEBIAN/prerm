@@ -1,0 +1,8 @@
+#!/bin/sh
+# 卸载前提示：实例目录是用户数据，不随包删除（避免误删已经装好的 DSH 实例）
+set -e
+if [ "$1" = "remove" ]; then
+    echo "dsh-manager：已安装的 DSH 实例目录不会被删除。"
+    echo "           如需清理，用「dsh-manager」界面里的「卸载」，或手动删除对应目录。"
+fi
+exit 0

@@ -185,6 +185,29 @@ bash linux/install.sh --prefix /opt/deepseek-harness --uninstall # 卸载 = 删�
 打包脚本：`linux/build/build-linux.py`（产出到 `dist\`，Windows/Linux 都能跑）；
 - 已修复：软链启动路径、Deepin 密钥环弹窗（ephemeral WebContext）。
 
+### 管理器（.deb）：多实例 / 多版本，图形界面
+
+`linux/manager/` 是一个 GTK 图形管理器，打包成 **`dsh-manager_<版本>_all.deb`**：
+
+```bash
+sudo apt install ./dsh-manager_1.0.0_all.deb      # 从应用菜单打开「DeepSeek Harness 管理器」
+# 自己构建：cd dsh-desktop/linux/manager && bash build-deb.sh --version 1.0.0
+```
+
+| 能力 | 说明 |
+| --- | --- |
+| 新建实例 | 自选**安装目录**、显示名、**端口**（默认取第一个空闲，方便多开）、**dsh 版本**、**Node 版本** |
+| 多开 | 每个实例独立目录 + 独立端口 + 独立 `dsh-home`，可同时跑多个 |
+| 启动 / 停止 / 状态 | 后台跑 `dsh web --no-open`，PID 记在实例的 `logs/web.pid` |
+| 打开窗口 | 用该实例的 `bin/dsh-desktop` 开 GTK 窗口（预览增强 / 右键保存 / 拖拽都在） |
+| 更新 | 换 dsh / Node 版本，只动这个实例 |
+| 修复 | 补 Node / dsh / 窗口文件 / 启动器 |
+| 卸载 | 二次确认后删整个实例目录（含其数据目录） |
+
+管理器只用 `python3-gi` + GTK3；**不会往系统装 Node 或全局 npm 包** —— 每个实例的 Node 与 dsh
+都在你选的目录里。命令行同源：`dsh-manager --headless list|install|start|stop|update|repair|uninstall`，
+详见 `linux/manager/README.md`。
+
 ## MSI 安装包（推荐分发方式）
 
 **`dist\DeepSeek Harness 桌面版 1.2.8.msi`**（文件名带版本号；安装向导欢迎页亦显示版本，旧版本双击新包即自动升级） 是标准 Windows 安装程序（per-user 安装，无需管理员权限）。

@@ -1,0 +1,12 @@
+#!/bin/sh
+# 安装/升级后刷新桌面数据库与图标缓存（没有工具就跳过，不影响安装）
+set -e
+if [ -x /usr/bin/update-desktop-database ]; then
+    update-desktop-database -q /usr/share/applications || true
+fi
+if [ -x /usr/bin/gtk-update-icon-cache ]; then
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+fi
+echo "dsh-manager：从应用菜单打开「DeepSeek Harness 管理器」，或命令行 dsh-manager"
+echo "           （命令行模式：dsh-manager --headless list）"
+exit 0
