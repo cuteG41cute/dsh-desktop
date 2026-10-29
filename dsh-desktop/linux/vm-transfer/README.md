@@ -30,7 +30,16 @@ SMB 通信只需要两样东西：
 ### 方式 A（推荐）：跑脚本
 
 在资源管理器里找到 `dsh-desktop\linux\vm-transfer\windows-share.ps1`，
-**右键 →「使用 PowerShell 运行」**（会弹 UAC，点是）。
+**右键 →「使用 PowerShell 运行」**。
+
+这一步**不会**自动提权（Windows 的“使用 PowerShell 运行”和双击一样是非管理员上下文），
+所以脚本自己会弹一次 UAC 并重开一个**管理员的、不会自动关闭**的 PowerShell 窗口继续干活。
+弹窗点「是」即可；点「否」它会给出提示并等你按回车，不会闪退。
+
+> 只想看它打算干什么、不动系统：加 `-DryRun`，它会打印提权后要执行的完整命令行然后退出。
+> ```powershell
+> powershell -ExecutionPolicy Bypass -File .\windows-share.ps1 -DryRun
+> ```
 
 它做三件事，全部可撤销：
 
@@ -192,6 +201,7 @@ smbclient //172.22.144.1/DSH-VM -U twinblade
 
 | 文件 | 跑在哪 | 作用 |
 |---|---|---|
-| `windows-share.ps1` | Windows（管理员） | 建/删共享 + 只对 VM 网段放行 445，并打印挂载命令 |
+| `windows-share.ps1` | Windows（自动提权） | 建/删共享 + 只对 VM 网段放行 445，并打印挂载命令 |
 | `vm-mount.sh` | Ubuntu 虚拟机 | 装 cifs-utils、挂载、拷贝 `.deb`、可选直接安装 |
+| `samba-in-vm.md` | — | **另一条路**：VM 里跑 Samba、Windows 拖文件进去，不需要任何管理员权限 |
 | `README.md` | — | 本文 |

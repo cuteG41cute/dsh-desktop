@@ -35,7 +35,10 @@ param(
     # 只对这些来源地址放行 445（Hyper-V Default Switch 是 172.22.144.0/20）
     [string]$RemoteAddress = "172.22.144.0/20",
 
-    [switch]$Remove
+    [switch]$Remove,
+
+    # 只打印提权后会执行的命令行，不真的提权（调试用）
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,12 +51,41 @@ function Test-Admin {
 }
 
 if (-not (Test-Admin)) {
-    Write-Host ""
-    Write-Host "需要管理员权限。请用下面任一方式重开：" -ForegroundColor Yellow
-    Write-Host "  1) 开始菜单搜 PowerShell -> 右键「以管理员身份运行」 -> 再执行本脚本"
-    Write-Host "  2) 或右键本文件 ->「使用 PowerShell 运行」(会弹 UAC)"
-    Write-Host ""
-    exit 2
+    # 双击 / 右键「使用 PowerShell 运行」都不会提权，直接 exit 会“闪退”。
+    # 所以这里用 RunAs 自己重开一个管理员窗口，并用 -NoExit 让结果留在屏幕上。
+    $forward = @()
+    if (-not [string]::IsNullOrWhiteSpace($Path))    { $forward += @('-Path', ('"{0}"' -f $Path)) }
+    if ($ShareName -ne 'DSH-VM')                     { $forward += @('-ShareName', ('"{0}"' -f $ShareName)) }
+    if (-not [string]::IsNullOrWhiteSpace($Account)) { $forward += @('-Account', ('"{0}"' -f $Account)) }
+    if ($RemoteAddress -ne '172.22.144.0/20')        { $forward += @('-RemoteAddress', $RemoteAddress) }
+    if ($Remove)                                     { $forward += '-Remove' }
+    if ($DryRun)                                     { $forward += '-DryRun' }
+
+    $argList = @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-NoExit',
+        '-File', ('"{0}"' -f $PSCommandPath)
+    ) + $forward
+
+    if ($DryRun) {
+        Write-Host "提权后将要执行：" -ForegroundColor Cyan
+        Write-Host ("  powershell.exe " + ($argList -join ' '))
+        Write-Host ""
+        Write-Host "（-DryRun：没有提权，也没改动系统）" -ForegroundColor DarkGray
+        exit 0
+    }
+
+    Write-Host "需要管理员权限才能建共享、改防火墙。" -ForegroundColor Yellow
+    Write-Host "正在弹 UAC 提权窗口，请在弹窗里点「是」……" -ForegroundColor Yellow
+    try {
+        Start-Process -FilePath 'powershell.exe' -ArgumentList $argList -Verb RunAs | Out-Null
+        Write-Host "已在新窗口继续，本窗口可以关掉了。" -ForegroundColor Green
+    } catch {
+        Write-Host ""
+        Write-Host "提权没成功（多半是点了『否』）：$($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "也可以手动来做：开始菜单搜 PowerShell -> 右键「以管理员身份运行」-> 再执行本脚本" -ForegroundColor Yellow
+        Read-Host "按回车关闭本窗口"
+    }
+    exit
 }
 
 # ---------- 撤销 ----------
