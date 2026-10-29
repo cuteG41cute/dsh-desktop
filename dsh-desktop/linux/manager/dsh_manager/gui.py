@@ -24,6 +24,98 @@ STATUS_TEXT = {
 }
 
 
+class VersionPicker(Gtk.MenuButton):
+    """可滚动的版本选择器。
+
+    GTK 自带的 Gtk.ComboBox 用的是菜单式下拉，列表一长就滚不动（只能滚一下），
+    这里换成 Popover + ScrolledWindow + ListBox：给死最小/最大高度，永远能滚，
+    并且可以放 'latest' 这种"由管理器去解析"的伪版本。
+    """
+
+    def __init__(self, options=None, value=None, width_chars=24):
+        Gtk.MenuButton.__init__(self)
+        self._value = ''
+        self._label = Gtk.Label(xalign=0.0)
+        self._label.set_width_chars(width_chars)
+        self._label.set_ellipsize(3)              # 末尾省略号
+        self.add(self._label)                     # GTK3 的 MenuButton 是 Gtk.Bin
+        self.set_valign(Gtk.Align.CENTER)
+        self.set_tooltip_text('点击选择版本（列表可滚动）')
+
+        sw = Gtk.ScrolledWindow()
+        sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        sw.set_min_content_height(180)
+        sw.set_max_content_height(300)
+        sw.set_propagate_natural_height(True)
+        sw.set_size_request(240, -1)
+        self._list = Gtk.ListBox()
+        self._list.set_selection_mode(Gtk.SelectionMode.NONE)
+        self._list.connect('row-activated', self._on_row)
+        sw.add(self._list)
+
+        pop = Gtk.Popover.new(self)
+        pop.add(sw)
+        self.set_popover(pop)
+
+        self.set_options(options or [])
+        if value:
+            self.set_value(value)
+
+    def set_options(self, options):
+        for child in self._list.get_children():
+            self._list.remove(child)
+        for opt in options:
+            row = Gtk.ListBoxRow()
+            row.value = opt
+            lbl = Gtk.Label(label=opt, xalign=0.0)
+            lbl.set_margin_top(6)
+            lbl.set_margin_bottom(6)
+            lbl.set_margin_start(10)
+            lbl.set_margin_end(10)
+            row.add(lbl)
+            self._list.add(row)
+        self._list.show_all()
+        if self._value in options:
+            self.set_value(self._value)
+        elif options:
+            self.set_value(options[0])
+        else:
+            self.set_value('')
+
+    def _on_row(self, _lb, row):
+        self.set_value(getattr(row, 'value', ''))
+        pop = self.get_popover()
+        if pop is not None:
+            pop.popdown()
+
+    def set_value(self, value):
+        self._value = value or ''
+        self._label.set_text(self._value or '—')
+
+    def get_value(self):
+        return self._value
+
+
+def make_pulse_bar():
+    """不确定进度条（脉冲式，观感类似 Win7 的"滚动光条"）。"""
+    bar = Gtk.ProgressBar()
+    bar.set_pulse_step(0.06)
+    return bar
+
+
+def pulse_until(bar, state):
+    """在 state['done'] 之前持续脉冲；返回 False 让它自己停。"""
+    def tick():
+        if state.get('done'):
+            return False
+        try:
+            bar.pulse()
+        except Exception:
+            return False
+        return True
+    GLib.timeout_add(110, tick)
+
+
 class ManagerWindow(Gtk.Window):
     def __init__(self, manager=None):
         Gtk.Window.__init__(self, title='DeepSeek Harness 管理器 %s' % MANAGER_VERSION)
@@ -56,6 +148,20 @@ class ManagerWindow(Gtk.Window):
         btn_refresh.connect('clicked', lambda *a: self.refresh())
         hb.pack_end(btn_refresh)
         self.set_titlebar(hb)
+
+        # 忙碌指示条：安装/更新/修复这类长操作期间显示，脉冲动画（不装进度就不装进度条，
+        # 但绝不能让人对着冻结的界面干等）
+        self.busy_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self.busy_box.set_border_width(6)
+        self.busy_lbl = Gtk.Label(xalign=0)
+        self.busy_lbl.get_style_context().add_class('dim-label')
+        self.busy_bar = make_pulse_bar()
+        self.busy_box.pack_start(self.busy_lbl, False, False, 0)
+        self.busy_box.pack_start(self.busy_bar, False, False, 0)
+        self.busy_box.set_no_show_all(True)
+        root.pack_start(self.busy_box, False, False, 0)
+        self.busy_box.hide()
+        self._busy_pulse_id = None
 
         # 中部：左列表 + 右详情
         paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
@@ -186,6 +292,33 @@ class ManagerWindow(Gtk.Window):
                         inst.port, inst.dsh_home, STATUS_TEXT.get(inst.status(), inst.status())))
 
     # ------------------------------------------------------------ 动作（线程里跑）
+    def _busy_show(self, text):
+        try:
+            self.busy_lbl.set_text(text)
+            self.busy_box.show_all()
+        except Exception:
+            return
+        if self._busy_pulse_id is None:
+            self._busy_pulse_id = GLib.timeout_add(110, self._busy_pulse)
+
+    def _busy_pulse(self):
+        if not self.busy:
+            self._busy_pulse_id = None
+            return False
+        try:
+            self.busy_bar.pulse()
+        except Exception:
+            self._busy_pulse_id = None
+            return False
+        return True
+
+    def _busy_hide(self):
+        self._busy_pulse_id = None
+        try:
+            self.busy_box.hide()
+        except Exception:
+            pass
+
     def _run_async(self, title, fn, on_done=None):
         if self.busy:
             return
@@ -193,6 +326,7 @@ class ManagerWindow(Gtk.Window):
         self.set_buttons_sensitive(True)
         self.append_log('—— %s ——' % title)
         self.set_title('DeepSeek Harness 管理器 · %s…' % title)
+        self._busy_show('%s…（耗时的部分在后台跑，界面不会卡死）' % title)
 
         def worker():
             try:
@@ -205,6 +339,7 @@ class ManagerWindow(Gtk.Window):
 
     def _finish(self, title, result, on_done):
         self.busy = False
+        self._busy_hide()
         ok, msg = result[0], result[1]
         self.append_log(('✔ ' if ok else '✘ ') + str(msg))
         self.set_title('DeepSeek Harness 管理器 %s' % MANAGER_VERSION)
@@ -246,17 +381,46 @@ class ManagerWindow(Gtk.Window):
         ent_port = Gtk.SpinButton.new_with_range(1024, 65535, 1)
         ent_port.set_value(self.manager.next_port())
 
-        combo_dsh = Gtk.ComboBoxText()
-        for v in self.manager.available_dsh_versions(8):
-            combo_dsh.append_text(v)
-        combo_dsh.set_active(0)
-        combo_node = Gtk.ComboBoxText()
-        for v in self.manager.available_node_versions():
-            combo_node.append_text(v)
-        combo_node.set_active(0)
-        if not combo_node.get_active_text():
-            combo_node.append_text(DEFAULT_NODE)
-            combo_node.set_active(0)
+        # 版本选择：先摆出 latest + 内置默认值（对话框立刻可用），
+        # 联网列表在后台拉，拉回来再塞进去 —— 这样打开对话框不再卡住界面。
+        picker_dsh = VersionPicker(['latest', DEFAULT_DSH], value='latest')
+        picker_node = VersionPicker(['latest', DEFAULT_NODE], value='latest')
+
+        ver_state = {'done': False}
+        ver_bar = make_pulse_bar()
+        ver_lbl = Gtk.Label(xalign=0, wrap=True)
+        ver_lbl.set_text('正在联网获取可用版本（可以先直接用 latest 安装）…')
+        ver_lbl.get_style_context().add_class('dim-label')
+        box_ver = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        box_ver.pack_start(ver_lbl, False, False, 0)
+        box_ver.pack_start(ver_bar, False, False, 0)
+        pulse_until(ver_bar, ver_state)
+        dlg.connect('destroy', lambda *a: ver_state.__setitem__('done', True))
+
+        def fetch_versions():
+            try:
+                dsh_list = self.manager.available_dsh_versions(14)
+                node_list = self.manager.available_node_versions()
+                latest_dsh = self.manager.latest_dsh_version()
+                latest_node = self.manager.latest_node_version()
+            except Exception:
+                dsh_list, node_list = [], []
+                latest_dsh, latest_node = DEFAULT_DSH, DEFAULT_NODE
+
+            def apply():
+                ver_state['done'] = True
+                try:
+                    ver_bar.hide()
+                    ver_lbl.set_text('版本列表已就绪：latest = dsh %s / Node %s'
+                                     % (latest_dsh, latest_node))
+                    picker_dsh.set_options(['latest'] + [v for v in dsh_list if v != 'latest'])
+                    picker_node.set_options(['latest'] + [v for v in node_list if v != 'latest'])
+                except Exception:
+                    pass
+                return False
+            GLib.idle_add(apply)
+
+        threading.Thread(target=fetch_versions, daemon=True).start()
 
         def browse(*_):
             chooser = Gtk.FileChooserDialog(title='选择安装目录', transient_for=dlg,
@@ -275,25 +439,29 @@ class ManagerWindow(Gtk.Window):
         box_prefix.pack_start(btn_browse, False, False, 0)
 
         rows = [('安装目录', box_prefix), ('显示名称', ent_label), ('端口', ent_port),
-                ('dsh 版本', combo_dsh), ('Node 版本', combo_node)]
+                ('dsh 版本', picker_dsh), ('Node 版本', picker_node)]
         for r, (label, widget) in enumerate(rows):
             grid.attach(Gtk.Label(label=label, xalign=0), 0, r, 1, 1)
             grid.attach(widget, 1, r, 1, 1)
+        grid.attach(box_ver, 0, len(rows), 2, 1)
         hint = Gtk.Label(xalign=0, wrap=True)
-        hint.set_text('提示：每个实例自带 Node 与 dsh，装在所选目录里；数据目录是该目录下的 dsh-home，'
-                      '不会动 ~/.dsh。安装需要联网（下载 Node 与 npm 包）。')
+        hint.set_text('提示：latest = 最新的非 alpha 版本（由管理器联网解析）；每个实例自带 Node 与 dsh，'
+                      '装在所选目录里，数据目录是该目录下的 dsh-home，不会动 ~/.dsh。'
+                      '安装需要联网（下载 Node 与 npm 包）。')
         hint.get_style_context().add_class('dim-label')
-        grid.attach(hint, 0, len(rows), 2, 1)
+        grid.attach(hint, 0, len(rows) + 1, 2, 1)
         dlg.show_all()
         resp = dlg.run()
         if resp != Gtk.ResponseType.OK:
+            ver_state['done'] = True
             dlg.destroy()
             return
         prefix = ent_prefix.get_text().strip()
         label = ent_label.get_text().strip() or os.path.basename(prefix)
         port = int(ent_port.get_value())
-        dsh = combo_dsh.get_active_text() or DEFAULT_DSH
-        node = combo_node.get_active_text() or DEFAULT_NODE
+        dsh = picker_dsh.get_value() or 'latest'
+        node = picker_node.get_value() or 'latest'
+        ver_state['done'] = True
         dlg.destroy()
         if os.path.exists(prefix) and not os.path.isdir(prefix):
             self.append_log('✘ 目标路径已存在且不是目录：%s' % prefix)
@@ -353,30 +521,61 @@ class ManagerWindow(Gtk.Window):
         grid = Gtk.Grid(column_spacing=8, row_spacing=10, border_width=12)
         dlg.get_content_area().add(grid)
 
-        combo_dsh = Gtk.ComboBoxText.new_with_entry()
-        vers = self.manager.available_dsh_versions(10)
-        for v in vers:
-            combo_dsh.append_text(v)
-        combo_dsh.get_child().set_text(inst.dsh_version or (vers[0] if vers else DEFAULT_DSH))
-        combo_node = Gtk.ComboBoxText.new_with_entry()
-        for v in self.manager.available_node_versions():
-            combo_node.append_text(v)
-        combo_node.get_child().set_text(inst.node_version or DEFAULT_NODE)
+        # 与「新建」一致：立刻显示、后台拉版本、点开可滚动，并能选 latest
+        picker_dsh = VersionPicker(['latest', inst.dsh_version or DEFAULT_DSH],
+                                   value=inst.dsh_version or DEFAULT_DSH)
+        picker_node = VersionPicker(['latest', inst.node_version or DEFAULT_NODE],
+                                    value=inst.node_version or DEFAULT_NODE)
+
+        ver_state = {'done': False}
+        ver_bar = make_pulse_bar()
+        ver_lbl = Gtk.Label(xalign=0, wrap=True)
+        ver_lbl.set_text('正在联网获取可用版本…')
+        ver_lbl.get_style_context().add_class('dim-label')
+        box_ver = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        box_ver.pack_start(ver_lbl, False, False, 0)
+        box_ver.pack_start(ver_bar, False, False, 0)
+        pulse_until(ver_bar, ver_state)
+        dlg.connect('destroy', lambda *a: ver_state.__setitem__('done', True))
+
+        def fetch_versions():
+            try:
+                dsh_list = self.manager.available_dsh_versions(14)
+                node_list = self.manager.available_node_versions()
+            except Exception:
+                dsh_list, node_list = [], []
+
+            def apply():
+                ver_state['done'] = True
+                try:
+                    ver_bar.hide()
+                    ver_lbl.set_text('版本列表已就绪（latest = 最新的非 alpha 版本）')
+                    picker_dsh.set_options(['latest'] + [v for v in dsh_list if v != 'latest'])
+                    picker_node.set_options(['latest'] + [v for v in node_list if v != 'latest'])
+                except Exception:
+                    pass
+                return False
+            GLib.idle_add(apply)
+
+        threading.Thread(target=fetch_versions, daemon=True).start()
 
         grid.attach(Gtk.Label(label='dsh 版本', xalign=0), 0, 0, 1, 1)
-        grid.attach(combo_dsh, 1, 0, 1, 1)
+        grid.attach(picker_dsh, 1, 0, 1, 1)
         grid.attach(Gtk.Label(label='Node 版本', xalign=0), 0, 1, 1, 1)
-        grid.attach(combo_node, 1, 1, 1, 1)
+        grid.attach(picker_node, 1, 1, 1, 1)
+        grid.attach(box_ver, 0, 2, 2, 1)
         note = Gtk.Label(xalign=0, wrap=True)
         note.set_text('更新只动这个实例的目录；正在跑的话先停服务再更新（服务会自动另起）。')
         note.get_style_context().add_class('dim-label')
-        grid.attach(note, 0, 2, 2, 1)
+        grid.attach(note, 0, 3, 2, 1)
         dlg.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
+            ver_state['done'] = True
             dlg.destroy()
             return
-        dsh = combo_dsh.get_child().get_text().strip() or inst.dsh_version
-        node = combo_node.get_child().get_text().strip() or inst.node_version
+        dsh = picker_dsh.get_value() or inst.dsh_version or DEFAULT_DSH
+        node = picker_node.get_value() or inst.node_version or DEFAULT_NODE
+        ver_state['done'] = True
         dlg.destroy()
         self._run_async('更新 %s → dsh %s' % (inst.label, dsh),
                         lambda: self.manager.update(inst.prefix, dsh, node))

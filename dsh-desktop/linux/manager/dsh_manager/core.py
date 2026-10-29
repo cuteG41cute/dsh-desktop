@@ -31,7 +31,7 @@ DEFAULT_ROOT = os.path.expanduser('~/.local/opt')
 FALLBACK_DSH_VERSIONS = ['0.1.5-rc.1']
 FALLBACK_NODE_VERSIONS = ['24.19.0', '22.11.0', '20.19.0']
 SYSTEM_SHARE = '/usr/lib/dsh-manager/share'      # deb 里随包带的窗口文件
-MANAGER_VERSION = '1.0.1'
+MANAGER_VERSION = '1.0.2'
 
 
 # --------------------------------------------------------------------------- 工具
@@ -67,6 +67,14 @@ def probe(url, timeout=3):
         return e.code, body
     except Exception:
         return 0, ''
+
+
+def _semver_key(version):
+    """排序键：先比主次修订号，正式版 > 预发布版，预发布里再按数字逐段比（rc.10 > rc.9）。"""
+    m = re.match(r'^(\d+)\.(\d+)\.(\d+)', version or '')
+    nums = [int(x) for x in m.groups()] if m else [0, 0, 0]
+    pre = version[len(m.group(0)):] if m else ''
+    return nums + [0 if pre else 1] + [int(x) for x in re.findall(r'\d+', pre)]
 
 
 def arch_tag():
@@ -371,25 +379,43 @@ class Manager:
         return Instance(prefix, meta)
 
     # ---- 版本清单 ----
-    def available_dsh_versions(self, limit=12):
-        out = []
+    def _registry_versions(self):
+        """返回 (versions, dist_tags)；取不到就都回空。"""
         try:
             with urllib.request.urlopen('https://registry.npmjs.org/' + NPM_PKG.replace('/', '%2F'),
                                         timeout=8) as r:
                 data = json.load(r)
             versions = [v for v in (data.get('versions') or {}).keys()
                         if re.match(r'^\d+\.\d+\.\d+', v)]
-            latest = data.get('dist-tags', {}).get('latest')
-            def key(v):
-                parts = re.findall(r'\d+', v)[:3]
-                return [int(p) for p in parts] + [0 if '-' in v else 1]
-            versions.sort(key=key, reverse=True)
-            if latest:
-                out.append(latest)
-            out.extend([v for v in versions if v not in out])
+            return versions, (data.get('dist-tags') or {})
         except Exception:
-            out = list(FALLBACK_DSH_VERSIONS)
+            return [], {}
+
+    def available_dsh_versions(self, limit=12):
+        versions, tags = self._registry_versions()
+        if not versions:
+            return list(FALLBACK_DSH_VERSIONS)
+        out = []
+        latest = tags.get('latest')
+        if latest:
+            out.append(latest)
+        versions.sort(key=_semver_key, reverse=True)
+        out.extend([v for v in versions if v not in out])
         return out[:limit] or list(FALLBACK_DSH_VERSIONS)
+
+    def latest_dsh_version(self):
+        """latest 的语义（用户定义）：**非 alpha 的最新版**——rc 算，alpha 不算。
+
+        优先用官方 dist-tags.latest（发布者的选择），若它带 alpha 才退回按版本号挑。
+        """
+        versions, tags = self._registry_versions()
+        cand = tags.get('latest')
+        if cand and 'alpha' not in cand.lower():
+            return cand
+        non_alpha = [v for v in versions if 'alpha' not in v.lower()]
+        if non_alpha:
+            return sorted(non_alpha, key=_semver_key)[-1]
+        return DEFAULT_DSH
 
     def available_node_versions(self):
         try:
@@ -404,6 +430,10 @@ class Manager:
             return seen[:4] or list(FALLBACK_NODE_VERSIONS)
         except Exception:
             return list(FALLBACK_NODE_VERSIONS)
+
+    def latest_node_version(self):
+        """最新的 Node LTS（内置清单里排第一的那个）。"""
+        return (self.available_node_versions() or [DEFAULT_NODE])[0]
 
     # ---- 安装 / 更新 / 修复 / 卸载 ----
     def _download(self, url, dest):
@@ -541,6 +571,12 @@ class Manager:
 
     def install(self, prefix, dsh_version=None, node_version=None, port=None, label=None):
         """新建（或补齐）一个实例。返回 (ok, message, instance)。"""
+        if dsh_version == 'latest':
+            dsh_version = self.latest_dsh_version()
+            self.log('latest → dsh %s' % dsh_version)
+        if node_version == 'latest':
+            node_version = self.latest_node_version()
+            self.log('latest → Node %s' % node_version)
         dsh_version = dsh_version or DEFAULT_DSH
         node_version = node_version or DEFAULT_NODE
         prefix = os.path.abspath(os.path.expanduser(prefix))
@@ -581,6 +617,12 @@ class Manager:
         inst = self.instance_at(prefix)
         if not inst.installed():
             return False, '实例不完整，请先「修复」', inst
+        if dsh_version == 'latest':
+            dsh_version = self.latest_dsh_version()
+            self.log('latest → dsh %s' % dsh_version)
+        if node_version == 'latest':
+            node_version = self.latest_node_version()
+            self.log('latest → Node %s' % node_version)
         dsh_version = dsh_version or inst.dsh_version or DEFAULT_DSH
         node_version = node_version or inst.node_version or DEFAULT_NODE
         try:
