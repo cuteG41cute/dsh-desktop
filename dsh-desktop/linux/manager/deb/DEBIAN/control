@@ -1,10 +1,10 @@
 Package: dsh-manager
-Version: 1.0.0
+Version: 1.0.1
 Section: devel
 Priority: optional
 Architecture: all
 Depends: python3 (>= 3.8), python3-gi, gir1.2-gtk-3.0
-Recommends: gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0, curl | wget, tar, xz-utils
+Recommends: gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0, tar, xz-utils
 Installed-Size: 520
 Maintainer: cuteG41cute <cuteG41Cute@users.noreply.github.com>
 Homepage: https://github.com/cuteG41cute/dsh-desktop

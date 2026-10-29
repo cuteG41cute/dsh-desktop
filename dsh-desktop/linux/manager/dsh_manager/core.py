@@ -31,7 +31,7 @@ DEFAULT_ROOT = os.path.expanduser('~/.local/opt')
 FALLBACK_DSH_VERSIONS = ['0.1.5-rc.1']
 FALLBACK_NODE_VERSIONS = ['24.19.0', '22.11.0', '20.19.0']
 SYSTEM_SHARE = '/usr/lib/dsh-manager/share'      # deb 里随包带的窗口文件
-MANAGER_VERSION = '1.0.0'
+MANAGER_VERSION = '1.0.1'
 
 
 # --------------------------------------------------------------------------- 工具
@@ -228,16 +228,47 @@ class Instance:
             pass
         return True, '已停止（PID %d）' % pid
 
-    def open_window(self):
-        """用实例自带的 dsh-desktop 打开窗口（它会复用已在跑的服务）。"""
+    def open_window(self, settle=3.0):
+        """用实例自带的 dsh-desktop 打开窗口（它会复用已在跑的服务）。
+
+        启动器的输出**不能丢**：缺 WebKitGTK、取不到认证凭据、窗口起不来时，
+        它只会把原因打在 stdout/stderr 上。所以这里重定向到 logs/desktop.log，
+        并等 settle 秒看它是否立刻退出——退出了就把日志尾巴当错误返回。
+        """
         if not os.path.exists(self.desktop):
             return False, '缺少启动器：%s（试试「修复」）' % self.desktop
+        logpath = os.path.join(self.prefix, 'logs', 'desktop.log')
+        os.makedirs(os.path.dirname(logpath), exist_ok=True)
+        fh = open(logpath, 'ab', buffering=0)
         try:
-            subprocess.Popen([self.desktop], env=self.env(), start_new_session=True,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return True, '已打开窗口'
+            proc = subprocess.Popen([self.desktop], env=self.env(), start_new_session=True,
+                                    stdout=fh, stderr=fh, stdin=subprocess.DEVNULL)
         except Exception as exc:
+            fh.close()
             return False, '打开失败：%s' % exc
+        finally:
+            if not fh.closed:
+                fh.close()
+
+        deadline = time.time() + max(0.0, settle)
+        while time.time() < deadline:
+            code = proc.poll()
+            if code is not None:
+                tail = self._tail(logpath, 1200)
+                return False, ('窗口没能启动（启动器退出码 %d）。日志：%s\n%s'
+                               % (code, logpath, tail))
+            time.sleep(0.2)
+        return True, '已请求打开窗口（日志：%s）' % logpath
+
+    @staticmethod
+    def _tail(path, limit=1200):
+        try:
+            with open(path, 'rb') as fh:
+                data = fh.read()
+        except OSError:
+            return ''
+        text = data.decode('utf-8', 'replace').strip()
+        return text[-limit:] if text else ''
 
 
 # --------------------------------------------------------------------------- 管理器
