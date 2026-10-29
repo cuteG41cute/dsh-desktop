@@ -467,6 +467,38 @@ class Manager:
                         os.chmod(dest, 0o755)
                     break
 
+    def _approve_scripts(self, inst, force=False):
+        """npm 11 默认把依赖的 install scripts 拦下来（allow-scripts 提示）。
+
+        不批准的话 node-pty / koffi 这类原生依赖不会被编译，「终端」工具会报错
+        （实测 0.2.x 装完会留 5 个 pending：dsh-subprocess-local / koffi / node-pty /
+        @google/genai / protobufjs）。这里显式全部批准并重建，失败只记日志——
+        它只影响终端/原生模块，不影响聊天与文件功能。旧版 npm 没有这个命令，跳过即可。
+        """
+        app = os.path.join(inst.prefix, 'app')
+        pkg = os.path.join(app, 'package.json')
+        if not force:
+            try:
+                with open(pkg, 'r', encoding='utf-8') as fh:
+                    if 'allowScripts' in json.load(fh):
+                        return
+            except Exception:
+                pass
+        for args, label in ((['approve-scripts', '--all'], '批准依赖脚本'),
+                            (['rebuild'], '重建原生模块')):
+            try:
+                proc = subprocess.run([inst.npm] + args, cwd=app, env=inst.env(),
+                                      capture_output=True, text=True,
+                                      stdin=subprocess.DEVNULL, timeout=1800)
+            except Exception as exc:
+                self.log('跳过「%s」：%s' % (label, exc))
+                continue
+            if proc.returncode != 0:
+                tail = ((proc.stderr or '') or (proc.stdout or ''))[-400:].strip()
+                self.log('「%s」失败（不影响聊天，可能影响终端工具）：%s' % (label, tail))
+            elif args[0] == 'approve-scripts':
+                self.log('已批准依赖的 install scripts')
+
     def _npm_install(self, inst, dsh_version):
         app = os.path.join(inst.prefix, 'app')
         os.makedirs(app, exist_ok=True)
@@ -484,6 +516,7 @@ class Manager:
         if proc.returncode != 0:
             tail = (proc.stderr or proc.stdout or '')[-1200:]
             raise RuntimeError('npm 安装失败：%s' % tail)
+        self._approve_scripts(inst)
         # pnpm 单独放 tools/（dsh plugin 会用到）
         tools = os.path.join(inst.prefix, 'tools')
         os.makedirs(tools, exist_ok=True)
@@ -576,6 +609,7 @@ class Manager:
             if not os.path.exists(inst.entry):
                 self._npm_install(inst, inst.dsh_version or DEFAULT_DSH)
                 steps.append('重装 dsh')
+            self._approve_scripts(inst)
             self._provision_share(inst)
             steps.append('刷新窗口文件')
             self._write_launchers(inst)
