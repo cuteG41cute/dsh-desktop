@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepSeek Harness 桌面版 · 把 WebUI 变成真正的桌面应用</title>
+<meta name="description" content="DeepSeek Harness 桌面版：Windows（WebView2）与 Linux（GTK3 + WebKitGTK）原生窗口，多会话分离、预览缩放、右键保存、拖拽收发，便携安装与多实例管理器。">
+<meta name="theme-color" content="#fbfbfa">
+<meta property="og:type" content="website">
+<meta property="og:title" content="DeepSeek Harness 桌面版 · 把 WebUI 变成真正的桌面应用">
+<meta property="og:description" content="Windows（WebView2）与 Linux（GTK3 + WebKitGTK）原生窗口：多会话分离、预览缩放、右键保存、拖拽收发、便携安装与多实例管理器。">
+<meta property="og:image" content="assets/shot-hero.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/icon.png">
+<script>document.documentElement.classList.add('js');</script>
+<style>
+  /* ---------- 基础 ---------- */
+  :root{
+    --bg:#fbfbfa; --surface:#fff; --ink:#101418; --ink2:#454b52; --muted:#7d838a;
+    --line:#e6e3de; --line2:#f0eeea; --accent:#1f4e79; --accent-soft:#eef2f7;
+    --mono:ui-monospace,SFMono-Regular,"Cascadia Mono","JetBrains Mono",Consolas,"Courier New",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI Variable Text","Segoe UI","Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    --maxw:1120px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.7;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  a{color:inherit;text-decoration:none}
+  img,video{max-width:100%;display:block}
+  h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.02em;line-height:1.15}
+  p{margin:0}
+  ::selection{background:#d8e3ef}
+
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
+  .eyebrow{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .lede{color:var(--ink2);font-size:17px;max-width:54ch}
+  .mono{font-family:var(--mono)}
+
+  /* ---------- 顶栏 ---------- */
+  header.nav{position:sticky;top:0;z-index:50;background:rgba(251,251,250,.86);
+    backdrop-filter:saturate(180%) blur(14px);border-bottom:1px solid var(--line)}
+  .nav-in{display:flex;align-items:center;gap:22px;height:62px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:-.01em}
+  .brand img{width:24px;height:24px;border-radius:6px}
+  .brand span.b{color:var(--muted);font-weight:500}
+  nav.links{display:flex;gap:20px;margin-left:auto;font-size:14px;color:var(--ink2)}
+  nav.links a{padding:6px 0;border-bottom:1px solid transparent}
+  nav.links a:hover{border-color:var(--ink);color:var(--ink)}
+  .tag{font-size:11px;letter-spacing:.06em;color:var(--accent);background:var(--accent-soft);
+    border:1px solid #dde6f0;border-radius:999px;padding:3px 9px;font-weight:600}
+
+  /* ---------- 首屏 ---------- */
+  .hero{padding:92px 0 40px}
+  .hero h1{font-size:clamp(30px,4.2vw,54px);max-width:26ch}
+  .hero h1 .br-wide{display:none}
+  @media (min-width:900px){ .hero h1 .br-wide{display:inline} }
+  .hero .lede{margin-top:22px;font-size:clamp(16px,1.5vw,19px);max-width:60ch}
+  .cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px;align-items:center}
+  .cta-note{font-size:12.5px;color:var(--muted)}
+  .quick{margin-top:22px;max-width:620px}
+  .quick pre{margin:0;white-space:pre;overflow:auto}
+  .btn{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 20px;border-radius:10px;
+    font-size:14px;font-weight:600;border:1px solid var(--line);background:var(--surface);color:var(--ink);
+    transition:transform .18s ease,border-color .18s ease,background .18s ease}
+  .btn:hover{transform:translateY(-1px);border-color:#cfd6dd}
+  .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .btn.primary:hover{background:#1b2027}
+  .btn.copy{font-family:var(--mono);font-size:12.5px;height:44px;color:var(--ink2)}
+  .hero-meta{margin-top:20px;font-size:13px;color:var(--muted)}
+  .hero-meta b{color:var(--ink2);font-weight:600}
+
+  /* 窗口外框 */
+  .frame{border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden;
+    box-shadow:0 24px 64px -28px rgba(16,20,24,.28), 0 2px 8px rgba(16,20,24,.04)}
+  .frame .bar{display:flex;align-items:center;gap:7px;padding:11px 14px;border-bottom:1px solid var(--line2)}
+  .dot{width:9px;height:9px;border-radius:50%;background:#e2dfda}
+  .frame .bar .title{margin-left:8px;font-size:12px;color:var(--muted)}
+  .shot{margin-top:56px}
+
+  /* ---------- 数字条 ---------- */
+  .stats{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:74px}
+  .stats .in{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+  .stat{padding:26px 24px;border-left:1px solid var(--line)}
+  .stat:first-child{border-left:0;padding-left:0}
+  .stat .n{font-size:30px;font-weight:600;letter-spacing:-.03em}
+  .stat .k{font-size:12.5px;color:var(--muted);margin-top:2px}
+
+  /* ---------- 区块 ---------- */
+  section.sec{padding:96px 0}
+  .sec-head{max-width:62ch}
+  .sec-head h2{font-size:clamp(24px,2.7vw,34px);margin-top:14px}
+  .sec-head p{margin-top:16px;color:var(--ink2)}
+  .divider{height:1px;background:var(--line);border:0;margin:0}
+
+  .feat{display:grid;grid-template-columns:1fr 1.15fr;gap:56px;align-items:center;padding:56px 0}
+  .feat:nth-child(even) .txt{order:2}
+  .feat h3{font-size:22px;margin-top:12px}
+  .feat p{margin-top:14px;color:var(--ink2)}
+  ul.tight{margin:20px 0 0;padding:0;list-style:none;display:grid;gap:9px}
+  ul.tight li{position:relative;padding-left:20px;font-size:14.5px;color:var(--ink2)}
+  ul.tight li::before{content:"";position:absolute;left:0;top:9px;width:7px;height:7px;border-radius:2px;
+    background:var(--accent-soft);border:1px solid #ccd9e6}
+  .cap{margin-top:12px;font-size:12.5px;color:var(--muted)}
+
+  /* ---------- 代码块 ---------- */
+  pre{background:#f7f6f4;border:1px solid var(--line);border-radius:10px;padding:16px 16px;overflow:auto;
+    font-family:var(--mono);font-size:12.5px;line-height:1.75;color:#24292e;margin:18px 0 0}
+  pre .c{color:#8a9098}
+  .codewrap{position:relative}
+  .codewrap button{position:absolute;top:10px;right:10px;font-size:11.5px;color:var(--ink2);
+    background:#fff;border:1px solid var(--line);border-radius:7px;padding:5px 9px;cursor:pointer}
+  .codewrap button:hover{border-color:#cfd6dd}
+
+  /* ---------- 表格 ---------- */
+  table{width:100%;border-collapse:collapse;margin-top:28px;font-size:14px}
+  th,td{text-align:left;padding:13px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  td:first-child{font-weight:600;width:34%}
+  .yes{color:var(--accent);font-weight:600}
+
+  /* ---------- 生态 ---------- */
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:36px}
+  .card{border:1px solid var(--line);border-radius:12px;padding:20px;background:var(--surface)}
+  .card h4{margin:0;font-size:15px;font-weight:600}
+  .card p{margin-top:8px;font-size:13.5px;color:var(--ink2)}
+  .card .tagline{margin-top:12px;font-size:11.5px;color:var(--muted)}
+
+  /* ---------- 页脚 ---------- */
+  footer{border-top:1px solid var(--line);padding:44px 0 60px;font-size:13px;color:var(--muted)}
+  footer .row{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between}
+  footer a{color:var(--ink2);border-bottom:1px solid var(--line)}
+  footer a:hover{border-color:var(--ink2)}
+
+  /* ---------- 入场动画 ---------- */
+  /* 默认可见：没有 JS / IO 不支持时内容必须照常显示，不能靠动画才出现 */
+  .reveal{opacity:1;transform:none}
+  .js .reveal{opacity:0;transform:translateY(10px);transition:opacity .6s ease,transform .6s ease}
+  .js .reveal.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+    .js .reveal{opacity:1;transform:none;transition:none}
+    video[autoplay]{display:none}
+  }
+
+  /* ---------- 响应式 ---------- */
+  @media (max-width:900px){
+    .feat{grid-template-columns:1fr;gap:28px;padding:40px 0}
+    .feat:nth-child(even) .txt{order:0}
+    .cards{grid-template-columns:1fr 1fr}
+    .stats .in{grid-template-columns:1fr 1fr}
+    .stat:nth-child(3){border-left:0;padding-left:0}
+    section.sec{padding:64px 0}
+    .hero{padding:64px 0 24px}
+  }
+  @media (max-width:720px){
+    nav.links{display:none}
+    .cards{grid-template-columns:1fr}
+    .wrap{padding:0 18px}
+    .stats .in{grid-template-columns:1fr}
+    .stat{border-left:0;padding:18px 0;border-top:1px solid var(--line)}
+    .stat:first-child{border-top:0;padding-top:0}
+    /* 窄屏下代码块不横向溢出去，直接折行 */
+    pre,.quick pre{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;overflow:visible;font-size:11.5px}
+    .quick .codewrap button{position:static;display:block;margin:0 0 8px auto}
+  }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#top"><img src="assets/icon.png" alt=""><span>DeepSeek Harness</span><span class="b">桌面版</span></a>
+    <nav class="links">
+      <a href="#window">窗口</a>
+      <a href="#preview">预览</a>
+      <a href="#drag">拖拽</a>
+      <a href="#portable">便携安装</a>
+      <a href="#manager">管理器</a>
+      <a href="#install">安装</a>
+    </nav>
+    <span class="tag">v1.2.8 · MIT</span>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ================= 首屏 ================= -->
+  <div class="wrap hero">
+    <div class="eyebrow">Windows · Linux · 原生窗口</div>
+    <h1>把 DeepSeek Harness<br class="br-wide"> 变成真正的桌面应用</h1>
+    <p class="lede">
+      没有浏览器、没有地址栏、没有控制台窗口：双击就是一个独立应用。
+      会话可以拖出来并排看，右栏预览能缩放、能右键保存、能拖进资源管理器；
+      Linux 端连 Node 与 dsh 都装在你指定的目录里，卸载就是删掉那一个文件夹。
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="#install">获取安装包</a>
+      <a class="btn" href="#preview">看实机演示</a>
+      <span class="cta-note">Windows MSI · Linux install.sh / deb</span>
+    </div>
+    <div class="quick">
+      <div class="codewrap">
+        <button data-copy="bash linux/install.sh --prefix ~/.local/opt/deepseek-harness">复制</button>
+        <pre style="margin:0;padding-right:74px"><span class="c"># Linux 便携安装（Windows 用 MSI）</span>
+bash linux/install.sh --prefix ~/.local/opt/deepseek-harness</pre>
+      </div>
+    </div>
+    <div class="hero-meta">
+      <b>完全离线</b>（除首次安装 dsh）· <b>同一套注入脚本</b>覆盖 Windows 与 Linux · <b>不会</b>往系统里装 Node 或全局 npm 包
+    </div>
+
+    <div class="shot reveal">
+      <div class="frame">
+        <div class="bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="title">DeepSeek Harness — 桌面窗口（无地址栏）</span></div>
+        <img src="assets/shot-hero.png" alt="桌面版窗口里的会话界面：左侧工作区与会话列表，中间对话与交付卡片，顶部插件芯片，底部输入框">
+      </div>
+      <div class="cap">真实界面：左侧工作区 / 中间对话与交付卡片 / 顶部插件芯片 / 底部输入框与用量。</div>
+    </div>
+  </div>
+
+  <!-- ================= 数字条 ================= -->
+  <div class="stats">
+    <div class="wrap in">
+      <div class="stat"><div class="n">2</div><div class="k">平台：Windows · Linux（同一套注入脚本）</div></div>
+      <div class="stat"><div class="n">11</div><div class="k">项窗口级增强（预览 / 保存 / 拖拽 / 分离…）</div></div>
+      <div class="stat"><div class="n">0</div><div class="k">全局安装：Node 与 dsh 只进你指定的目录</div></div>
+      <div class="stat"><div class="n">1</div><div class="k">个目录即全部：卸载 = 删掉它</div></div>
+    </div>
+  </div>
+
+  <!-- ================= 01 窗口 ================= -->
+  <section class="sec" id="window">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">01 — 窗口</div>
+        <h2>一个窗口，不是一堆标签页</h2>
+        <p>Windows 用 Edge WebView2，Linux 用 GTK3 + WebKitGTK，装的是同一个产品界面，外面套一层真正的应用外壳。</p>
+      </div>
+
+      <div class="feat">
+        <div class="txt reveal">
+          <div class="eyebrow">桌面外壳</div>
+          <h3>双击即用，关掉不等于退出</h3>
+          <p>没有地址栏和标签栏；单实例运行——重复双击只会唤醒已有窗口。点 X 默认收进托盘，服务在后台继续跑；要退出走托盘菜单。</p>
+          <ul class="tight">
+            <li>重复启动只唤起现有窗口，不会开出第二个</li>
+            <li>托盘菜单：显示窗口 / 退出；退出时才停掉本次启动的服务</li>
+            <li>加载时有细进度条；Web 认证 cookie 由桌面端自动签发（dsh ≥ 0.1.5 也能直接进）</li>
+            <li>服务已经在跑（例如你自己开的 <span class="mono">dsh web</span>）时，只开窗口、不动那个服务</li>
+          </ul>
+        </div>
+        <div class="reveal">
+          <svg viewBox="0 0 560 360" role="img" aria-label="单实例与托盘示意" style="width:100%;height:auto">
+            <defs>
+              <style>
+                .ln{fill:none;stroke:#dcd9d3;stroke-width:1.5}
+                .bx{fill:#fff;stroke:#e6e3de;stroke-width:1.5;rx:10}
+                .fill{fill:#f7f6f4}
+                .acc{fill:#eef2f7;stroke:#ccd9e6;stroke-width:1.5;rx:10}
+                .t{font-family:-apple-system,Segoe UI,Noto Sans SC,sans-serif;font-size:12px;fill:#454b52}
+                .tb{font-family:-apple-system,Segoe UI,Noto Sans SC,sans-serif;font-size:11px;fill:#7d838a}
+              </style>
+            </defs>
+            <!-- 主窗口 -->
+            <rect class="bx" x="24" y="26" width="330" height="210" rx="12"/>
+            <rect class="fill" x="24" y="26" width="330" height="30" rx="12"/>
+            <circle cx="44" cy="41" r="4" fill="#e2dfda"/><circle cx="58" cy="41" r="4" fill="#e2dfda"/><circle cx="72" cy="41" r="4" fill="#e2dfda"/>
+            <rect x="40" y="72" width="86" height="150" rx="8" fill="#fbfbfa" stroke="#e6e3de"/>
+            <rect x="142" y="72" width="196" height="86" rx="8" fill="#fff" stroke="#e6e3de"/>
+            <rect x="142" y="168" width="196" height="54" rx="8" fill="#fff" stroke="#e6e3de"/>
+            <text class="tb" x="160" y="96">会话 A</text><text class="tb" x="160" y="118">会话 B</text><text class="tb" x="160" y="140">会话 C</text>
+            <text class="t" x="52" y="62">工作区</text>
+            <!-- 第二个窗口 -->
+            <rect class="acc" x="360" y="96" width="176" height="140" rx="12"/>
+            <rect x="374" y="112" width="148" height="20" rx="6" fill="#fff" stroke="#dde6f0"/>
+            <rect x="374" y="142" width="148" height="76" rx="8" fill="#fff" stroke="#dde6f0"/>
+            <text class="t" x="374" y="132" fill="#1f4e79">已分离的会话</text>
+            <!-- 托盘 -->
+            <rect class="bx" x="24" y="268" width="224" height="52" rx="10"/>
+            <text class="tb" x="40" y="290">系统托盘</text>
+            <circle cx="200" cy="294" r="7" fill="#eef2f7" stroke="#ccd9e6"/>
+            <text class="tb" x="150" y="312" text-anchor="end">退出 = 停服务</text>
+            <path class="ln" d="M180 250 L 200 268" stroke-dasharray="4 4"/>
+            <text class="tb" x="368" y="60">拖出侧边栏 →</text>
+            <path class="ln" d="M300 244 L 372 168" stroke-dasharray="4 4"/>
+          </svg>
+          <div class="cap">示意：窗口、拖出后的独立窗口、托盘三者的关系。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 02 预览 ================= -->
+  <section class="sec" id="preview" style="background:linear-gradient(180deg,#fff 0%,#fbfbfa 100%);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">02 — 右栏预览</div>
+        <h2>产品让你滚动看图，我们让它能缩放</h2>
+        <p>右栏通常只有 600px，而一张手机长截图是 1373×3051——产品按原始尺寸塞进去，你只能看到一角。桌面版在这层补上了缩放、平移与加粗的滑动条。</p>
+      </div>
+
+      <div class="feat">
+        <div class="txt reveal">
+          <div class="eyebrow">图片与 PDF</div>
+          <h3>滚轮缩放 · 拖动平移 · 双击适宽</h3>
+          <p>图片：<b>滚轮</b>以光标为锚点缩放（15%–800%），左键拖动 1:1 跟手，双击在「适宽 / 1:1」间切换。PDF：单滚轮仍然交还产品上下翻页，<b>Ctrl + 滚轮</b>才缩放，而且是<b>所有页一起</b>缩放。</p>
+          <ul class="tight">
+            <li>右栏滑动条从产品的 8px 加粗到 <b>14px</b>，好拖</li>
+            <li>PDF 逐页按绝对像素重排，放大后仍可横向滚动，不会把后几页缩回去</li>
+            <li>换文件 / 收起右栏 / 解绑时逐项还原，不残留样式</li>
+            <li>只接管图片与 PDF；文本、代码、日志、文件树保持产品的原生行为</li>
+          </ul>
+        </div>
+        <div class="reveal">
+          <div class="frame">
+            <video src="assets/demo-preview.mp4" poster="assets/shot-files.png" autoplay muted loop playsinline
+                   aria-label="实机演示：打开右栏文件 → 打开图片 → 滚轮放大 → 拖动 → 右键菜单 → 双击适宽"></video>
+          </div>
+          <div class="cap">实机录屏 19.8 秒：打开右栏文件 → 打开图片 → 滚轮放大 → 拖动平移 → 右键菜单 → 复原。</div>
+        </div>
+      </div>
+
+      <div class="feat" id="save">
+        <div class="txt reveal">
+          <div class="eyebrow">保存</div>
+          <h3>右键就是「保存到…」，默认落在桌面</h3>
+          <p>在右栏任何预览上右键，弹出的是我们自己的菜单；选「保存到…」（或直接 <span class="mono">Ctrl+S</span>）会调起<b>系统原生的另存为对话框</b>，默认目录是桌面，文件名与类型都已预填。</p>
+          <ul class="tight">
+            <li><b>逐字节复制原文件</b>，不是把页面内容重新编码</li>
+            <li>图片：<b>复制图片</b>（剪贴板里同时是位图与文件）、<b>复制文件路径</b>、在资源管理器中定位</li>
+            <li>文本 / 代码 / Markdown：复制、全选，与原来的阅读习惯一致</li>
+            <li>页面拿不到「任意写」的能力：只把原文件路径交给宿主，由用户选路径、由宿主复制</li>
+            <li>输入框、链接、可编辑区域上的右键仍然是产品自己的菜单</li>
+          </ul>
+        </div>
+        <div class="reveal">
+          <div class="frame"><img src="assets/shot-menu.png" loading="lazy" decoding="async" alt="右栏图片预览与右键菜单：保存到… / 复制图片 / 复制文件路径 / 适应宽度 / 实际大小 / 在资源管理器中显示"></div>
+          <div class="cap">真实菜单文案（Windows）；Linux 走 GTK 文件选择器，默认目录同样是桌面。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 03 拖拽 ================= -->
+  <section class="sec" id="drag">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">03 — 拖拽</div>
+        <h2>同一只手，两个方向</h2>
+        <p>拖出去是「保存一份」，拖回来是「发给它」。两个方向都由宿主参与，因为浏览器给不了真正的文件句柄。</p>
+      </div>
+
+      <div class="feat">
+        <div class="txt reveal">
+          <div class="eyebrow">拖出去</div>
+          <h3>文件树 / 交付卡 → 资源管理器、桌面、聊天窗口</h3>
+          <p>从右侧文件树拖任意一行（文件或文件夹），或从交付卡片拖出一个文件，落到资源管理器、桌面、微信、邮件里就是<b>复制一份</b>：Windows 用原生 OLE 拖放（<span class="mono">CF_HDROP</span>），只给 Copy 效果，不会把工作区里的原文件搬走。</p>
+          <ul class="tight">
+            <li>数据里同时带文本路径，所以拖回本窗口时页面还认得它</li>
+            <li>预览不参与拖拽——预览里的左键拖动是「平移」，两者抢手势会互相打架</li>
+          </ul>
+        </div>
+        <div class="txt reveal">
+          <div class="eyebrow">拖回来</div>
+          <h3>拖进输入框：文件变附件，文件夹变路径</h3>
+          <p>拖进会话输入框时：<b>文件</b>直接变成待发送附件（接产品自己的附件管线）；<b>文件夹</b>则是把绝对路径写进输入框——这条对「让 agent 去这个目录干活」特别顺。</p>
+          <ul class="tight">
+            <li>输入框是 Lexical：先合成一次真实点击、再 <span class="mono">execCommand('insertText')</span>，并且在下一个任务里做</li>
+            <li>万一仍插不进去：自动把路径放进剪贴板，并提示 <span class="mono">Ctrl+V</span></li>
+            <li>从资源管理器拖文件夹进来拿不到绝对路径（浏览器安全限制），此时会提示「请从右侧文件列表拖」</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="reveal">
+        <div class="frame">
+          <svg viewBox="0 0 1080 240" role="img" aria-label="拖拽两个方向示意" style="width:100%;height:auto;display:block;background:#fff">
+            <defs><style>
+              .b2{fill:#fff;stroke:#e6e3de;stroke-width:1.5;rx:12}
+              .a2{fill:#eef2f7;stroke:#ccd9e6;stroke-width:1.5;rx:12}
+              .l2{fill:none;stroke:#b9c7d6;stroke-width:2;marker-end:url(#ar)}
+              .t2{font-family:-apple-system,Segoe UI,Noto Sans SC,sans-serif;font-size:13px;fill:#454b52}
+              .s2{font-family:-apple-system,Segoe UI,Noto Sans SC,sans-serif;font-size:11px;fill:#7d838a}
+            </style>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#b9c7d6"/>
+            </marker></defs>
+            <rect class="b2" x="30" y="76" width="200" height="88"/>
+            <text class="t2" x="52" y="106">右栏文件树</text><text class="s2" x="52" y="130">文件 / 文件夹</text>
+            <rect class="a2" x="880" y="60" width="170" height="120"/>
+            <text class="t2" x="898" y="92">资源管理器</text><text class="s2" x="898" y="114">桌面 · 微信 · 邮件</text>
+            <text class="s2" x="898" y="150" fill="#1f4e79">落盘 = 复制一份</text>
+            <path class="l2" d="M240 118 L 866 118"/>
+            <text class="s2" x="470" y="106">CF_HDROP（Windows OLE）／ HTML5 拖拽（Linux）</text>
+            <rect class="b2" x="560" y="188" width="300" height="40"/>
+            <text class="t2" x="580" y="213">会话输入框</text>
+            <path class="l2" d="M700 186 L 700 168" />
+            <text class="s2" x="716" y="182">文件 → 附件 · 文件夹 → 路径</text>
+          </svg>
+        </div>
+        <div class="cap">两个方向的手势与结果（示意）。OLE 拖放的手感需要在真机上手动确认，自动化只能核对「发出的路径与数据格式」。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 04 便携安装 ================= -->
+  <section class="sec" id="portable" style="background:linear-gradient(180deg,#fff 0%,#fbfbfa 100%);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">04 — 便携安装（Linux）</div>
+        <h2>不接管系统，只占你指的那一个目录</h2>
+        <p>Node、dsh、pnpm 都装进 <span class="mono">--prefix</span> 里；<span class="mono">DSH_HOME</span> 也在实例目录内。系统里只保留 GUI 库（pygobject / GTK / WebKitGTK 无法便携化），安装器会检查并给出 apt 命令。</p>
+      </div>
+
+      <div class="feat">
+        <div class="txt reveal">
+          <div class="eyebrow">install.sh</div>
+          <h3>一条命令，一个目录，卸载就删掉它</h3>
+          <p>首次联网把 Node 与 dsh 拉进前缀，之后启动完全离线。想换位置就换个 prefix 重装；想回滚就是删目录，不会留下半个全局安装。</p>
+          <div class="codewrap">
+            <button data-copy="bash linux/install.sh --prefix /opt/deepseek-harness --warmup">复制</button>
+            <pre style="padding-right:74px"><span class="c"># 装到指定目录，并顺手预热一次服务</span>
+bash linux/install.sh --prefix /opt/deepseek-harness --warmup
+
+<span class="c"># 卸载 = 删掉这个目录</span>
+bash linux/install.sh --prefix /opt/deepseek-harness --uninstall</pre>
+          </div>
+        </div>
+        <div class="reveal">
+          <div class="frame" style="padding:22px 24px">
+            <div class="eyebrow" style="margin-bottom:14px">目录结构（每个实例一套）</div>
+            <pre class="mono" style="margin:0;background:transparent;border:0;padding:0;font-size:12.5px;line-height:1.9">/opt/deepseek-harness/
+├─ bin/dsh  bin/dsh-desktop   <span class="c"># 启动器</span>
+├─ node/                     <span class="c"># 便携 Node</span>
+├─ app/                      <span class="c"># @deepseek-ai/dsh</span>
+├─ tools/                    <span class="c"># pnpm（插件用）</span>
+├─ share/                    <span class="c"># 窗口程序与注入脚本</span>
+├─ dsh-home/                 <span class="c"># DSH_HOME（会话/配置）</span>
+├─ logs/                     <span class="c"># web.log · desktop.log</span>
+└─ install.json              <span class="c"># 名称·端口·版本</span></pre>
+          </div>
+          <div class="cap">管理器发现的正是这种前缀，所以 <span class="mono">install.sh</span> 装过的实例能被管理器直接接管。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 05 管理器 ================= -->
+  <section class="sec" id="manager">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">05 — 管理器（.deb）</div>
+        <h2>多开、多版本，一个图形界面管完</h2>
+        <p>每个实例独立目录、独立端口、独立 <span class="mono">dsh-home</span>，可以同时跑好几套；界面与命令行共用同一套核心，排障时能直接脚本化。</p>
+      </div>
+
+      <div class="feat">
+        <div class="txt reveal">
+          <div class="eyebrow">dsh-manager 1.0.3</div>
+          <h3>新建 · 启停 · 开窗 · 更新 · 修复 · 卸载</h3>
+          <p>版本下拉是<b>可滚动列表</b>，默认选中 <b>latest</b>（最新的非 alpha 版本，由管理器联网解析）；安装/更新/修复期间顶部有脉冲进度条，版本列表在后台拉取，界面不会卡死。</p>
+          <ul class="tight">
+            <li>新建时可自选安装目录、显示名、端口（默认第一个空闲）、dsh 版本、Node 版本</li>
+            <li>「打开窗口」用实例自带的启动器；启动器输出写进 <span class="mono">logs/desktop.log</span>，起不来会直接把原因回报到日志面板</li>
+            <li>「修复」补齐缺失的 Node / dsh / 窗口文件 / 启动器，并补跑被 npm 11 拦下的 install scripts</li>
+            <li>CLI 同源：<span class="mono">dsh-manager --headless list|install|start|stop|update|repair|uninstall</span></li>
+          </ul>
+          <div class="codewrap">
+            <button data-copy="sudo apt install ./dsh-manager_1.0.3_all.deb">复制</button>
+            <pre style="padding-right:74px">sudo apt install ./dsh-manager_1.0.3_all.deb</pre>
+          </div>
+        </div>
+        <div class="reveal">
+          <div class="frame">
+            <svg viewBox="0 0 620 380" role="img" aria-label="管理器多实例结构示意" style="width:100%;height:auto;display:block;background:#fff">
+              <defs><style>
+                .m{fill:#fff;stroke:#e6e3de;stroke-width:1.5;rx:10}
+                .mh{fill:#f7f6f4;stroke:#e6e3de;stroke-width:1.5;rx:10}
+                .ma{fill:#eef2f7;stroke:#ccd9e6;stroke-width:1.5;rx:10}
+                .mt{font-family:-apple-system,Segoe UI,Noto Sans SC,sans-serif;font-size:12px;fill:#24292e}
+                .ms{font-family:-apple-system,Segoe UI,Noto Sans SC,sans-serif;font-size:10.5px;fill:#7d838a}
+                .dotg{fill:#2f7d4f}.doty{fill:#b8873a}
+              </style></defs>
+              <rect class="mh" x="0.5" y="0.5" width="619" height="40" rx="10"/>
+              <text class="mt" x="18" y="26" style="font-weight:600">DeepSeek Harness 管理器</text>
+              <text class="ms" x="470" y="26">＋ 新建实例</text>
+              <!-- 表头 -->
+              <text class="ms" x="20" y="66">名称</text><text class="ms" x="190" y="66">dsh</text>
+              <text class="ms" x="286" y="66">node</text><text class="ms" x="372" y="66">端口</text><text class="ms" x="436" y="66">状态</text>
+              <line x1="14" y1="76" x2="606" y2="76" stroke="#e6e3de"/>
+              <!-- 行 1 -->
+              <rect class="ma" x="12" y="88" width="596" height="42" rx="8"/>
+              <text class="mt" x="22" y="114">deepseek-harness-1</text>
+              <text class="mt" x="190" y="114">0.2.1-rc.5</text>
+              <text class="mt" x="286" y="114">26.13.0</text>
+              <text class="mt" x="372" y="114">3080</text>
+              <circle cx="442" cy="110" r="4" class="dotg"/><text class="mt" x="452" y="114">运行中</text>
+              <!-- 行 2 -->
+              <text class="mt" x="22" y="162" fill="#454b52">deepseek-harness-2</text>
+              <text class="mt" x="190" y="162" fill="#454b52">0.1.5-rc.1</text>
+              <text class="mt" x="286" y="162" fill="#454b52">24.19.0</text>
+              <text class="mt" x="372" y="162" fill="#454b52">3081</text>
+              <circle cx="442" cy="158" r="4" class="doty"/><text class="mt" x="452" y="162" fill="#454b52">已停止</text>
+              <line x1="14" y1="182" x2="606" y2="182" stroke="#f0eeea"/>
+              <!-- 详情卡 -->
+              <rect class="m" x="12" y="204" width="300" height="150"/>
+              <text class="mt" x="28" y="230" style="font-weight:600">deepseek-harness-1</text>
+              <text class="ms" x="28" y="252">安装位置：/home/you/.local/opt/deepseek-harness-1</text>
+              <text class="ms" x="28" y="272">dsh 0.2.1-rc.5 · Node 26.13.0 · 端口 3080</text>
+              <text class="ms" x="28" y="292">数据目录：…/deepseek-harness-1/dsh-home</text>
+              <text class="ms" x="28" y="316">状态：运行中（PID 4104）</text>
+              <text class="ms" x="28" y="340" fill="#1f4e79">在文件管理器中显示</text>
+              <!-- 按钮矩阵 -->
+              <rect class="m" x="328" y="204" width="140" height="34"/><text class="mt" x="352" y="226">启动服务</text>
+              <rect class="m" x="480" y="204" width="128" height="34"/><text class="mt" x="504" y="226">停止服务</text>
+              <rect class="m" x="328" y="248" width="140" height="34"/><text class="mt" x="352" y="270">打开窗口</text>
+              <rect class="m" x="480" y="248" width="128" height="34"/><text class="mt" x="504" y="270">更新版本</text>
+              <rect class="m" x="328" y="292" width="140" height="34"/><text class="mt" x="352" y="314">修复</text>
+              <rect class="m" x="480" y="292" width="128" height="34"/><text class="mt" x="504" y="314">卸载</text>
+            </svg>
+          </div>
+          <div class="cap">界面结构示意（真实界面依赖 GTK，无法在这台 Windows 上截图）。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 06 平台对照 ================= -->
+  <section class="sec" id="platform" style="background:linear-gradient(180deg,#fff 0%,#fbfbfa 100%);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">06 — 两个平台</div>
+        <h2>同一套注入脚本，两层不同的窗口壳</h2>
+        <p>预览增强只有一份源码（<span class="mono">tools/preview-probe/preview-tools.js</span>），Windows 嵌进 C# 宿主、Linux 由 Python 窗口注入；差异集中在「谁来做系统动作」。</p>
+      </div>
+      <div class="reveal">
+      <table>
+        <thead><tr><th>能力</th><th>Windows</th><th>Linux</th></tr></thead>
+        <tbody>
+          <tr><td>窗口内核</td><td>Microsoft Edge WebView2</td><td>GTK3 + WebKitGTK（4.1 / 4.0）</td></tr>
+          <tr><td>预览缩放 · 平移 · 加粗滑动条</td><td class="yes">✓</td><td class="yes">✓ 同一份脚本</td></tr>
+          <tr><td>右键菜单 + 原生「保存到…」（默认桌面）</td><td>WebView2 + SaveFileDialog</td><td>WebKitGTK + GTK FileChooser</td></tr>
+          <tr><td>拖到文件管理器 / 拖进输入框</td><td>宿主 OLE 拖放（CF_HDROP）</td><td>原生 HTML5 拖拽 + text/uri-list</td></tr>
+          <tr><td>会话拖拽分离 · 多窗口 · 标题镜像</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>单实例 · 托盘 · 加载进度 · 认证 cookie</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>安装方式</td><td>MSI（per-user，无需管理员）/ installer.ps1</td><td>install.sh：Node 与 dsh 都装进指定前缀</td></tr>
+          <tr><td>额外系统依赖</td><td>WebView2 Runtime（Win11 自带）</td><td>python3-gi · GTK3 · WebKitGTK</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 07 安装 ================= -->
+  <section class="sec" id="install">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">07 — 安装</div>
+        <h2>三种装法，按你的平台选</h2>
+      </div>
+      <div class="feat" style="align-items:start">
+        <div class="txt">
+          <div class="eyebrow">Windows</div>
+          <h3>MSI 安装包（推荐）</h3>
+          <p>标准 Windows 安装程序，per-user 安装、不需要管理员权限；安装向导会自动检测本机是否已有 DeepSeek Harness，没有时可以一键帮着装或手动指定路径。</p>
+          <div class="codewrap">
+            <button data-copy="dist\DeepSeek Harness 桌面版 1.2.8.msi">复制文件名</button>
+            <pre style="padding-right:96px">dist\DeepSeek Harness 桌面版 1.2.8.msi
+<span class="c"># Release 附件里的同名文件是 ASCII 名：</span>
+DeepSeek-Harness-Desktop-1.2.8.msi</pre>
+          </div>
+        </div>
+        <div class="txt">
+          <div class="eyebrow">Linux</div>
+          <h3>install.sh 或管理器 .deb</h3>
+          <p>只想用一个实例：<span class="mono">install.sh</span>。想多开、多版本、图形管理：装 <span class="mono">dsh-manager</span> 的 deb，然后从应用菜单打开「DeepSeek Harness 管理器」。</p>
+          <div class="codewrap">
+            <button data-copy="sudo apt install ./dsh-manager_1.0.3_all.deb">复制</button>
+            <pre style="padding-right:74px">sudo apt install ./dsh-manager_1.0.3_all.deb
+<span class="c"># 依赖：python3-gi · gir1.2-gtk-3.0 · gir1.2-webkit2-4.1</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 08 生态 ================= -->
+  <section class="sec" id="ecosystem" style="border-top:1px solid var(--line)">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">08 — 配套</div>
+        <h2>桌面版周围的几个小东西</h2>
+        <p>桌面版本身只做「窗口 + 增强」，其余能力都是独立仓库的插件或服务，按需装。</p>
+      </div>
+      <div class="cards">
+        <div class="card reveal">
+          <h4>时间戳注入</h4>
+          <p>每条提问后注入一条机器可读的时钟上下文，让模型理解「刚才 / 昨天」；按项目可开关。</p>
+          <div class="tagline">dsh-time-stamp · 独立仓库</div>
+        </div>
+        <div class="card reveal">
+          <h4>项目记忆库</h4>
+          <p>把历史问答按关键词召回，注入到当前回合，长时间协作时不容易丢上下文。</p>
+          <div class="tagline">dsh-memory-db · 独立仓库</div>
+        </div>
+        <div class="card reveal">
+          <h4>对话内截图与标注</h4>
+          <p>选窗口/区域截图，画笔、矩形、箭头、文字标注后直接进附件，省掉「截个图再描述」。</p>
+          <div class="tagline">dsh-screenshot · 独立仓库</div>
+        </div>
+        <div class="card reveal">
+          <h4>手机接入</h4>
+          <p>电脑上跑一个桥接进程，手机浏览器或 App 连同一套会话；带设备认证与待确认机制。</p>
+          <div class="tagline">dsh-mobile-bridge · 独立仓库</div>
+        </div>
+        <div class="card reveal">
+          <h4>HTTP 调用接口</h4>
+          <p>把 harness 当服务用：提交任务、轮询状态、取回最终回复与完整对话记录。</p>
+          <div class="tagline">dsh-api · 独立仓库</div>
+        </div>
+        <div class="card reveal">
+          <h4>会话与文件清理</h4>
+          <p>扫描孤儿会话目录、过期缓存与占空间的构建产物，按项目清理。</p>
+          <div class="tagline">dsh-cleaner · 独立仓库</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 09 验证 ================= -->
+  <section class="sec" id="verify" style="background:linear-gradient(180deg,#fff 0%,#fbfbfa 100%);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">09 — 验证</div>
+        <h2>哪些是自动化跑过的，哪些只能手动确认</h2>
+        <p>每个功能都有对应的验证脚本；跑不了的部分写清楚，不假装跑过。</p>
+      </div>
+      <div class="reveal">
+      <table>
+        <thead><tr><th>项目</th><th>验证方式</th><th>结果</th></tr></thead>
+        <tbody>
+          <tr><td>右键菜单（四类预览）</td><td><span class="mono">verify-preview-menu.mjs</span>：无头真实页面 + 真实右键</td><td>30 / 30</td></tr>
+          <tr><td>拖拽手势（四类来源）</td><td><span class="mono">verify-drag.mjs --edge</span>：核对发出的路径与数据格式</td><td>12 / 12</td></tr>
+          <tr><td>PDF 逐页缩放</td><td><span class="mono">verify-pdf-zoom.mjs</span>：真实 PDF 页、真实输入</td><td>17–18 / 18</td></tr>
+          <tr><td>Linux 便携安装</td><td>WSL 实跑：安装 · 幂等重装 · 卸载只清前缀</td><td class="yes">通过</td></tr>
+          <tr><td>管理器端到端</td><td>WSL 实跑：装两套实例、多开、修复、更新、停止、卸载</td><td class="yes">通过</td></tr>
+          <tr><td>OLE 拖放的手感</td><td>无法在自动化里模拟鼠标落到资源管理器</td><td>需手动确认一次</td></tr>
+          <tr><td>管理器界面（GTK）</td><td>本页截图来自 Windows；管理器界面为结构示意</td><td>需在 Linux 上目视</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="cap" style="max-width:70ch">
+        本页的演示视频与静帧均由真实界面录制：headless Chromium 通过 CDP 抓帧，ffmpeg 编码；预览增强脚本按其宿主注入方式提前注入，
+        并遮挡了截图中的本机用户目录路径。视频 19.8 秒 / 970 KB / 55 fps。
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap row">
+    <div>
+      <div style="color:var(--ink);font-weight:600;margin-bottom:6px">DeepSeek Harness 桌面版</div>
+      把 WebUI 变成真正的桌面应用 · Windows / Linux · MIT
+    </div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap">
+      <a href="https://github.com/cuteG41cute/dsh-desktop">GitHub 仓库</a>
+      <a href="#top">回到顶部</a>
+      <a href="#install">安装</a>
+      <a href="#verify">验证</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // 复制按钮
+  document.querySelectorAll('button[data-copy]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const text = btn.getAttribute('data-copy');
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); } catch (_) { }
+        document.body.removeChild(ta);
+      }
+      const old = btn.textContent;
+      btn.textContent = '已复制';
+      setTimeout(() => { btn.textContent = old; }, 1400);
+    });
+  });
+
+  // 入场动画（尊重“减少动态效果”）
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const items = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    items.forEach((el) => el.classList.add('in'));
+  } else {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.06 });
+    items.forEach((el) => io.observe(el));
+  }
+
+  // 视频：进入视口才播放，滚出暂停（省电）
+  const vids = document.querySelectorAll('video');
+  if (!reduce && 'IntersectionObserver' in window) {
+    const vio = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        const v = en.target;
+        if (en.isIntersecting) { v.play().catch(() => { }); } else { v.pause(); }
+      });
+    }, { threshold: 0.25 });
+    vids.forEach((v) => vio.observe(v));
+  }
+</script>
+</body>
+</html>

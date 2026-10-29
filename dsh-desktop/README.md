@@ -5,6 +5,9 @@
 > 把 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 WebUI 变成真正的桌面应用程序：
 > 无浏览器、无控制台，双击即用，支持多会话分离窗口、系统托盘、自适应安装包（MSI）。
 
+**📄 介绍页：[`site/index.html`](site/index.html)** —— 企业简洁风的单页介绍，含**真实界面录屏**
+（19.8 秒：右栏预览缩放 / 平移 / 右键菜单）与逐项功能演示；离线可用，直接双击打开。
+
 **功能一览：**
 
 - 🪟 **桌面窗口**：基于 Microsoft Edge WebView2，无地址栏/标签栏，双击启动即用；
