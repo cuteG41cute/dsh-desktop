@@ -101,6 +101,28 @@ python3 <前缀>/share/dsh-desktop.py --selftest   # 自检：服务 / cookie / 
 | cookie 签发（与两个启动器同一算法） | ✅ 用真实 `.credentials.yaml` 跑通，171 字节 |
 | `preview-tools.js` 与 Windows 共用 | ✅ Windows 侧回归：拖拽 12/12、右键菜单 30/30 |
 
+### 用浏览器打开（不是桌面窗口）
+
+桌面窗口自己会签发认证 cookie，所以它从来不问；**浏览器里直接敲 `http://127.0.0.1:3080`
+只会看到一张 401 提示页**：
+
+```
+dsh web authentication required; reopen the URL printed by dsh web.
+```
+
+正确的入口是 `dsh web` 启动时打印的那条地址（`http://127.0.0.1:3080/?token=…`），
+打开一次后服务端种下 cookie，同一个浏览器之后就能直接用裸地址。不用自己翻日志：
+
+```bash
+bash dsh-desktop/linux/tools/open-web.sh           # 找地址 → 验证 → 打开浏览器
+bash dsh-desktop/linux/tools/open-web.sh --print   # 只打印地址（复制到别的浏览器）
+```
+
+它从 `<前缀>/logs/{web,server.out,server.err,desktop}.log` 与
+`~/.local/state/dsh-desktop/logs/` 里挑**最新**一条 `dsh web: …?token=`，
+先请求一次确认返回 200（401 说明 token 过期 → 重启服务再跑；连不上说明服务没起），
+再交给 `xdg-open`。自测：`bash dsh-desktop/linux/tools/open-web-selftest.sh`（造假日志，5 项）。
+
 **待在你的 Ubuntu 上验证**（WSL 里没有 python3/WebKitGTK，且 sudo 需要密码，装不了）
 
 1. `bash install.sh --prefix ~/.local/opt/deepseek-harness` → 自检是否全绿；
