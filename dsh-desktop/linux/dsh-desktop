@@ -20,6 +20,13 @@
 set -u
 
 URL="${DSH_WEB_URL:-http://127.0.0.1:3080}"
+# 端口 = 实例标识：单实例锁与控制套接字都按它区分，
+# 否则开第二个实例时会被"第一个实例的锁/套接字"挡掉（实测：两个实例只开得出一个窗口）。
+PORT_TAG="$(printf '%s' "$URL" | sed -e 's|.*://||' -e 's|[/?].*||' -e 's|.*:||')"
+case "$PORT_TAG" in
+    ''|*[!0-9]*) PORT_TAG=3080 ;;
+esac
+export DSH_DESKTOP_PORT="$PORT_TAG"     # 窗口进程据此区分控制套接字
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dsh-desktop"
 LOG_DIR="$STATE_DIR/logs"
 mkdir -p "$LOG_DIR"
@@ -49,7 +56,7 @@ ask() {
 # ---- 单实例锁：避免重复点图标时开出多套窗口/服务 ----
 # flock 来自 util-linux，极简系统上可能没有（实测有发行版连 procps/curl 都缺）。
 # 没有 flock 时退化成「mkdir 原子锁 + pid 存活检查」，绝不因为缺工具就静默退出。
-LOCK="/tmp/dsh-desktop.lock"
+LOCK="/tmp/dsh-desktop-${PORT_TAG}.lock"
 if [ "${DSH_DESKTOP_FORCE:-0}" = "1" ]; then
     log "DSH_DESKTOP_FORCE=1：跳过单实例检查，强制启动一个窗口。"
 elif command -v flock >/dev/null 2>&1; then
@@ -63,7 +70,7 @@ elif command -v flock >/dev/null 2>&1; then
     fi
     printf '%s' "$$" > "$LOCK.pid" 2>/dev/null || true
 else
-    LOCK_DIR="/tmp/dsh-desktop.lock.d"
+    LOCK_DIR="/tmp/dsh-desktop-${PORT_TAG}.lock.d"
     mkdir -p "$LOCK_DIR" 2>/dev/null || true
     held=1
     if mkdir "$LOCK_DIR/held" 2>/dev/null; then

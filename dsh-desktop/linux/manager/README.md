@@ -73,6 +73,33 @@ bash build-deb.sh --version 1.0.0        # 产出 ./dsh-manager_1.0.0_all.deb
 
 这几条在 `tools/gui-import-check.py` 里钉成了结构锁（23 项），删掉任何一段都会红。
 
+### 多实例：一个实例一套套接字与锁（1.1.7 修）
+
+以前控制套接字是 `dsh-desktop-<uid>.sock`、单实例锁是 `/tmp/dsh-desktop.lock`，**全局唯一**。
+结果是：开第二个实例的窗口时，管理器 ping 到的是**第一个实例**的窗口 → 判定"窗口已存在" →
+只把第一个窗口提到前台，第二个实例的窗口根本没被创建（用户实测：两个实例只显示第一个）。
+
+现在都按**实例端口**区分：
+
+| 东西 | 现在 |
+| --- | --- |
+| 控制套接字 | `$XDG_RUNTIME_DIR/dsh-desktop-<uid>-<port>.sock` |
+| 单实例锁 | `/tmp/dsh-desktop-<port>.lock`（`.pid` / `.lock.d` 同理） |
+| 端口来源 | 管理器 `env()['DSH_DESKTOP_PORT']` + 启动器从 URL 推导并导出；窗口侧 `instance_port()` 同规则 |
+
+一致性有 gate 钉着：`python dsh-desktop/linux/tools/socket-name-check.py`（13 项，含
+「两个实例的套接字不同」「两侧命名完全一致」「清锁认按端口的锁名」）。
+
+### 版本列表拉不到时也能选（1.1.7 修）
+
+原来 `latest_*` 与 `available_*` 各自拉一遍 registry 完整文档（2~3 MB，8 秒超时）；
+冷启动那一次超时 → 列表只剩内置一项（`0.1.5-rc.1`）→ 用户体验就是「版本选不了」。现在：
+
+- registry 结果**进程内缓存 5 分钟**，超时放宽到 25 秒，官方源失败自动切 `registry.npmmirror.com`；
+- `latest` 只查 `…/@deepseek-ai%2Fdsh/latest`（几百字节，比拉全量快一个数量级）；
+- 内置兜底清单从 1 项扩到 5 项（dsh）/ 4 项（Node）；
+- 对话框里每个版本行右侧多一个**手动输入框**：列表不准或拉不到，直接打版本号即可。
+
 ### 插件管理（1.1.0 起，第一阶段）
 
 右侧「插件」分组里的 **管理插件…**：列出一个内置目录（我们自己的仓库），

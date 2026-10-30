@@ -102,7 +102,23 @@ for f in "$PREFIX/share/dsh-desktop.py" "$PREFIX/bin/dsh-desktop.py" "$PREFIX/bi
 done
 
 sec "7. 控制套接字现在怎么答"
-SOCK="${XDG_RUNTIME_DIR:-/tmp}/dsh-desktop-$(id -u).sock"
+PORT=""
+if have python3 && [ -n "${PREFIX:-}" ]; then
+    PORT="$(python3 - "$PREFIX" <<'PY' 2>/dev/null
+import json, os, sys
+reg = os.path.join(os.environ.get('XDG_CONFIG_HOME') or os.path.expanduser('~/.config'),
+                   'dsh-manager', 'instances.json')
+try:
+    for entry in json.load(open(reg, encoding='utf-8')):
+        if entry.get('prefix') == sys.argv[1] and entry.get('port'):
+            print(entry['port']); break
+except Exception:
+    pass
+PY
+)"
+fi
+[ -n "$PORT" ] || PORT=3080
+SOCK="${XDG_RUNTIME_DIR:-/tmp}/dsh-desktop-$(id -u)-${PORT}.sock"
 for cmd in ping raise repaint reload; do
     out="$(python3 - "$SOCK" "$cmd" <<'PY' 2>/dev/null
 import socket, sys

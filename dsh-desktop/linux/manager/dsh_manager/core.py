@@ -28,10 +28,11 @@ NPM_PKG = '@deepseek-ai/dsh'
 DEFAULT_NODE = '24.19.0'
 DEFAULT_DSH = '0.1.5-rc.1'
 DEFAULT_ROOT = os.path.expanduser('~/.local/opt')
-FALLBACK_DSH_VERSIONS = ['0.1.5-rc.1']
-FALLBACK_NODE_VERSIONS = ['24.19.0', '22.11.0', '20.19.0']
+# 内置兜底清单：联网失败时也得有得选（原来只有一项，选不动就是这么来的）
+FALLBACK_DSH_VERSIONS = ['0.2.1-rc.5', '0.2.0-rc.2', '0.1.7-rc.2', '0.1.5-rc.3', '0.1.5-rc.1']
+FALLBACK_NODE_VERSIONS = ['26.13.0', '24.22.2', '22.23.4', '20.20.2']
 SYSTEM_SHARE = '/usr/lib/dsh-manager/share'      # deb 里随包带的窗口文件
-MANAGER_VERSION = '1.1.6'
+MANAGER_VERSION = '1.1.7'
 MANAGER_LIB = '/usr/lib/dsh-manager'             # 管理器自己的安装目录（deb）
 
 
@@ -326,6 +327,7 @@ class Instance:
         env['DSH_SHARE'] = self.share
         env['DSH_BIN'] = self.entry
         env['DSH_WEB_URL'] = self.url()
+        env['DSH_DESKTOP_PORT'] = str(self.port)   # 窗口进程按它区分控制套接字/单实例锁
         return env
 
     def start(self, wait=90):
@@ -377,13 +379,18 @@ class Instance:
 
     # ---- 窗口：唤起 / 检测 / 清理 / 重试 ----
     def control_socket(self):
-        """窗口进程的控制套接字路径（与 dsh-desktop.py 里的规则一致）。"""
+        """窗口进程的控制套接字路径（与 dsh-desktop.py 里的规则一致）。
+
+        **按实例（端口）区分**：以前是「一个用户一个套接字」，开第二个实例的窗口时，
+        管理器 ping 到的其实是第一个实例的窗口，于是永远只把第一个窗口提到前台
+        —— 第二个实例的窗口根本没被打开（用户实测：两个实例只显示第一个）。
+        """
         base = os.environ.get('XDG_RUNTIME_DIR') or '/tmp'
         try:
             uid = os.getuid()
         except Exception:
             uid = 0
-        return os.path.join(base, 'dsh-desktop-%d.sock' % uid)
+        return os.path.join(base, 'dsh-desktop-%d-%d.sock' % (uid, self.port))
 
     def _sock_request(self, cmd, timeout=1.5):
         """给窗口进程发一条命令，返回应答文本；连不上返回 ''。"""
@@ -476,21 +483,32 @@ class Instance:
                     pass
         return pids
 
-    @staticmethod
-    def clear_stale_locks():
-        """删掉/清空单实例锁：窗口进程其实已经不在时，它只会挡住下一次启动。"""
+    def clear_stale_locks(self=None):
+        """删掉单实例锁：窗口进程其实已经不在时，它只会挡住下一次启动。
+
+        锁也是**按实例（端口）**的（与启动器里的 `/tmp/dsh-desktop-<port>.lock` 一致），
+        否则第二个实例会因为"锁被占用"直接退出 —— 这正是"只开得出第一个窗口"的第二个原因。
+        顺便清理旧版留下的全局锁（升级前的老文件），它已经没用了。
+        """
         removed = []
-        for path in ('/tmp/dsh-desktop.lock', '/tmp/dsh-desktop.lock.pid'):
+        paths = ['/tmp/dsh-desktop.lock', '/tmp/dsh-desktop.lock.pid']
+        port = getattr(self, 'port', None)
+        if port:
+            paths += ['/tmp/dsh-desktop-%d.lock' % port, '/tmp/dsh-desktop-%d.lock.pid' % port]
+        for path in paths:
             try:
                 if os.path.exists(path):
                     os.remove(path)
                     removed.append(path)
             except OSError:
                 pass
-        lockdir = '/tmp/dsh-desktop.lock.d'
-        if os.path.isdir(lockdir):
-            shutil.rmtree(lockdir, ignore_errors=True)
-            removed.append(lockdir)
+        dirs = ['/tmp/dsh-desktop.lock.d']
+        if port:
+            dirs.append('/tmp/dsh-desktop-%d.lock.d' % port)
+        for lockdir in dirs:
+            if os.path.isdir(lockdir):
+                shutil.rmtree(lockdir, ignore_errors=True)
+                removed.append(lockdir)
         return removed
 
     def _spawn_launcher(self, logpath, settle=8.0, force=False, gl=None):
@@ -697,17 +715,51 @@ class Manager:
         return Instance(prefix, meta)
 
     # ---- 版本清单 ----
-    def _registry_versions(self):
-        """返回 (versions, dist_tags)；取不到就都回空。"""
-        try:
-            with urllib.request.urlopen('https://registry.npmjs.org/' + NPM_PKG.replace('/', '%2F'),
-                                        timeout=8) as r:
-                data = json.load(r)
+    # 缓存：同一次界面刷新里 latest_* 与 available_* 都会来问一次，
+    # 而 registry 的完整文档有 2~3 MB —— 每次都拉一遍既慢又容易超时
+    # （实测：8 秒超时时第一次冷启动就失败，列表只剩内置兜底那几项）。
+    _registry_cache = {'at': 0.0, 'versions': [], 'tags': {}}
+    REGISTRY_TIMEOUT = 25
+
+    def _registry_versions(self, max_age=300):
+        """返回 (versions, dist_tags)；取不到就回空。结果进程内缓存 5 分钟。"""
+        now = time.time()
+        cached = self._registry_cache
+        if cached['versions'] and now - cached['at'] < max_age:
+            return list(cached['versions']), dict(cached['tags'])
+        # 官方源优先，失败/太慢再试国内镜像（虚拟机 NAT 下官方源常超时）
+        urls = [
+            'https://registry.npmjs.org/' + NPM_PKG.replace('/', '%2F'),
+            'https://registry.npmmirror.com/' + NPM_PKG.replace('/', '%2F'),
+        ]
+        versions, tags = [], {}
+        for url in urls:
+            try:
+                with urllib.request.urlopen(url, timeout=self.REGISTRY_TIMEOUT) as r:
+                    data = json.load(r)
+            except Exception:
+                continue
             versions = [v for v in (data.get('versions') or {}).keys()
                         if re.match(r'^\d+\.\d+\.\d+', v)]
-            return versions, (data.get('dist-tags') or {})
-        except Exception:
-            return [], {}
+            tags = data.get('dist-tags') or {}
+            if versions:
+                break
+        if versions:
+            self._registry_cache = {'at': now, 'versions': list(versions), 'tags': dict(tags)}
+        return versions, tags
+
+    def _latest_from_tags(self):
+        """只取 dist-tags（几百字节，比拉完整文档快得多）。取不到返回 ''。"""
+        for host in ('https://registry.npmjs.org/', 'https://registry.npmmirror.com/'):
+            try:
+                with urllib.request.urlopen(host + NPM_PKG.replace('/', '%2F') + '/latest',
+                                            timeout=10) as r:
+                    tag = (json.load(r) or {}).get('version')
+                if tag:
+                    return tag
+            except Exception:
+                continue
+        return ''
 
     def available_dsh_versions(self, limit=12):
         versions, tags = self._registry_versions()
@@ -726,8 +778,11 @@ class Manager:
 
         优先用官方 dist-tags.latest（发布者的选择），若它带 alpha 才退回按版本号挑。
         """
+        cand = self._latest_from_tags()
+        if cand and 'alpha' not in cand.lower():
+            return cand
         versions, tags = self._registry_versions()
-        cand = tags.get('latest')
+        cand = cand or tags.get('latest')
         if cand and 'alpha' not in cand.lower():
             return cand
         non_alpha = [v for v in versions if 'alpha' not in v.lower()]

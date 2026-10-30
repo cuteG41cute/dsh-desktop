@@ -78,7 +78,25 @@ shot() {
 }
 
 # ---------------------------------------------------------------- 控制套接字
-SOCK="${XDG_RUNTIME_DIR:-/tmp}/dsh-desktop-$(id -u).sock"
+# 套接字按实例（端口）区分：dsh-desktop-<uid>-<port>.sock。
+# 端口优先取管理器注册表里与本实例前缀对应的那一条，取不到再退回 3080。
+PORT="${PORT:-}"
+if [ -z "$PORT" ] && have python3 && [ -n "${PREFIX:-}" ]; then
+    PORT="$(python3 - "$PREFIX" <<'PY' 2>/dev/null
+import json, os, sys
+reg = os.path.join(os.environ.get('XDG_CONFIG_HOME') or os.path.expanduser('~/.config'),
+                   'dsh-manager', 'instances.json')
+try:
+    for entry in json.load(open(reg, encoding='utf-8')):
+        if entry.get('prefix') == sys.argv[1] and entry.get('port'):
+            print(entry['port']); break
+except Exception:
+    pass
+PY
+)"
+fi
+[ -n "$PORT" ] || PORT=3080
+SOCK="${XDG_RUNTIME_DIR:-/tmp}/dsh-desktop-$(id -u)-${PORT}.sock"
 sock_cmd() {
     python3 - "$SOCK" "$1" <<'PY' 2>/dev/null
 import socket, sys

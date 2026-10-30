@@ -21,6 +21,7 @@ from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 from . import plugins as plug  # noqa: E402
 from .core import (DEFAULT_DSH, DEFAULT_NODE, MANAGER_LIB, MANAGER_VERSION,  # noqa: E402
+                   FALLBACK_DSH_VERSIONS, FALLBACK_NODE_VERSIONS,
                    Manager, append_manager_log, config_dir, load_settings,
                    manager_log_path, port_free, read_manager_log, save_settings,
                    settings_path)
@@ -359,7 +360,7 @@ class ManagerWindow(Gtk.Window):
 
         log_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         log_card.get_style_context().add_class('card')
-        log_card.set_size_request(-1, 64)       # 只留 64px 底（约两行）：想缩窗口时不会挡住
+        log_card.set_size_request(-1, 120)      # 日志至少留 120px（约 4~5 行），缩窗口时不会被压没
         log_head = Gtk.Label(label='日志', xalign=0)
         log_head.get_style_context().add_class('card-title')
         log_card.pack_start(log_head, False, False, 0)
@@ -375,8 +376,8 @@ class ManagerWindow(Gtk.Window):
         log_card.pack_start(sw, True, True, 0)
 
         vpaned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
-        # 默认给日志留 ~200px，其余给按钮区；窗口被拖小后 GTK 会自己收紧，分隔条随时可拖
-        vpaned.set_position(max(140, int(getattr(self, 'win_height', 720)) - 200))
+        # 默认给日志留 45%（至少 180px），其余给按钮区；分隔条随时可拖
+        vpaned.set_position(max(140, int(getattr(self, 'win_height', 720) * 0.55)))
         vpaned.pack1(top_scroll, True, False)  # 窗口变矮时上部自己滚动，不再挤掉日志
         vpaned.pack2(log_card, False, True)
         right.pack_start(vpaned, True, True, 0)
@@ -573,10 +574,22 @@ class ManagerWindow(Gtk.Window):
         ent_port = Gtk.SpinButton.new_with_range(1024, 65535, 1)
         ent_port.set_value(self.manager.next_port())
 
-        # 版本选择：先摆出 latest + 内置默认值（对话框立刻可用），
-        # 联网列表在后台拉，拉回来再塞进去 —— 这样打开对话框不再卡住界面。
-        picker_dsh = VersionPicker(['latest', DEFAULT_DSH], value='latest')
-        picker_node = VersionPicker(['latest', DEFAULT_NODE], value='latest')
+        # 版本选择：先摆出 latest + 内置清单（对话框立刻可用），联网列表在后台拉，
+        # 拉回来再塞进去；右侧再给一个输入框，列表不准/拉不到时可以直接手打版本号。
+        picker_dsh = VersionPicker(['latest'] + list(FALLBACK_DSH_VERSIONS), value='latest')
+        picker_node = VersionPicker(['latest'] + list(FALLBACK_NODE_VERSIONS), value='latest')
+        ent_dsh_manual = Gtk.Entry()
+        ent_dsh_manual.set_placeholder_text('或手动输入 dsh 版本，如 0.2.1-rc.5')
+        ent_dsh_manual.set_width_chars(22)
+        ent_node_manual = Gtk.Entry()
+        ent_node_manual.set_placeholder_text('或手动输入 Node 版本，如 26.13.0')
+        ent_node_manual.set_width_chars(22)
+        box_dsh = Gtk.Box(spacing=6)
+        box_dsh.pack_start(picker_dsh, False, False, 0)
+        box_dsh.pack_start(ent_dsh_manual, True, True, 0)
+        box_node = Gtk.Box(spacing=6)
+        box_node.pack_start(picker_node, False, False, 0)
+        box_node.pack_start(ent_node_manual, True, True, 0)
 
         ver_state = {'done': False}
         ver_bar = make_pulse_bar()
@@ -590,21 +603,40 @@ class ManagerWindow(Gtk.Window):
         dlg.connect('destroy', lambda *a: ver_state.__setitem__('done', True))
 
         def fetch_versions():
+            # 每一项单独兜底：一项失败不能把其它几项的结果一起扔掉
+            # （踩过：拉完整 registry 文档超时 → 列表只剩内置一项，用户"选不了版本"）
+            dsh_list, node_list = [], []
+            latest_dsh, latest_node = DEFAULT_DSH, DEFAULT_NODE
+            problems = []
             try:
-                dsh_list = self.manager.available_dsh_versions(14)
-                node_list = self.manager.available_node_versions()
-                latest_dsh = self.manager.latest_dsh_version()
-                latest_node = self.manager.latest_node_version()
+                dsh_list = self.manager.available_dsh_versions(14) or []
+            except Exception as exc:
+                problems.append('dsh 版本列表：%s' % exc)
+            try:
+                node_list = self.manager.available_node_versions() or []
+            except Exception as exc:
+                problems.append('Node 版本列表：%s' % exc)
+            try:
+                latest_dsh = self.manager.latest_dsh_version() or DEFAULT_DSH
             except Exception:
-                dsh_list, node_list = [], []
-                latest_dsh, latest_node = DEFAULT_DSH, DEFAULT_NODE
+                pass
+            try:
+                latest_node = self.manager.latest_node_version() or DEFAULT_NODE
+            except Exception:
+                pass
 
             def apply():
                 ver_state['done'] = True
                 try:
                     ver_bar.hide()
-                    ver_lbl.set_text('版本列表已就绪：latest = dsh %s / Node %s'
-                                     % (latest_dsh, latest_node))
+                    if dsh_list:
+                        head = '版本列表已就绪：latest = dsh %s / Node %s' % (latest_dsh, latest_node)
+                    else:
+                        head = ('联网获取版本列表失败，下面用的是内置清单（latest = dsh %s / Node %s）；'
+                                '也可以直接在右侧手动输入版本号' % (latest_dsh, latest_node))
+                    if problems:
+                        head += '\n' + '；'.join(problems[:2])
+                    ver_lbl.set_text(head)
                     picker_dsh.set_options(['latest'] + [v for v in dsh_list if v != 'latest'])
                     picker_node.set_options(['latest'] + [v for v in node_list if v != 'latest'])
                 except Exception:
@@ -631,7 +663,7 @@ class ManagerWindow(Gtk.Window):
         box_prefix.pack_start(btn_browse, False, False, 0)
 
         rows = [('安装目录', box_prefix), ('显示名称', ent_label), ('端口', ent_port),
-                ('dsh 版本', picker_dsh), ('Node 版本', picker_node)]
+                ('dsh 版本', box_dsh), ('Node 版本', box_node)]
         for r, (label, widget) in enumerate(rows):
             grid.attach(Gtk.Label(label=label, xalign=0), 0, r, 1, 1)
             grid.attach(widget, 1, r, 1, 1)
@@ -651,8 +683,8 @@ class ManagerWindow(Gtk.Window):
         prefix = ent_prefix.get_text().strip()
         label = ent_label.get_text().strip() or os.path.basename(prefix)
         port = int(ent_port.get_value())
-        dsh = picker_dsh.get_value() or 'latest'
-        node = picker_node.get_value() or 'latest'
+        dsh = ent_dsh_manual.get_text().strip() or picker_dsh.get_value() or 'latest'
+        node = ent_node_manual.get_text().strip() or picker_node.get_value() or 'latest'
         ver_state['done'] = True
         dlg.destroy()
         if os.path.exists(prefix) and not os.path.isdir(prefix):

@@ -449,13 +449,34 @@ def selftest():
 _CONTROL = {'server': None, 'path': None}
 
 
+def instance_port():
+    """这个窗口服务的端口 = 实例标识（多实例时用来区分套接字与锁）。"""
+    tag = os.environ.get('DSH_DESKTOP_PORT') or ''
+    if tag.isdigit():
+        return int(tag)
+    try:
+        from urllib.parse import urlsplit
+        port = urlsplit(WEB_URL).port
+        if port:
+            return int(port)
+    except Exception:
+        pass
+    return 3080
+
+
 def control_socket_path():
+    """控制套接字：**按实例（端口）分开**。
+
+    以前是「一个用户一个套接字」，开第二个实例的窗口时管理器 ping 到的是第一个
+    实例的窗口，于是永远只把第一个窗口提到前台（用户实测：两个实例只显示第一个）。
+    路径规则必须与 dsh_manager/core.py 的 Instance.control_socket() 完全一致。
+    """
     base = os.environ.get('XDG_RUNTIME_DIR') or '/tmp'
     try:
         uid = os.getuid()
     except Exception:
         uid = 0
-    return os.path.join(base, 'dsh-desktop-%d.sock' % uid)
+    return os.path.join(base, 'dsh-desktop-%d-%d.sock' % (uid, instance_port()))
 
 
 def nudge_repaint(win, delay=90):
