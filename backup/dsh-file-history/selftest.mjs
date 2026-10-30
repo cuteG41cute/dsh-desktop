@@ -6,7 +6,7 @@
 // 的契约由 host-contract-check.mjs 验证。
 //
 // 默认测试**仓库内的** lib/index.js（先 `npm install` 装上两个依赖）；
-// 想测已安装到 profile 的那份副本：FH_PLUGIN_URL="C:/Users/.../dsh-file-history/lib/index.js" node selftest.mjs
+// 想测已安装到 profile 的那份副本：FH_PLUGIN_URL="<profile>/node_modules/dsh-file-history/lib/index.js" node selftest.mjs
 
 import { mkdtemp, writeFile, readFile, readdir, mkdir, rm, stat } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'

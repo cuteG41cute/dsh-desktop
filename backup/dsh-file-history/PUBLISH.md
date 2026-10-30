@@ -47,6 +47,23 @@ git push origin v0.4.0
    期望：`monitor.ps1` 的 8 项判据全部 OK，会话右上角出现「备份」芯片。
 3. 让 agent 改一个已存在的文件，确认 `<项目>/.dsh-backup/` 出现带时间戳的备份。
 
+## 3.5 外部改动回传时：先审计，再合并
+
+别人（或另一个 agent）改完传回来的版本**不要直接覆盖**，先跑审计：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File audit.ps1 -Path "<回传目录或解压后的目录>"
+```
+
+它会做两类检查：
+
+- **30 项机械判据**：必需文件、`package.json` 元数据、`node --check` 语法、`.ps1` 的 UTF-8 BOM、
+  本机绝对路径 / 用户名 / npx hash / 密钥泄漏、三处 `inject` 一致性、两套测试、`npm pack` 内容；
+- **与基线逐文件差异**：新增 / 删除 / 修改分别列出，供人工过一遍语义变化。
+
+通过（退出码 0）之后再合并回本仓库、提交、打 tag；不通过就带着失败项退回去修。
+不做覆盖式合并，避免把回传版本里的构建产物、临时文件或平台专属配置带进发布物。
+
 ## 4. 可选：发布到 npm
 
 依赖都在公共 npm 上（`@deepseek-ai/cordis`、`@deepseek-ai/schemastery`），`files` 字段已收敛，
