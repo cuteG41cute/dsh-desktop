@@ -31,7 +31,80 @@ DEFAULT_ROOT = os.path.expanduser('~/.local/opt')
 FALLBACK_DSH_VERSIONS = ['0.1.5-rc.1']
 FALLBACK_NODE_VERSIONS = ['24.19.0', '22.11.0', '20.19.0']
 SYSTEM_SHARE = '/usr/lib/dsh-manager/share'      # deb 里随包带的窗口文件
-MANAGER_VERSION = '1.0.4'
+MANAGER_VERSION = '1.0.5'
+MANAGER_LIB = '/usr/lib/dsh-manager'             # 管理器自己的安装目录（deb）
+
+
+# --------------------------------------------------------------------------- 管理器自身的配置与日志
+def config_dir():
+    base = os.environ.get('XDG_CONFIG_HOME') or os.path.expanduser('~/.config')
+    return os.path.join(base, APP)
+
+
+def settings_path():
+    return os.path.join(config_dir(), 'settings.json')
+
+
+def manager_log_path():
+    return os.path.join(config_dir(), 'manager.log')
+
+
+DEFAULT_SETTINGS = {
+    'theme': True,          # 企业简洁风主题（关掉 = GTK 默认皮肤）
+    'logLines': 800,        # 日志面板保留行数
+}
+
+
+def load_settings():
+    data = dict(DEFAULT_SETTINGS)
+    try:
+        with open(settings_path(), 'r', encoding='utf-8') as fh:
+            loaded = json.load(fh)
+        if isinstance(loaded, dict):
+            data.update({k: v for k, v in loaded.items() if k in DEFAULT_SETTINGS})
+    except Exception:
+        pass
+    return data
+
+
+def save_settings(data):
+    merged = load_settings()
+    merged.update({k: v for k, v in data.items() if k in DEFAULT_SETTINGS})
+    try:
+        os.makedirs(config_dir(), exist_ok=True)
+        tmp = settings_path() + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as fh:
+            json.dump(merged, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp, settings_path())
+        return True
+    except Exception:
+        return False
+
+
+def append_manager_log(line):
+    """把日志面板里的一行也落盘，方便事后排障（>512KB 轮转一次）。"""
+    path = manager_log_path()
+    try:
+        os.makedirs(config_dir(), exist_ok=True)
+        if os.path.exists(path) and os.path.getsize(path) > 512 * 1024:
+            try:
+                os.replace(path, path + '.1')
+            except Exception:
+                pass
+        with open(path, 'a', encoding='utf-8') as fh:
+            fh.write(line.rstrip('\n') + '\n')
+    except Exception:
+        pass
+
+
+def read_manager_log(limit=200):
+    path = manager_log_path()
+    try:
+        with open(path, 'r', encoding='utf-8', errors='replace') as fh:
+            lines = fh.readlines()
+    except Exception:
+        return []
+    return [ln.rstrip('\n') for ln in lines[-limit:]]
 
 
 # --------------------------------------------------------------------------- 工具

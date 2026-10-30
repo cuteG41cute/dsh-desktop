@@ -13,8 +13,10 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
-from .core import (DEFAULT_DSH, DEFAULT_NODE, MANAGER_VERSION, Manager,  # noqa: E402
-                   port_free)
+from .core import (DEFAULT_DSH, DEFAULT_NODE, MANAGER_LIB, MANAGER_VERSION,  # noqa: E402
+                   Manager, append_manager_log, config_dir, load_settings,
+                   manager_log_path, port_free, read_manager_log, save_settings,
+                   settings_path)
 
 STATUS_TEXT = {
     'running': '运行中',
@@ -44,7 +46,18 @@ def status_markup(status):
 
 
 def load_css():
-    """挂上企业简洁风主题。失败只是回落默认皮肤，绝不影响功能。"""
+    """挂上企业简洁风主题。
+
+    开关来源（优先级从高到低）：环境变量 DSH_MANAGER_NO_THEME=1 → settings.json 的 theme。
+    加载失败只是回落默认皮肤，绝不影响功能。
+    """
+    if os.environ.get('DSH_MANAGER_NO_THEME') == '1':
+        return False
+    try:
+        if not load_settings().get('theme', True):
+            return False
+    except Exception:
+        pass
     try:
         provider = Gtk.CssProvider()
         provider.load_from_path(CSS_FILE)
@@ -160,9 +173,9 @@ class ManagerWindow(Gtk.Window):
         self.set_position(Gtk.WindowPosition.CENTER)
         self.selected = None
         self.busy = False
+        self.settings = load_settings()
         # 主题只是外观：想回到 GTK 默认皮肤，设 DSH_MANAGER_NO_THEME=1 或删掉 style.css
-        if os.environ.get('DSH_MANAGER_NO_THEME') != '1':
-            load_css()
+        self.theme_loaded = load_css()
         self._build()
         self.refresh()
         GLib.timeout_add(400, self._drain_log)
@@ -189,6 +202,10 @@ class ManagerWindow(Gtk.Window):
         btn_refresh.set_tooltip_text('刷新')
         btn_refresh.connect('clicked', lambda *a: self.refresh())
         hb.pack_end(btn_refresh)
+        btn_settings = Gtk.Button.new_from_icon_name('emblem-system-symbolic', Gtk.IconSize.BUTTON)
+        btn_settings.set_tooltip_text('管理器设置（版本 / 主题 / 日志 / 卸载）')
+        btn_settings.connect('clicked', self.on_settings)
+        hb.pack_end(btn_settings)
         self.set_titlebar(hb)
 
         # 忙碌指示条（安装/更新/修复期间）：脉冲进度 + 一行说明
@@ -318,10 +335,19 @@ class ManagerWindow(Gtk.Window):
             self.buttons['stop'].set_sensitive(not self.busy and bool(self.selected.running_pid()))
 
     def append_log(self, line):
+        text = line.rstrip('\n')
         end = self.log_buf.get_end_iter()
-        self.log_buf.insert(end, line.rstrip('\n') + '\n')
+        self.log_buf.insert(end, text + '\n')
         mark = self.log_buf.create_mark(None, self.log_buf.get_end_iter(), False)
         self.log_view.scroll_mark_onscreen(mark)
+        append_manager_log(text)          # 同时落盘，供「设置 → 管理器日志」查看
+        # 面板只留最近 N 行，避免长时间运行后卡顿
+        limit = int(self.settings.get('logLines') or 800)
+        count = self.log_buf.get_line_count()
+        if count > limit + 200:
+            start = self.log_buf.get_start_iter()
+            cut = self.log_buf.get_iter_at_line(count - limit)
+            self.log_buf.delete(start, cut)
 
     def _drain_log(self):
         for line in self.manager.take_log():
@@ -576,6 +602,171 @@ class ManagerWindow(Gtk.Window):
             return
         self._run_async('安装 %s' % os.path.basename(prefix),
                         lambda: self.manager.install(prefix, dsh, node, port, label))
+
+    # ------------------------------------------------------------ 管理器自身的设置
+    def _copy(self, text):
+        try:
+            clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+            clipboard.set_text(text, -1)
+            clipboard.store()
+            return True
+        except Exception:
+            return False
+
+    def _text_dialog(self, title, text, width=780, height=520):
+        dlg = Gtk.Dialog(title=title, transient_for=self, modal=True)
+        dlg.add_buttons('关闭', Gtk.ResponseType.CLOSE)
+        dlg.set_default_size(width, height)
+        area = dlg.get_content_area()
+        area.set_border_width(14)
+        sw = Gtk.ScrolledWindow()
+        sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        sw.get_style_context().add_class('panel')
+        view = Gtk.TextView()
+        view.set_editable(False)
+        view.set_monospace(True)
+        view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        view.get_buffer().set_text(text)
+        sw.add(view)
+        area.add(sw)
+        dlg.show_all()
+        dlg.run()
+        dlg.destroy()
+
+    def _section(self, title):
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        card.get_style_context().add_class('card')
+        head = Gtk.Label(label=title, xalign=0)
+        head.get_style_context().add_class('card-title')
+        card.pack_start(head, False, False, 0)
+        return card
+
+    def _commands(self):
+        ver = MANAGER_VERSION
+        return {
+            'repair': ('重装 / 修复管理器',
+                       'sudo apt install --reinstall ./dsh-manager_%s_all.deb\n'
+                       'sudo apt --fix-broken install' % ver),
+            'uninstall': ('卸载管理器',
+                          '# 只删管理器本体，实例目录（~/.local/opt/...）与数据都保留\n'
+                          'sudo apt remove dsh-manager\n\n'
+                          '# 想连配置一起清掉（实例仍然保留）\n'
+                          'rm -rf ~/.config/dsh-manager'),
+        }
+
+    def on_settings(self, *_):
+        dlg = Gtk.Dialog(title='管理器设置', transient_for=self, modal=True)
+        dlg.add_buttons('关闭', Gtk.ResponseType.CLOSE)
+        dlg.set_default_size(760, 620)
+        area = dlg.get_content_area()
+        area.set_border_width(16)
+        area.set_spacing(12)
+
+        # ---- 版本与路径 ----
+        info = self._section('管理器')
+        grid = Gtk.Grid(column_spacing=16, row_spacing=6)
+        gtk_ver = '%d.%d.%d' % (Gtk.get_major_version(), Gtk.get_minor_version(),
+                                Gtk.get_micro_version())
+        rows = (
+            ('版本', 'v%s' % MANAGER_VERSION),
+            ('程序目录', MANAGER_LIB),
+            ('配置目录', config_dir()),
+            ('管理器日志', manager_log_path()),
+            ('运行环境', 'Python %s · GTK %s' % (sys.version.split()[0], gtk_ver)),
+            ('实例根目录', self.manager.root),
+        )
+        for r, (key, value) in enumerate(rows):
+            k = Gtk.Label(label=key, xalign=0)
+            k.get_style_context().add_class('group-label')
+            v = Gtk.Label(label=value, xalign=0)
+            v.get_style_context().add_class('info-val')
+            v.set_selectable(True)
+            v.set_ellipsize(3)          # END
+            grid.attach(k, 0, r, 1, 1)
+            grid.attach(v, 1, r, 1, 1)
+        info.pack_start(grid, False, False, 0)
+        area.pack_start(info, False, False, 0)
+
+        # ---- 外观 ----
+        look = self._section('外观')
+        chk = Gtk.CheckButton(label='使用企业简洁风主题（重启管理器后生效）')
+        chk.set_active(bool(self.settings.get('theme', True)))
+        look.pack_start(chk, False, False, 0)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        lbl = Gtk.Label(label='日志面板保留行数', xalign=0)
+        lbl.get_style_context().add_class('info-val')
+        spin = Gtk.SpinButton.new_with_range(200, 5000, 100)
+        spin.set_value(int(self.settings.get('logLines') or 800))
+        row.pack_start(lbl, False, False, 0)
+        row.pack_start(spin, False, False, 0)
+        look.pack_start(row, False, False, 0)
+
+        def apply_look(*_):
+            values = {'theme': bool(chk.get_active()), 'logLines': int(spin.get_value())}
+            ok = save_settings(values)
+            self.settings.update(values)
+            self.append_log(('✔ 设置已保存%s' % ('（主题改动重启后生效）' if True else ''))
+                            if ok else '✘ 保存设置失败（配置目录不可写？）')
+
+        btn_save = Gtk.Button(label='保存外观设置')
+        btn_save.get_style_context().add_class('primary')
+        btn_save.connect('clicked', apply_look)
+        look.pack_start(btn_save, False, False, 0)
+        area.pack_start(look, False, False, 0)
+
+        # ---- 维护 ----
+        maint = self._section('维护')
+        mrow = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+
+        def view_log(*_):
+            lines = read_manager_log(400)
+            self._text_dialog('管理器日志', '\n'.join(lines) if lines else '（还没有日志）')
+
+        def copy_diag(*_):
+            parts = ['DeepSeek Harness 管理器 v%s' % MANAGER_VERSION,
+                     '程序目录: %s' % MANAGER_LIB,
+                     '配置目录: %s' % config_dir(),
+                     '运行环境: Python %s · GTK %s' % (sys.version.split()[0], gtk_ver),
+                     '主题: %s（style.css）' % ('已启用' if self.theme_loaded else '未启用'),
+                     '实例根目录: %s' % self.manager.root,
+                     '', '实例:']
+            try:
+                for inst in self.manager.list_instances():
+                    parts.append('  - %s  dsh %s  node %s  端口 %d  %s  %s'
+                                 % (inst.label, inst.dsh_version or '?',
+                                    inst.node_version or '?', inst.port,
+                                    STATUS_TEXT.get(inst.status(), inst.status()),
+                                    inst.prefix))
+            except Exception as exc:
+                parts.append('  （读取失败：%s）' % exc)
+            parts += ['', '最近日志:'] + ['  ' + ln for ln in read_manager_log(40)]
+            ok = self._copy('\n'.join(parts))
+            self.append_log('✔ 诊断信息已复制到剪贴板' if ok else '✘ 复制失败（没有剪贴板？）')
+
+        def show_cmd(kind):
+            def handler(*_):
+                title, cmd = self._commands()[kind]
+                self._text_dialog(title, cmd + '\n\n（在终端里执行；管理器运行中无法卸载自己）', 720, 320)
+            return handler
+
+        for label, handler in (('查看管理器日志', view_log),
+                               ('复制诊断信息', copy_diag),
+                               ('修复 / 重装…', show_cmd('repair')),
+                               ('卸载…', show_cmd('uninstall'))):
+            btn = Gtk.Button(label=label)
+            btn.connect('clicked', handler)
+            mrow.pack_start(btn, False, False, 0)
+        maint.pack_start(mrow, False, False, 0)
+        note = Gtk.Label(xalign=0, wrap=True)
+        note.set_text('管理器不会删除你的实例目录：卸载只移除 /usr 里的程序，'
+                      '每个实例仍在你创建时选定的目录里（数据目录是该实例的 dsh-home）。')
+        note.get_style_context().add_class('dim-label')
+        maint.pack_start(note, False, False, 0)
+        area.pack_start(maint, False, False, 0)
+
+        dlg.show_all()
+        dlg.run()
+        dlg.destroy()
 
     # ---- 选择校验 ----
     def _need(self, what='实例'):

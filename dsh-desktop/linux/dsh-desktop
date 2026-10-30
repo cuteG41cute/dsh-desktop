@@ -50,12 +50,18 @@ ask() {
 # flock 来自 util-linux，极简系统上可能没有（实测有发行版连 procps/curl 都缺）。
 # 没有 flock 时退化成「mkdir 原子锁 + pid 存活检查」，绝不因为缺工具就静默退出。
 LOCK="/tmp/dsh-desktop.lock"
-if command -v flock >/dev/null 2>&1; then
+if [ "${DSH_DESKTOP_FORCE:-0}" = "1" ]; then
+    log "DSH_DESKTOP_FORCE=1：跳过单实例检查，强制启动一个窗口。"
+elif command -v flock >/dev/null 2>&1; then
     exec 9>"$LOCK"
     if ! flock -n 9; then
-        log "已有另一个 DeepSeek Harness 桌面窗口在运行（锁文件 $LOCK），本次直接退出。"
+        holder="$(cat "$LOCK.pid" 2>/dev/null || true)"
+        log "已有另一个 DeepSeek Harness 桌面窗口在运行${holder:+（PID $holder）}，本次直接退出。"
+        log "   → 若那个窗口其实没出现：kill ${holder:-<PID>}（或 pkill -f share/dsh-desktop）"
+        log "   → 或强制再开一个：DSH_DESKTOP_FORCE=1 dsh-desktop"
         exit 0
     fi
+    printf '%s' "$$" > "$LOCK.pid" 2>/dev/null || true
 else
     LOCK_DIR="/tmp/dsh-desktop.lock.d"
     mkdir -p "$LOCK_DIR" 2>/dev/null || true
@@ -66,6 +72,7 @@ else
         old="$(cat "$LOCK_DIR/held/pid" 2>/dev/null || true)"
         if [ -n "${old:-}" ] && kill -0 "$old" 2>/dev/null; then
             log "已有另一个 DeepSeek Harness 桌面窗口在运行（PID $old），本次直接退出。"
+            log "   → 结束它：kill $old ／ 或强制再开：DSH_DESKTOP_FORCE=1 dsh-desktop"
             exit 0
         fi
         rm -rf "$LOCK_DIR/held" 2>/dev/null || true
@@ -418,6 +425,17 @@ if [ -z "$PY" ]; then
     echo "错误：找不到 dsh-desktop.py（应在 $SCRIPT_DIR/dsh-desktop.py）" >&2
     if [ "$started_by_us" = "1" ]; then kill "$server_pid" 2>/dev/null; fi
     exit 1
+fi
+
+# ---- 软件渲染兜底 ----
+# Hyper-V 等没有 DRI 的虚拟机里，WebKit 拿不到 GL 上下文 → 窗口白屏或干脆不显示
+# （日志里会有 libEGL/MESA: failed to choose pdev）。默认自动：没有 /dev/dri 就关掉
+# 合成、走软件渲染；可用 DSH_DESKTOP_GL=on/off 强制覆盖。
+GL_MODE="${DSH_DESKTOP_GL:-auto}"
+if [ "$GL_MODE" = "off" ] || { [ "$GL_MODE" = "auto" ] && [ ! -e /dev/dri ]; }; then
+    export WEBKIT_DISABLE_COMPOSITING_MODE=1
+    export LIBGL_ALWAYS_SOFTWARE=1
+    log "未检测到可用 GPU（/dev/dri 不存在，或 DSH_DESKTOP_GL=off）：已切到软件渲染。"
 fi
 
 log "正在打开桌面窗口: $WINDOW_URL"
