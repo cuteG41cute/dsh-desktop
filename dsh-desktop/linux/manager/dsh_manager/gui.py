@@ -310,8 +310,8 @@ class ManagerWindow(Gtk.Window):
             ('open', '打开窗口', None))), False, False, 0)
         right.pack_start(make_group('版本', (
             ('update', '更新版本', None), ('repair', '修复', None))), False, False, 0)
-        right.pack_start(make_group('插件', (
-            ('plugins', '管理插件…', None))), False, False, 0)
+        right.pack_start(make_group('插件', (('plugins', '管理插件…', None),)),
+                         False, False, 0)
         right.pack_start(make_group('其他', (
             ('folder', '在文件管理器中显示', None), ('uninstall', '卸载', 'danger'))),
             False, False, 0)

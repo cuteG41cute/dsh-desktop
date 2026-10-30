@@ -11,8 +11,23 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)          # manager/ 目录（里面才是 dsh_manager 包）
 
 
+class _Dummy(object):
+    """万能占位对象：任何属性/调用都返回它自己（支持链式调用）。"""
+
+    def __getattr__(self, item):
+        if item.startswith('__'):
+            raise AttributeError(item)
+        return _method
+
+    def __call__(self, *a, **k):
+        return _Dummy()
+
+    def __bool__(self):
+        return True
+
+
 def _method(*a, **k):
-    return None
+    return _Dummy()
 
 
 class _DummyMeta(type):
@@ -75,6 +90,14 @@ req_at = src.find("require_version('Gdk'")
 imp_at = src.find('from gi.repository import Gdk')
 checks.append(('Gdk 版本声明在 import 之前', 0 <= req_at < imp_at))
 checks.append(('声明的是 Gdk 3.0', "require_version('Gdk', '3.0')" in src))
+
+# 真正构造一次窗口（用桩 GTK）：能抓到 _build() 里的解包/参数错误这类运行时问题
+try:
+    _win = gui.ManagerWindow()
+    checks.append(('ManagerWindow() 能用桩 GTK 构造出来', True))
+except Exception as exc:
+    checks.append(('ManagerWindow() 能用桩 GTK 构造出来（%s: %s）'
+                   % (type(exc).__name__, exc), False))
 
 bad = [n for n, ok in checks if not ok]
 for n, ok in checks:
