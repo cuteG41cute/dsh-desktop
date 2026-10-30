@@ -29,6 +29,15 @@
 /*   shadow = 0 25px 80px rgba(0,0,0,.35) */
 /*   card-shadow = 0 8px 24px rgba(0,0,0,.08) */
 
+/* 主题菜单色点（每套主题 day 的强调色） */
+.swatch-alpine { background-color: #427fae; }
+.swatch-crystal { background-color: #169eb3; }
+.swatch-dawn { background-color: #d97755; }
+.swatch-flat { background-color: #4f46e5; }
+.swatch-frost { background-color: #7968e8; }
+.swatch-liquid { background-color: #397fe7; }
+.swatch-sea { background-color: #287f82; }
+
 
 
 /* ---------- 动效 ----------
@@ -478,3 +487,79 @@ tooltip {
   border: 1px solid rgba(255,255,255,.09);
   border-radius: 8px;
 }
+/* ==========================================================================
+ * 第二轮保真修正（1.3.2）
+ *  - GTK3 的 label 不画背景：所有"色块/圆点/药丸"改用 Gtk.EventBox + .chip
+ *  - ListBox 的 :selected 会被系统主题染成蓝色：这里强制回设计稿的 hover 态
+ *  - 滚动条按设计稿收细、去底色
+ * ========================================================================== */
+
+.chip { background-color: transparent; }
+.chip label { background-color: transparent; }
+
+/* 药丸：内边距放在 EventBox 上（里面的 label 只负责文字） */
+.count-pill { padding: 1px 6px; }
+.version-pill { padding: 2px 7px; }
+.subtle-tag { padding: 2px 7px; }
+.badge { padding: 3px 9px; }
+.log-level { padding: 1px 5px; }
+.live-indicator { padding: 2px 7px; }
+.theme-dot { border-radius: 4px; }
+
+/* 选中态：把系统主题的蓝色 :selected 盖掉，用设计稿的 hover + 内边框 */
+.instance-list,
+.instance-list row,
+.instance-list row:hover,
+.instance-list row:selected,
+.instance-list row:selected:hover {
+  background-color: transparent;
+  box-shadow: none;
+  outline: none;
+}
+.instance-item { min-height: 57px; }
+.instance-item:selected,
+.instance-item:selected:hover,
+.instance-item.active {
+  background-color: rgba(255,255,255,.075);
+  border-color: rgba(255,255,255,.075);
+  box-shadow: 0 8px 24px rgba(0,0,0,.08);
+}
+.instance-item:selected .instance-name,
+.instance-item.active .instance-name { color: #efedf8; }
+.instance-item:selected .instance-avatar,
+.instance-item.active .instance-avatar {
+  background-image: linear-gradient(140deg, #776bd9, #a393ff);
+  color: #fff;
+  box-shadow: 0 5px 12px alpha(#a393ff, .18);
+}
+
+/* 滚动条：细、无底色，悬停才明显 */
+scrollbar {
+  background-color: transparent;
+  border: none;
+  min-width: 6px;
+  min-height: 6px;
+}
+scrollbar trough { background-color: transparent; border: none; box-shadow: none; }
+scrollbar slider {
+  background-color: alpha(#efedf8, .18);
+  border: none;
+  border-radius: 6px;
+  min-width: 4px;
+  min-height: 26px;
+}
+scrollbar slider:hover { background-color: alpha(#efedf8, .3); }
+scrollbar.vertical { margin: 2px 0; }
+
+/* 卡片内边距对齐设计稿（18px 20px） */
+.card { padding: 18px 20px; }
+/* 侧栏内边距对齐设计稿（26px 16px 18px） */
+.sidebar { padding: 24px 16px 18px; }
+/* 主按钮：渐变之上再给一层纯色兜底（万一某些 GTK 不认角度渐变） */
+.btn-primary { background-color: #a393ff; }
+/* 小图标/箭头 */
+.glyph { color: #aaa6bb; }
+.quick-arrow { color: #777388; }
+.log-icon { color: #a393ff; }
+.log-empty { color: #aaa6bb; font-size: 9px; }
+.metric-sep { min-width: 1px; background-color: rgba(255,255,255,.075); }

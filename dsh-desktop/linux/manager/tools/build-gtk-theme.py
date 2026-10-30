@@ -44,7 +44,7 @@ COLOR_TOKENS = ['bg', 'bg2', 'app', 'sidebar', 'topbar', 'card', 'card-solid',
                 'accent2', 'accent-soft', 'on-accent', 'hover', 'success', 'danger']
 
 
-def render(template, key, values):
+def render(template, key, values, all_values=None):
     css = HEADER.format(theme=values.get('label', key), mode=values.get('hint', key))
     body = template
     if '*/' in body:                      # 模板头注释是给维护者看的，不进产物
@@ -72,7 +72,14 @@ def render(template, key, values):
     for name in PLACEHOLDERS:
         if name not in COLOR_TOKENS:
             palette.append('/*   %s = %s */' % (name, values[name]))
-    return css + '\n'.join(palette) + '\n\n' + body
+    # 主题菜单里的色点要显示"每套主题自己的强调色"，所以把 7 套的 day 强调色都写进来
+    swatches = ['/* 主题菜单色点（每套主题 day 的强调色） */']
+    for name, values_day in sorted((all_values or {}).items()):
+        if not name.endswith('-day'):
+            continue
+        swatches.append('.swatch-%s { background-color: %s; }'
+                        % (name[:-4], values_day.get('accent', '#888888')))
+    return css + '\n'.join(palette) + '\n\n' + '\n'.join(swatches) + '\n\n' + body
 
 
 def main():
@@ -82,7 +89,7 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     written = []
     for key, values in sorted(payload['values'].items()):
-        css = render(template, key, values)
+        css = render(template, key, values, payload['values'])
         path = os.path.join(OUT_DIR, '%s.css' % key)
         with open(path, 'w', encoding='utf-8', newline='\n') as fh:
             fh.write(css)
