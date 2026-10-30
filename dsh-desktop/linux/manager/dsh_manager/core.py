@@ -31,7 +31,7 @@ DEFAULT_ROOT = os.path.expanduser('~/.local/opt')
 FALLBACK_DSH_VERSIONS = ['0.1.5-rc.1']
 FALLBACK_NODE_VERSIONS = ['24.19.0', '22.11.0', '20.19.0']
 SYSTEM_SHARE = '/usr/lib/dsh-manager/share'      # deb 里随包带的窗口文件
-MANAGER_VERSION = '1.0.7'
+MANAGER_VERSION = '1.0.8'
 MANAGER_LIB = '/usr/lib/dsh-manager'             # 管理器自己的安装目录（deb）
 
 
@@ -309,37 +309,176 @@ class Instance:
             pass
         return True, '已停止（PID %d）' % pid
 
-    def open_window(self, settle=3.0):
-        """用实例自带的 dsh-desktop 打开窗口（它会复用已在跑的服务）。
+    # ---- 窗口：唤起 / 检测 / 清理 / 重试 ----
+    def control_socket(self):
+        """窗口进程的控制套接字路径（与 dsh-desktop.py 里的规则一致）。"""
+        base = os.environ.get('XDG_RUNTIME_DIR') or '/tmp'
+        try:
+            uid = os.getuid()
+        except Exception:
+            uid = 0
+        return os.path.join(base, 'dsh-desktop-%d.sock' % uid)
 
-        启动器的输出**不能丢**：缺 WebKitGTK、取不到认证凭据、窗口起不来时，
-        它只会把原因打在 stdout/stderr 上。所以这里重定向到 logs/desktop.log，
-        并等 settle 秒看它是否立刻退出——退出了就把日志尾巴当错误返回。
-        """
+    def _sock_request(self, cmd, timeout=1.5):
+        """给窗口进程发一条命令，返回应答文本；连不上返回 ''。"""
+        family = getattr(socket, 'AF_UNIX', None)
+        if family is None:            # 极少数平台没有 AF_UNIX：当作"没有窗口"
+            return ''
+        sock = socket.socket(family, socket.SOCK_STREAM)
+        try:
+            sock.settimeout(timeout)
+            sock.connect(self.control_socket())
+            sock.sendall((cmd + '\n').encode('utf-8'))
+            return sock.recv(128).decode('utf-8', 'replace').strip()
+        except Exception:
+            return ''
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    def window_alive(self):
+        """窗口是否在跑（能应答 ping）。返回 PID，0 表示没有可用窗口。"""
+        resp = self._sock_request('ping')
+        if resp.startswith('ok'):
+            try:
+                return int(resp.split()[1])
+            except Exception:
+                return -1
+        return 0
+
+    def raise_window(self):
+        """把已有窗口提到前台（正是"点了打开窗口却没反应"该做的事）。"""
+        return self._sock_request('raise').startswith('raised')
+
+    def _window_pids(self):
+        """找属于本实例、但已经不可控的窗口进程（旧版没有控制套接字）。"""
+        marker = os.path.join(self.share, 'dsh-desktop.py')
+        pids = []
+        try:
+            entries = os.listdir('/proc')
+        except OSError:
+            return pids
+        for name in entries:
+            if not name.isdigit():
+                continue
+            try:
+                with open('/proc/%s/cmdline' % name, 'rb') as fh:
+                    cmd = fh.read().decode('utf-8', 'replace')
+            except OSError:
+                continue
+            if marker in cmd:
+                pids.append(int(name))
+        return pids
+
+    def kill_stale_windows(self, wait=3.0):
+        """清掉无响应的窗口进程（只针对本实例的），返回被处理的 PID 列表。"""
+        pids = self._window_pids()
+        if not pids:
+            return []
+        for pid in pids:
+            try:
+                os.kill(pid, 15)          # 先礼貌地 SIGTERM
+            except OSError:
+                pass
+        deadline = time.time() + wait
+        while time.time() < deadline:
+            if not [p for p in pids if os.path.exists('/proc/%d' % p)]:
+                return pids
+            time.sleep(0.2)
+        for pid in pids:
+            if os.path.exists('/proc/%d' % pid):
+                try:
+                    os.kill(pid, 9)
+                except OSError:
+                    pass
+        return pids
+
+    @staticmethod
+    def clear_stale_locks():
+        """删掉/清空单实例锁：窗口进程其实已经不在时，它只会挡住下一次启动。"""
+        removed = []
+        for path in ('/tmp/dsh-desktop.lock', '/tmp/dsh-desktop.lock.pid'):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+                    removed.append(path)
+            except OSError:
+                pass
+        lockdir = '/tmp/dsh-desktop.lock.d'
+        if os.path.isdir(lockdir):
+            shutil.rmtree(lockdir, ignore_errors=True)
+            removed.append(lockdir)
+        return removed
+
+    def _spawn_launcher(self, logpath, settle=8.0, force=False, gl=None):
+        """起一次启动器，并用控制套接字判断窗口真的起来了没有。"""
+        os.makedirs(os.path.dirname(logpath), exist_ok=True)
+        env = self.env()
+        if force:
+            env['DSH_DESKTOP_FORCE'] = '1'
+        if gl:
+            env['DSH_DESKTOP_GL'] = gl
+        fh = open(logpath, 'ab', buffering=0)
+        try:
+            proc = subprocess.Popen([self.desktop], env=env, start_new_session=True,
+                                    stdout=fh, stderr=fh, stdin=subprocess.DEVNULL)
+        except Exception as exc:
+            return False, '启动失败：%s' % exc
+        finally:
+            try:
+                fh.close()
+            except Exception:
+                pass
+
+        deadline = time.time() + max(1.0, settle)
+        while time.time() < deadline:
+            if self.window_alive():
+                return True, '窗口已打开'
+            if proc.poll() is not None:
+                break
+            time.sleep(0.25)
+        if self.window_alive():
+            return True, '窗口已打开'
+        return False, '启动器退出码 %s' % proc.poll()
+
+    def open_window(self, settle=8.0):
+        """打开窗口：先唤起已有窗口；没有则清理旧现场、必要时强制+软件渲染重试。"""
         if not os.path.exists(self.desktop):
             return False, '缺少启动器：%s（试试「修复」）' % self.desktop
         logpath = os.path.join(self.prefix, 'logs', 'desktop.log')
-        os.makedirs(os.path.dirname(logpath), exist_ok=True)
-        fh = open(logpath, 'ab', buffering=0)
-        try:
-            proc = subprocess.Popen([self.desktop], env=self.env(), start_new_session=True,
-                                    stdout=fh, stderr=fh, stdin=subprocess.DEVNULL)
-        except Exception as exc:
-            fh.close()
-            return False, '打开失败：%s' % exc
-        finally:
-            if not fh.closed:
-                fh.close()
 
-        deadline = time.time() + max(0.0, settle)
-        while time.time() < deadline:
-            code = proc.poll()
-            if code is not None:
-                tail = self._tail(logpath, 1200)
-                return False, ('窗口没能启动（启动器退出码 %d）。日志：%s\n%s'
-                               % (code, logpath, tail))
-            time.sleep(0.2)
-        return True, '已请求打开窗口（日志：%s）' % logpath
+        # 1) 已经有窗口：提到前台（这才是"再点一次"该有的行为）
+        pid = self.window_alive()
+        if pid:
+            if self.raise_window():
+                return True, '已把现有窗口提到前台（PID %s）' % pid
+            return True, ('窗口进程在（PID %s），但它没响应唤起请求'
+                          '（可能是旧版窗口，点「修复」后重开即可）' % pid)
+
+        # 2) 没有可用窗口却还占着锁/留着僵死进程：清掉
+        notes = []
+        killed = self.kill_stale_windows()
+        if killed:
+            notes.append('清掉无响应的窗口进程 %s' % ', '.join(str(p) for p in killed))
+        locks = self.clear_stale_locks()
+        if locks:
+            notes.append('清理旧锁 %d 个' % len(locks))
+
+        # 3) 正常起一次
+        ok, msg = self._spawn_launcher(logpath, settle)
+        if ok:
+            return True, ' '.join(filter(None, [msg] + notes))
+
+        # 4) 措施：跳过单实例检查 + 强制软件渲染再试一次（虚拟机常见）
+        ok, msg2 = self._spawn_launcher(logpath, settle, force=True, gl='off')
+        if ok:
+            notes.append('已用「强制 + 软件渲染」重试成功')
+            return True, ' '.join(notes)
+        tail = self._tail(logpath, 900)
+        return False, ('窗口没能启动（%s）。日志：%s\n%s'
+                       % (' / '.join(notes) or msg2, logpath, tail))
 
     @staticmethod
     def _tail(path, limit=1200):
@@ -710,6 +849,42 @@ class Manager:
             return True, '已更新到 dsh %s / node %s' % (dsh_version, node_version), inst
         except Exception as exc:
             return False, '更新失败：%s' % exc, inst
+
+    def open_window(self, prefix):
+        """打开实例窗口：先确保实例里的窗口程序是本包版本，再交给实例的逻辑。
+
+        实例的 share/ 只在「安装 / 更新 / 修复」时刷新；管理器升级后，
+        旧实例里还是旧启动器（例如不懂控制套接字的老版本）。这里顺手对齐，
+        省得用户每次都要点一次「修复」。
+        """
+        inst = self.instance_at(prefix)
+        refreshed = self._refresh_share_if_stale(inst)
+        ok, msg = inst.open_window()
+        if refreshed and ok:
+            msg = msg + '（已顺手把实例的窗口程序更新到本包版本）'
+        return ok, msg, inst
+
+    def _refresh_share_if_stale(self, inst):
+        """实例里的 dsh-desktop / dsh-desktop.py 与本包不一致时刷新。"""
+        changed = False
+        for name in ('dsh-desktop', 'dsh-desktop.py'):
+            src = os.path.join(SYSTEM_SHARE, name)
+            dst = os.path.join(inst.share, name)
+            if not (os.path.exists(src) and os.path.exists(dst)):
+                continue
+            try:
+                with open(src, 'rb') as a, open(dst, 'rb') as b:
+                    if a.read() != b.read():
+                        changed = True
+                        break
+            except OSError:
+                continue
+        if changed:
+            try:
+                self._provision_share(inst)
+            except Exception:
+                pass
+        return changed
 
     def repair(self, prefix):
         """修复：补齐缺失的 node / dsh / share / 启动器，并校验服务能启动。"""

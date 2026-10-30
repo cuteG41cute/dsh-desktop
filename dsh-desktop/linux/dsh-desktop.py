@@ -33,6 +33,7 @@ import hmac
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -398,6 +399,8 @@ def selftest():
         ('弹窗按请求的地址打开（不是又开一个应用窗口）', 'req.get_uri()'),
         ('站外弹窗不注入 DSH 脚本', 'inject=False'),
         ('主窗口拒绝页面发起的 window.close()', '_on_view_close'),
+        ('窗口可被跨进程唤起（控制套接字）', 'start_control_server'),
+        ('无 GPU 时自动软件渲染', 'software_render_if_no_gpu'),
     )
     for label, mark in popup_marks:
         if mark in src:
@@ -437,6 +440,145 @@ def selftest():
 
 
 # ---------------------------------------------------------------------------
+# 单实例控制套接字（ping / raise / quit）
+#   第二个启动器或管理器靠它把已有窗口提到前台，而不是"看到锁就退出"。
+# ---------------------------------------------------------------------------
+_CONTROL = {'server': None, 'path': None}
+
+
+def control_socket_path():
+    base = os.environ.get('XDG_RUNTIME_DIR') or '/tmp'
+    try:
+        uid = os.getuid()
+    except Exception:
+        uid = 0
+    return os.path.join(base, 'dsh-desktop-%d.sock' % uid)
+
+
+def raise_window(win):
+    """把窗口显示出来并提到前台（跨进程唤起时也走这里）。"""
+    try:
+        if not win.get_visible():
+            win.show_all()
+        win.deiconify()
+    except Exception:
+        pass
+    for call in ('present_with_time', 'present'):
+        try:
+            if call == 'present_with_time':
+                win.present_with_time(Gdk.CURRENT_TIME)
+            else:
+                win.present()
+            return True
+        except Exception:
+            continue
+    return False
+
+
+def start_control_server(win):
+    path = control_socket_path()
+    try:
+        if os.path.exists(path):
+            os.unlink(path)
+    except OSError:
+        pass
+    family = getattr(socket, 'AF_UNIX', None)
+    if family is None:
+        sys.stderr.write('[dsh-desktop] 本平台没有 AF_UNIX，跳过控制套接字\n')
+        return False
+    srv = socket.socket(family, socket.SOCK_STREAM)
+    try:
+        srv.bind(path)
+        os.chmod(path, 0o600)
+        srv.listen(8)
+        srv.setblocking(False)
+    except OSError as exc:
+        sys.stderr.write('[dsh-desktop] 控制套接字不可用（%s）：%s\n' % (path, exc))
+        try:
+            srv.close()
+        except Exception:
+            pass
+        return False
+
+    def on_io(_sock, _cond):
+        try:
+            conn, _addr = srv.accept()
+        except Exception:
+            return True
+        try:
+            conn.settimeout(1.5)
+            data = conn.recv(64).decode('utf-8', 'replace').strip()
+            if data.startswith('ping'):
+                conn.sendall(('ok %d\n' % os.getpid()).encode('utf-8'))
+            elif data.startswith('raise'):
+                GLib.idle_add(lambda: (raise_window(win), False)[1])
+                conn.sendall(b'raised\n')
+            elif data.startswith('quit'):
+                conn.sendall(b'bye\n')
+                GLib.idle_add(lambda: (quit_primary(), False)[1])
+            else:
+                conn.sendall(b'unknown\n')
+        except Exception:
+            pass
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        return True
+
+    GLib.io_add_watch(srv, GLib.IO_IN, on_io)
+    _CONTROL['server'] = srv
+    _CONTROL['path'] = path
+    return True
+
+
+def stop_control_server():
+    srv = _CONTROL.get('server')
+    if srv is not None:
+        try:
+            srv.close()
+        except Exception:
+            pass
+    path = _CONTROL.get('path')
+    if path and os.path.exists(path):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    _CONTROL['server'] = None
+    _CONTROL['path'] = None
+
+
+def quit_primary():
+    for w in list(_WINDOWS):
+        try:
+            w.destroy()
+        except Exception:
+            pass
+    Gtk.main_quit()
+
+
+# 供控制套接字使用：主窗口列表（run_gui 里填）
+_WINDOWS = []
+
+
+def software_render_if_no_gpu():
+    """虚拟机里没有 /dev/dri 时强制软件渲染。
+
+    Hyper-V 等环境 WebKit 拿不到 EGL 上下文（日志里 EGL/MESA/ZINK 那堆报错），
+    窗口进程活着但界面出不来——实测就是这个现象。
+    """
+    if os.environ.get('DSH_DESKTOP_GL') == 'on':
+        return
+    if os.environ.get('WEBKIT_DISABLE_COMPOSITING_MODE') == '1':
+        return
+    if not os.path.isdir('/dev/dri'):
+        os.environ['WEBKIT_DISABLE_COMPOSITING_MODE'] = '1'
+        os.environ.setdefault('LIBGL_ALWAYS_SOFTWARE', '1')
+
+
+# ---------------------------------------------------------------------------
 # 图形界面
 # ---------------------------------------------------------------------------
 def run_gui():
@@ -452,7 +594,7 @@ def run_gui():
 
     # 共享的内存态 WebContext：不碰系统密钥环（Deepin 上会弹「解锁登录密钥环」），多窗口共享会话
     context = WebKit2.WebContext.new_ephemeral()
-    windows = []
+    windows = _WINDOWS          # 与 quit_primary() 共用同一个列表
 
     class App:
         def __init__(self):
@@ -881,7 +1023,7 @@ def run_gui():
 
     def show_primary():
         if app.primary is not None:
-            app.primary.present()
+            raise_window(app.primary)
 
     def quit_app():
         for w in list(windows):
@@ -894,13 +1036,17 @@ def run_gui():
     primary = DshWindow(WEB_URL, primary=True)
     primary.show_all()
     make_tray(show_primary, quit_app)
+    start_control_server(primary)   # 让启动器/管理器能 ping 和 raise 这个窗口
     Gtk.main()
+    stop_control_server()
     return 0
 
 
 def main():
     if SELFTEST or '--check' in sys.argv:
         return selftest()
+    # 必须在初始化 GTK / 创建 WebView 之前：虚拟机无 /dev/dri 时切软件渲染
+    software_render_if_no_gpu()
     if not NO_SERVICE or probe_service() == 'down':
         st = probe_service()
         if st == 'down':

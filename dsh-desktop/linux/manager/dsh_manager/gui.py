@@ -802,7 +802,9 @@ class ManagerWindow(Gtk.Window):
             ok, msg = inst.start()
             if not ok:
                 return ok, msg
-            return inst.open_window()
+            # 走管理器这一层：先把实例里的窗口程序对齐到本包版本，
+            # 再交给实例的 open_window（唤起已有窗口 / 清理旧现场 / 强制重试）
+            return self.manager.open_window(inst.prefix)
         self._run_async('打开窗口 %s' % inst.label, job)
 
     def on_folder(self, *_):
