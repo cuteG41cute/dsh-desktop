@@ -402,6 +402,8 @@ def selftest():
         ('窗口可被跨进程唤起（控制套接字）', 'start_control_server'),
         ('无 GPU 时自动软件渲染', 'software_render_if_no_gpu'),
         ('创建 WebView 前真去建一次 GL 上下文', 'probe_gl_context'),
+        ('原生截屏桥（portal Screenshot）', '_native_screenshot'),
+        ('portal 截图文件转 data URL', 'load_png_data_url'),
         ('内置浏览器（登录 / 外部页面）', 'class BrowserWindow'),
         ('空白弹窗也返回真实窗口（window.open 不为 null）', 'about:blank'),
     )
@@ -447,6 +449,29 @@ def selftest():
 #   第二个启动器或管理器靠它把已有窗口提到前台，而不是"看到锁就退出"。
 # ---------------------------------------------------------------------------
 _CONTROL = {'server': None, 'path': None}
+
+
+def load_png_data_url(uri):
+    """把 xdg-desktop-portal 返回的文件地址读成 data:image/png;base64,...
+
+    portal 的 Screenshot 方法返回的是 `file:///home/x/图片/Screenshot_1.png`
+    （中文/空格会百分号编码），所以要先 unquote 再打开。读不到返回 None。
+    """
+    try:
+        path = urllib.parse.unquote(urllib.parse.urlparse(uri).path) if uri.startswith('file:') else uri
+    except Exception:
+        path = uri
+    # Windows 上 file:///C:/x 解析出来是 /C:/x，需要去掉开头的斜杠（Linux 上不会触发）
+    if os.name == 'nt' and len(path) > 2 and path[0] == '/' and path[2] == ':':
+        path = path[1:]
+    try:
+        with open(path, 'rb') as fh:
+            raw = fh.read()
+    except Exception:
+        return None
+    if not raw:
+        return None
+    return 'data:image/png;base64,' + base64.b64encode(raw).decode('ascii')
 
 
 def instance_port():
@@ -1003,6 +1028,9 @@ def run_gui():
             if mtype == 'dsh-read-file':
                 self._read_file(web, msg)
                 return
+            if mtype == 'dsh-screenshot':
+                self._native_screenshot(web, msg.get('id'))
+                return
             if mtype == 'dsh-drag-out':
                 # Linux 上拖出由页面原生 HTML5 拖拽负责（见 preview-tools.js 的 IS_WEBKIT 分支），
                 # 这里只记录一下，便于排障
@@ -1014,6 +1042,91 @@ def run_gui():
                     except Exception:
                         pass
                 return
+
+        # ---- 原生截屏（xdg-desktop-portal / Screenshot）----
+        # 为什么需要这条通道：WebKitGTK 的 getDisplayMedia 在 KDE Wayland 上会死，
+        # kwin 的截屏流广播"可变帧率"（SPA EnumFormat framerate=0/1），WebKitGTK 的
+        # GStreamer 胶囊协商直接断言失败：
+        #   gst_value_collect_int_range: assertion
+        #   'collect_values[0].v_int < collect_values[1].v_int' failed
+        # 于是插件一直转圈。portal 的 Screenshot（interactive=false）一次给一张现成 PNG，
+        # 完全不经过视频流协商 —— 插件只换"取画面"这一步，框选/标注/入附件照旧。
+        def _native_screenshot(self, web, req_id):
+            if not req_id:
+                return
+            try:
+                from gi.repository import Gio, GLib
+            except Exception as exc:
+                self._screenshot_reply(web, req_id, {'ok': False,
+                                                     'error': '缺少 Gio：%s' % exc})
+                return
+            try:
+                bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            except Exception as exc:
+                self._screenshot_reply(web, req_id, {'ok': False,
+                                                     'error': '连不上会话 D-Bus：%s' % exc})
+                return
+            token = 'dsh%d' % int(time.time() * 1000)
+            sender = (bus.get_unique_name() or '').lstrip(':').replace('.', '_')
+            handle = '/org/freedesktop/portal/desktop/request/%s/%s' % (sender, token)
+            state = {'done': False}
+
+            def finish(payload):
+                if state['done']:
+                    return False
+                state['done'] = True
+                try:
+                    bus.signal_unsubscribe(state.get('sub') or 0)
+                except Exception:
+                    pass
+                self._screenshot_reply(web, req_id, payload)
+                return False
+
+            def on_response(_conn, _sender, _path, _iface, _signal, params):
+                try:
+                    code, results = params.unpack()
+                except Exception as exc:
+                    return finish({'ok': False, 'error': '解析 D-Bus 应答失败：%s' % exc})
+                if code != 0:
+                    return finish({'ok': False,
+                                   'error': '截屏被拒绝或取消（D-Bus 返回 %s）' % code})
+                uri = (results or {}).get('uri')
+                if not uri:
+                    return finish({'ok': False, 'error': 'portal 没有返回文件地址'})
+                payload = load_png_data_url(str(uri))
+                if payload is None:
+                    return finish({'ok': False, 'error': '读不到 portal 生成的截图文件'})
+                return finish({'ok': True, 'dataUrl': payload})
+
+            try:
+                state['sub'] = bus.signal_subscribe(
+                    'org.freedesktop.portal.Desktop', 'org.freedesktop.portal.Request',
+                    'Response', handle, None, Gio.DBusSignalFlags.NONE, on_response)
+                # 必须先订阅再调用，否则响应可能先到（实测会丢）
+                options = {'handle_token': GLib.Variant('s', token),
+                           'interactive': GLib.Variant('b', False)}
+                bus.call_sync('org.freedesktop.portal.Desktop',
+                              '/org/freedesktop/portal/desktop',
+                              'org.freedesktop.portal.Screenshot', 'Screenshot',
+                              GLib.Variant('(sa{sv})', ('', options)),
+                              GLib.VariantType.new('(o)'), Gio.DBusCallFlags.NONE,
+                              30000, None)
+            except Exception as exc:
+                return finish({'ok': False, 'error': 'portal 截屏调用失败：%s' % exc})
+            GLib.timeout_add(30000, lambda: finish({'ok': False,
+                                                    'error': 'portal 截屏超时（30 秒）'}))
+
+        def _screenshot_reply(self, web, req_id, payload):
+            """把结果交给页面：window.__dshShotReply(id, payload)。
+
+            注意函数名与页面里的注册表 window.__dshShot 是**两个名字**：宿主若把
+            注册表对象当函数调用会抛 TypeError，回传静默失败（踩过这个坑）。
+            """
+            try:
+                js = 'window.__dshShotReply && window.__dshShotReply(%s, %s)'
+                web.run_js(js % (json.dumps(req_id), json.dumps(payload)))
+            except Exception as exc:
+                sys.stderr.write('[dsh-desktop] 截图回传失败：%s\n' % exc)
 
         # ---- 消息工具 ----
         @staticmethod

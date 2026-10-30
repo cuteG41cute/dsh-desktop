@@ -90,6 +90,38 @@ bash build-deb.sh --version 1.0.0        # 产出 ./dsh-manager_1.0.0_all.deb
 一致性有 gate 钉着：`python dsh-desktop/linux/tools/socket-name-check.py`（13 项，含
 「两个实例的套接字不同」「两侧命名完全一致」「清锁认按端口的锁名」）。
 
+### 原生截屏桥（1.2.0 起，修 Linux Wayland 下截图必失败）
+
+Linux 桌面壳（WebKitGTK）里点截图按钮只会转圈然后报错。根因不在插件与 DSH：
+
+```
+getDisplayMedia → xdg-desktop-portal(ScreenCast) → PipeWire → kwin      ← 这一段正常
+                → WebKitGTK 用 GStreamer caps 协商接收画面             ← 死在这里
+```
+
+kwin 广播**可变帧率**（SPA EnumFormat `framerate=0/1`），WebKitGTK 2.52.6 协商时断言失败：
+
+```
+gst_value_collect_int_range: assertion 'collect_values[0].v_int < collect_values[1].v_int' failed
+```
+
+所以桌面壳改成**一次性拿整幅 PNG**，绕开视频流协商：
+
+| 环节 | 实现 |
+| --- | --- |
+| 页面 → 壳 | `window.chrome.webview.postMessage({type:'dsh-screenshot', id})`（shim 早已提供） |
+| 壳 → portal | `org.freedesktop.portal.Screenshot`，`interactive=false`（无对话框），**先订阅 Response 再调用**（否则竞态丢响应），`handle_token` 纯字母数字（带 `-` 会被 KDE 后端拒） |
+| 壳 → 页面 | 读 `file://` → `data:image/png;base64,…` → `window.__dshShotReply(id, {ok, dataUrl})` |
+| 页面 | `nativeCapture()` → canvas → 原有框选 / 标注 / 入附件（**零改动**） |
+| 代价 | 一次 PNG 约 340 KB（1280×720），不占带宽流；30 秒兜底超时 |
+
+配套的插件侧改动在 `dsh-screenshot` 1.3.1（`nativeCapture()` + 回退 + 命名坑修复）。
+部署注意：**模板在 deb 里**（`/usr/lib/dsh-manager/share/dsh-desktop.py`），
+管理器「打开窗口」时会把它同步到各实例的 `<实例>/share/`，所以不需要手工打补丁。
+
+gate：`python dsh-desktop/linux/tools/screenshot-bridge-check.py`（14 项：真读文件转 data URL /
+先订阅后调用 / 回传函数名 / 30 秒兜底 / 插件里原生通道排在 getDisplayMedia 之前 …）。
+
 ### 版本选择器改成原生下拉框（1.1.9 修）
 
 用户反馈「点了选不了版本」。原来的选择器是 `Gtk.MenuButton` + 自定义 `Popover` +
