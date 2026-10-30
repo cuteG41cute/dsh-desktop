@@ -41,6 +41,19 @@ def main(argv=None):
         print('dsh-manager %s' % MANAGER_VERSION)
         return 0
 
+    if '--gui-check' in argv:
+        # 只构造窗口，不进入主循环：把启动期的异常原样打出来（排障用）
+        try:
+            from .gui import ManagerWindow
+            win = ManagerWindow()
+            win.destroy()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            return 1
+        print('OK: 图形界面能构造出来（v%s）' % MANAGER_VERSION)
+        return 0
+
     if '--headless' not in argv:
         # 图形界面
         try:
@@ -50,7 +63,29 @@ def main(argv=None):
                   '请安装：sudo apt install -y python3-gi gir1.2-gtk-3.0\n'
                   '或者用命令行：dsh-manager --headless list' % exc, file=sys.stderr)
             return 1
-        return run_gui()
+        try:
+            return run_gui()
+        except Exception:
+            # 绝不再“闪一下就没了”：堆栈落盘 + 打到终端，然后用纯 GTK 弹一个错误窗
+            import traceback
+            tb = traceback.format_exc()
+            try:
+                from .core import config_dir, manager_log_path
+                import os
+                os.makedirs(config_dir(), exist_ok=True)
+                with open(os.path.join(config_dir(), 'crash.log'), 'a', encoding='utf-8') as fh:
+                    fh.write('\n===== %s (%s) =====\n' % (MANAGER_VERSION, 'gui'))
+                    fh.write(tb)
+                traceback.print_exc()
+                sys.stderr.write('（完整堆栈也写进了 %s）\n' % os.path.join(config_dir(), 'crash.log'))
+            except Exception:
+                traceback.print_exc()
+            try:
+                from .gui import show_crash_dialog
+                show_crash_dialog(tb)
+            except Exception:
+                pass
+            return 1
 
     rest = argv[argv.index('--headless') + 1:]
     if not rest:

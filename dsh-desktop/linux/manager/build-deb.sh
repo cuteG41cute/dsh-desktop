@@ -10,7 +10,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # dsh-desktop/linux/manag
 MANAGER_DIR="$HERE"
 LINUX_DIR="$(cd "$HERE/.." && pwd)"                    # dsh-desktop/linux
 DESKTOP_DIR="$(cd "$LINUX_DIR/.." && pwd)"             # dsh-desktop
-VERSION="1.0.5"
+VERSION="1.0.6"
 OUT="$HERE"
 
 while [ $# -gt 0 ]; do

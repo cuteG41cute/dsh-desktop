@@ -897,9 +897,82 @@ class ManagerWindow(Gtk.Window):
         self._run_async('卸载 %s' % inst.label, lambda: (self.manager.uninstall(inst.prefix),)[::2])
 
 
+def _write_crash_log(tb, tag='gui'):
+    try:
+        os.makedirs(config_dir(), exist_ok=True)
+        with open(os.path.join(config_dir(), 'crash.log'), 'a', encoding='utf-8') as fh:
+            fh.write('\n===== %s %s =====\n%s' % (MANAGER_VERSION, tag, tb))
+    except Exception:
+        pass
+
+
 def run_gui():
-    win = ManagerWindow()
+    """构造窗口并进入主循环。
+
+    带主题构造失败时，自动退回「默认皮肤」再试一次——主题是纯外观，
+    绝不能因为它让整个管理器起不来。两次都失败才抛给调用方（那里会弹错误窗）。
+    """
+    try:
+        win = ManagerWindow()
+    except Exception:
+        import traceback
+        tb = traceback.format_exc()
+        _write_crash_log(tb, 'with-theme')
+        os.environ['DSH_MANAGER_NO_THEME'] = '1'
+        try:
+            win = ManagerWindow()
+        except Exception:
+            raise
+        sys.stderr.write('[dsh-manager] 带主题启动失败，已自动改用 GTK 默认皮肤：\n' + tb)
     win.connect('destroy', Gtk.main_quit)
     win.show_all()
     Gtk.main()
     return 0
+
+
+def show_crash_dialog(traceback_text):
+    """启动失败时弹一个最朴素的错误窗：能看、能复制。
+
+    这里刻意只用最少的 GTK 功能（窗口 + 标签 + 文本框 + 按钮），不加载主题，
+    免得"报错窗自己也因为同一个原因崩掉"。
+    """
+    win = Gtk.Window(title='管理器启动失败')
+    win.set_default_size(860, 580)
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+    box.set_border_width(14)
+
+    head = Gtk.Label(xalign=0, wrap=True)
+    head.set_markup('<b>管理器没能启动</b>\n'
+                    '下面是完整堆栈，复制给我就能定位；同时写入了 '
+                    '<tt>~/.config/dsh-manager/crash.log</tt>')
+    box.pack_start(head, False, False, 0)
+
+    sw = Gtk.ScrolledWindow()
+    sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+    view = Gtk.TextView()
+    view.set_editable(False)
+    view.set_monospace(True)
+    view.get_buffer().set_text(traceback_text)
+    sw.add(view)
+    box.pack_start(sw, True, True, 0)
+
+    row = Gtk.Box(spacing=8)
+    btn_copy = Gtk.Button(label='复制堆栈')
+
+    def do_copy(*_):
+        try:
+            Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(traceback_text, -1)
+        except Exception:
+            pass
+
+    btn_copy.connect('clicked', do_copy)
+    btn_close = Gtk.Button(label='关闭')
+    btn_close.connect('clicked', lambda *a: win.destroy())
+    row.pack_end(btn_close, False, False, 0)
+    row.pack_end(btn_copy, False, False, 0)
+    box.pack_start(row, False, False, 0)
+
+    win.add(box)
+    win.connect('destroy', Gtk.main_quit)
+    win.show_all()
+    Gtk.main()
