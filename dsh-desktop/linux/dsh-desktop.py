@@ -456,7 +456,11 @@ def control_socket_path():
 
 
 def raise_window(win):
-    """把窗口显示出来并提到前台（跨进程唤起时也走这里）。"""
+    """把窗口显示出来并提到前台（跨进程唤起时也走这里）。
+
+    Gdk 在 run_gui() 里才 import，模块级函数必须自己再导一次（踩过：NameError）。
+    """
+    from gi.repository import Gdk
     try:
         if not win.get_visible():
             win.show_all()
@@ -476,6 +480,7 @@ def raise_window(win):
 
 
 def start_control_server(win):
+    from gi.repository import GLib          # 同上：模块级函数自己导入
     path = control_socket_path()
     try:
         if os.path.exists(path):
@@ -551,6 +556,7 @@ def stop_control_server():
 
 
 def quit_primary():
+    from gi.repository import Gtk           # 同上
     for w in list(_WINDOWS):
         try:
             w.destroy()
