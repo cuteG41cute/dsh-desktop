@@ -68,6 +68,14 @@ checks.append(('core._semver_key', hasattr(core, '_semver_key')))
 checks.append(('semver rc.5 > rc.4', core._semver_key('0.2.1-rc.5') > core._semver_key('0.2.1-rc.4')))
 checks.append(('semver 0.2.1 > rc.9', core._semver_key('0.2.1') > core._semver_key('0.2.1-rc.9')))
 
+# 回归断言：gui.py 里 Gdk 的 require_version 必须出现在 import 之前
+# （GTK4 也提供 Gdk，漏写就会 Requiring namespace 'Gtk' version '3.0', but '4.0' is already loaded）
+src = open(os.path.join(ROOT, 'dsh_manager', 'gui.py'), encoding='utf-8').read()
+req_at = src.find("require_version('Gdk'")
+imp_at = src.find('from gi.repository import Gdk')
+checks.append(('Gdk 版本声明在 import 之前', 0 <= req_at < imp_at))
+checks.append(('声明的是 Gdk 3.0', "require_version('Gdk', '3.0')" in src))
+
 bad = [n for n, ok in checks if not ok]
 for n, ok in checks:
     print(('  OK  ' if ok else '  FAIL ') + n)

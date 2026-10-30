@@ -11,6 +11,11 @@ import threading
 import gi
 
 gi.require_version('Gtk', '3.0')
+# Gdk 必须显式要 3.0：GTK4 也提供 Gdk 命名空间，谁先加载谁生效。
+# 只 require Gtk 3.0 却直接 import Gdk 时，Gdk 会先按默认版本（4.0）加载，
+# 随后 Gtk 3.0 就失败：Requiring namespace 'Gtk' version '3.0',
+# but '4.0' is already loaded（实测踩过：1.0.5 起管理器因此启动即退出）。
+gi.require_version('Gdk', '3.0')
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 from .core import (DEFAULT_DSH, DEFAULT_NODE, MANAGER_LIB, MANAGER_VERSION,  # noqa: E402
