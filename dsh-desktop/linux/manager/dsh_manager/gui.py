@@ -868,7 +868,8 @@ class ManagerWindow(Gtk.Window):
         btn_uninstall.get_style_context().add_class('danger')
         btn_refresh = Gtk.Button(label='刷新状态')
         btn_repo = Gtk.Button(label='打开仓库')
-        for btn in (btn_install, btn_uninstall, btn_refresh, btn_repo):
+        btn_import = Gtk.Button(label='导入本地包…')
+        for btn in (btn_install, btn_uninstall, btn_import, btn_refresh, btn_repo):
             row.pack_start(btn, False, False, 0)
         area.pack_start(row, False, False, 0)
 
@@ -881,15 +882,20 @@ class ManagerWindow(Gtk.Window):
         def fill(select=None):
             store.clear()
             status = plug.installed(inst)
-            for item in plug.catalog():
+            for item in plug.all_entries(inst):
                 st = status.get(item['id'], {})
                 if st.get('installed'):
                     label = '已安装'
                 elif st.get('package_on_disk') or st.get('registered'):
                     label = '半装（需修）'
+                elif item.get('local_only'):
+                    label = '未发布'
                 else:
                     label = '未安装'
-                it = store.append([item['id'], '%s · %s' % (item['repo'], item['desc']),
+                src = item['repo'] or '（未发布到 GitHub，可本地导入）'
+                if item.get('extra'):
+                    src = '（实例里已装，不在目录中）'
+                it = store.append([item['id'], '%s · %s' % (src, item['desc']),
                                    label, st.get('version') or '-'])
                 if select and item['id'] == select:
                     tree.get_selection().select_iter(it)
@@ -913,7 +919,7 @@ class ManagerWindow(Gtk.Window):
                 if action == '安装':
                     ok, msg = plug.install(inst, entry, log=log)
                 else:
-                    ok, msg = plug.uninstall(inst, entry, log=log)
+                    ok, msg = plug.uninstall(inst, entry=entry, pid=pid, log=log)
 
                 def done():
                     state['busy'] = False
@@ -935,6 +941,41 @@ class ManagerWindow(Gtk.Window):
             except Exception as exc:
                 self.append_log('✘ 打开仓库失败：%s' % exc)
 
+        def import_tarball(*_):
+            chooser = Gtk.FileChooserDialog(title='选择插件包（.tar.gz）', transient_for=dlg,
+                                            action=Gtk.FileChooserAction.OPEN)
+            chooser.add_buttons('取消', Gtk.ResponseType.CANCEL, '导入', Gtk.ResponseType.OK)
+            flt = Gtk.FileFilter()
+            flt.set_name('插件包 (*.tar.gz, *.tgz)')
+            for pat in ('*.tar.gz', '*.tgz'):
+                flt.add_pattern(pat)
+            chooser.add_filter(flt)
+            path = ''
+            if chooser.run() == Gtk.ResponseType.OK:
+                path = chooser.get_filename() or ''
+            chooser.destroy()
+            if not path:
+                return
+            state['busy'] = True
+            fill()
+            note.set_text('正在导入 %s…' % os.path.basename(path))
+
+            def work():
+                def log(line):
+                    self.append_log('[plugin] %s' % line)
+                ok, msg = plug.install_from_tarball(inst, path, log=log)
+
+                def done():
+                    state['busy'] = False
+                    self.append_log(('✔ ' if ok else '✘ ') + msg)
+                    fill()
+                    note.set_text(msg + ('　（重启该实例的服务后生效）' if ok else ''))
+                    return False
+                GLib.idle_add(done)
+
+            threading.Thread(target=work, daemon=True).start()
+
+        btn_import.connect('clicked', import_tarball)
         btn_install.connect('clicked', lambda *a: do('安装'))
         btn_uninstall.connect('clicked', lambda *a: do('卸载'))
         btn_refresh.connect('clicked', lambda *a: fill(select=current()))

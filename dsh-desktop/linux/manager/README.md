@@ -68,7 +68,11 @@ bash build-deb.sh --version 1.0.0        # 产出 ./dsh-manager_1.0.0_all.deb
 | `dsh-time-stamp` | `cuteG41cute/dsh-time-stamp` | `static/` | 时间戳注入 |
 | `dsh-memory-db` | `cuteG41cute/dsh-memory-db` | `static/` | 项目记忆库 |
 | `dsh-screenshot` | `cuteG41cute/dsh-screenshot` | `static/` | 对话内截图与标注 |
+| `dsh-netmon` | `cuteG41cute/dsh-mobile` | `netmon/` | 网络 / 隧道监视（**插件在手机项目仓库里**） |
 | `dsh-api` | `cuteG41cute/dsh-api` | `plugin/` | HTTP 调用接口 |
+| `dsh-file-history` | *（未发布）* | — | 改前自动备份 |
+| `dsh-butler` | *（未发布）* | — | 管家派活通道 |
+| `dsh-cleaner` | *（未发布）* | — | 会话 / 文件清理 |
 
 **"装进一个实例"= 两件事**（与手工安装的结构完全一致）：
 
@@ -76,6 +80,16 @@ bash build-deb.sh --version 1.0.0        # 产出 ./dsh-manager_1.0.0_all.deb
 2. 在 `<实例>/dsh-home/profiles/web/cordis.patch.yml` 里追加一条
    `- insert:` 记录（`id` / `name` / 可选 `inject`），前面带一行
    `# ── installed-by: dsh-manager (<id>) ──` 标记，卸载时按它精确摘除
+
+**关于「覆盖不全」这件事**（1.1.2 起）：
+
+- 一个仓库可以有多个包（`dsh-netmon` 就在 `cuteG41cute/dsh-mobile` 的 `netmon/` 下），
+  所以目录里给每个插件写了 `subdir`；选包优先级是 **subdir 命中 > 带 `dsh` 字段 > 名字与 id 相同 > 浅层**；
+- 实例 `node_modules` 里**任何 `dsh-*` 包都会列出来**（标「实例里已装，不在目录中」），
+  哪怕它不是从这里装的——避免"看不见就以为没装"；
+- 还没推 GitHub 的插件（`dsh-file-history` / `dsh-butler` / `dsh-cleaner`）在列表里显示「未发布」，
+  点安装会明确告诉你「只能本地导入」；此时用 **导入本地包…** 选一个 `.tar.gz` 即可（包名取自 package.json）。
+
 
 下载顺序（任一成功即用）：`api.github.com/.../tarball/<ref>` →
 `codeload.github.com/...` → 本地缓存

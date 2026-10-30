@@ -104,6 +104,7 @@ def main(argv=None):
     ap.add_argument('--json', action='store_true')
     ap.add_argument('--yes', action='store_true')
     ap.add_argument('--id', default=None)
+    ap.add_argument('--tarball', default=None)
     ap.add_argument('-v', '--verbose', action='store_true')
     args = ap.parse_args(rest)
 
@@ -157,7 +158,7 @@ def main(argv=None):
         if cmd == 'plugins' or args.json and not args.id:
             status = plug.installed(mgr.instance_at(args.prefix))
             items = []
-            for item in plug.catalog():
+            for item in plug.all_entries(mgr.instance_at(args.prefix)):
                 st = status.get(item['id'], {})
                 items.append({
                     'id': item['id'], 'name': item['name'], 'repo': item['repo'],
@@ -177,17 +178,20 @@ def main(argv=None):
                              it['version'] or '-', it['repo']))
             return 0
 
-        entry = plug.find(args.id)
-        if not entry:
-            print('目录里没有这个插件：%s（可用：%s）'
-                  % (args.id, ', '.join(i['id'] for i in plug.catalog())), file=sys.stderr)
-            return 2
         inst = mgr.instance_at(args.prefix)
+        entry = plug.entry_for(inst, args.id)
+        # 卸载：即使目录里没有这个 id（例如本地导入的包），也按 id 直接卸
+        if not entry and not (cmd == 'uninstall-plugin' and args.id):
+            print('目录里没有这个插件：%s（可用：%s）'
+                  % (args.id, ', '.join(i['id'] for i in plug.all_entries(inst))), file=sys.stderr)
+            return 2
         log = lambda line: print('  ' + str(line), flush=True)
-        if cmd == 'install-plugin':
+        if cmd == 'install-plugin' and args.tarball:
+            ok, msg = plug.install_from_tarball(inst, args.tarball, log=log)
+        elif cmd == 'install-plugin':
             ok, msg = plug.install(inst, entry, log=log)
         else:
-            ok, msg = plug.uninstall(inst, entry, log=log)
+            ok, msg = plug.uninstall(inst, entry=entry, pid=args.id, log=log)
         print(('✔ ' if ok else '✘ ') + msg)
         return 0 if ok else 1
     if cmd in ('start', 'stop', 'open', 'status'):
