@@ -376,10 +376,36 @@ class ManagerWindow(Gtk.Window):
         log_card.pack_start(sw, True, True, 0)
 
         vpaned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
-        # 默认给日志留 45%（至少 180px），其余给按钮区；分隔条随时可拖
-        vpaned.set_position(max(140, int(getattr(self, 'win_height', 720) * 0.55)))
+        # 日志高度按**窗口高度的百分比**走（默认 38%），窗口变大变小它跟着变；
+        # 拖动分隔条会覆盖这个比例并被记住（不再是写死的像素值）。
+        self._log_ratio = 0.38
+        vpaned.set_position(
+            max(120, int(getattr(self, 'win_height', 720) * (1.0 - self._log_ratio))))
         vpaned.pack1(top_scroll, True, False)  # 窗口变矮时上部自己滚动，不再挤掉日志
-        vpaned.pack2(log_card, False, True)
+        vpaned.pack2(log_card, True, True)     # 日志也参与分配：窗口变高时它一起变高
+
+        def apply_ratio(*_a):
+            total = vpaned.get_allocated_height() or self.get_allocated_height()
+            if not total or total < 200:
+                return False
+            log_h = max(90, int(total * self._log_ratio))
+            pos = max(80, total - log_h)
+            if abs(vpaned.get_position() - pos) > 6:
+                vpaned.set_position(pos)
+            return False
+
+        def remember_ratio(*_a):
+            total = vpaned.get_allocated_height() or self.get_allocated_height()
+            if not total:
+                return
+            ratio = 1.0 - (vpaned.get_position() / float(total))
+            self._log_ratio = max(0.12, min(0.85, ratio))
+
+        vpaned.connect('notify::position', remember_ratio)
+        # 窗口尺寸变化时重算（只移动几个像素就跳过的判断在里面，不会打架）
+        self.connect('configure-event', lambda *a: (apply_ratio(), False)[1])
+        GLib.timeout_add(400, lambda: (apply_ratio(), False)[1])
+
         right.pack_start(vpaned, True, True, 0)
 
         paned.pack2(right, True, False)
@@ -703,10 +729,37 @@ class ManagerWindow(Gtk.Window):
         except Exception:
             return False
 
-    def _text_dialog(self, title, text, width=780, height=520):
+    def _dialog_size(self, width, height):
+        """对话框尺寸：**按管理器窗口的百分比**给，而不是死的像素值。
+
+        踩过两件事：
+          1. 日志窗口里用 Box.add() 把孩子塞进去 —— 那等价于 pack_start(False, False)，不伸展，
+             于是 TextView 只有两行高，剩下半个对话框全空着；
+          2. 死写 780×520 在小屏上又超出屏幕。
+        这里按"窗口的 72% 宽、80% 高"取，并夹在屏幕工作区内。
+        """
+        try:
+            win_w = self.get_allocated_width() or 1060
+            win_h = self.get_allocated_height() or 720
+        except Exception:
+            win_w, win_h = 1060, 720
+        want_w = max(520, int(win_w * 0.72))
+        want_h = max(320, int(win_h * 0.80))
+        try:
+            display = Gdk.Display.get_default()
+            monitor = display.get_primary_monitor() or display.get_monitor(0)
+            area = monitor.get_workarea()
+            want_w = min(want_w, max(420, area.width - 80))
+            want_h = min(want_h, max(300, area.height - 80))
+        except Exception:
+            pass
+        return min(width or want_w, want_w), min(height or want_h, want_h)
+
+    def _text_dialog(self, title, text, width=None, height=None):
         dlg = Gtk.Dialog(title=title, transient_for=self, modal=True)
         dlg.add_buttons('关闭', Gtk.ResponseType.CLOSE)
-        dlg.set_default_size(width, height)
+        w, h = self._dialog_size(width, height)
+        dlg.set_default_size(w, h)
         area = dlg.get_content_area()
         area.set_border_width(14)
         sw = Gtk.ScrolledWindow()
@@ -718,7 +771,9 @@ class ManagerWindow(Gtk.Window):
         view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         view.get_buffer().set_text(text)
         sw.add(view)
-        area.add(sw)
+        # 必须 pack_start(..., True, True)：Gtk.Box.add() 等价于不伸展，
+        # 会让文字区只剩两行高（用户实测："日志只显示两行"）。
+        area.pack_start(sw, True, True, 0)
         dlg.show_all()
         dlg.run()
         dlg.destroy()
@@ -810,7 +865,12 @@ class ManagerWindow(Gtk.Window):
 
         def view_log(*_):
             lines = read_manager_log(400)
-            self._text_dialog('管理器日志', '\n'.join(lines) if lines else '（还没有日志）')
+            head = ['—— 管理器日志 ——',
+                    '文件：%s' % manager_log_path(),
+                    '行数：%d（这里显示最后 400 行；主窗口下方是本次运行的实时日志）' % len(lines),
+                    '']
+            body = lines if lines else ['（文件里还没有日志）']
+            self._text_dialog('管理器日志', '\n'.join(head + body))
 
         def copy_diag(*_):
             parts = ['DeepSeek Harness 管理器 v%s' % MANAGER_VERSION,

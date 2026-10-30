@@ -100,6 +100,12 @@ checks.append(('右侧上部按钮区可滚动', 'top_scroll = Gtk.ScrolledWindo
 checks.append(('日志卡有最低高度（≥120px）、且放进竖直分栏',
                'log_card.set_size_request(-1, 120)' in src and 'vpaned.pack2(log_card' in src))
 checks.append(('竖直分栏真的存在', 'Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)' in src))
+# 日志高度要跟着窗口高度按比例走（用户明确要求），不是写死像素
+checks.append(('日志高度按窗口百分比分配', 'self._log_ratio' in src and 'configure-event' in src))
+# 日志查看器：Gtk.Box.add() 不伸展 → 只显示两行；必须 pack_start(..., True, True)
+checks.append(('日志查看器会填满对话框', 'area.pack_start(sw, True, True, 0)' in src
+               and 'area.add(sw)' not in src))
+checks.append(('对话框尺寸按窗口百分比给', 'def _dialog_size' in src and 'win_h * 0.80' in src))
 
 # 真正构造一次窗口（用桩 GTK）：能抓到 _build() 里的解包/参数错误这类运行时问题
 try:

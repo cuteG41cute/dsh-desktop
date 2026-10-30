@@ -90,6 +90,19 @@ bash build-deb.sh --version 1.0.0        # 产出 ./dsh-manager_1.0.0_all.deb
 一致性有 gate 钉着：`python dsh-desktop/linux/tools/socket-name-check.py`（13 项，含
 「两个实例的套接字不同」「两侧命名完全一致」「清锁认按端口的锁名」）。
 
+### 日志区高度按窗口百分比（1.1.8 修）
+
+两个问题叠在一起：
+
+| 问题 | 原因 | 现在 |
+| --- | --- | --- |
+| 「管理器日志」窗口里文字只有两行、下半截全空 | `Gtk.Box.add()` 等价于 `pack_start(child, False, False)`，**不伸展**，ScrolledWindow 只拿到自然高度（约两行） | 改成 `pack_start(sw, True, True, 0)`，文字区填满对话框 |
+| 对话框 780×520 写死 | 小屏超出、大屏浪费 | `_dialog_size()` 按管理器窗口的 **72% 宽 / 80% 高**取，再夹进屏幕工作区 |
+| 主窗口日志卡高度写死像素 | 窗口变大变小它不跟着变 | 日志占右侧高度的**比例**（默认 38%），`notify::position` 记住用户拖出来的比例，窗口尺寸变化时按比例重算 |
+
+结构锁：`gui-import-check` 现在 26 项（含「日志高度按窗口百分比分配」「日志查看器会填满对话框」
+「对话框尺寸按窗口百分比给」）。
+
 ### 版本列表拉不到时也能选（1.1.7 修）
 
 原来 `latest_*` 与 `available_*` 各自拉一遍 registry 完整文档（2~3 MB，8 秒超时）；
