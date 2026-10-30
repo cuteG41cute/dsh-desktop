@@ -10,7 +10,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # dsh-desktop/linux/manag
 MANAGER_DIR="$HERE"
 LINUX_DIR="$(cd "$HERE/.." && pwd)"                    # dsh-desktop/linux
 DESKTOP_DIR="$(cd "$LINUX_DIR/.." && pwd)"             # dsh-desktop
-VERSION="1.0.3"
+VERSION="1.0.4"
 OUT="$HERE"
 
 while [ $# -gt 0 ]; do
@@ -41,6 +41,7 @@ install -m 0644 "$MANAGER_DIR/dsh_manager/__init__.py" "$STAGE/usr/lib/dsh-manag
 install -m 0644 "$MANAGER_DIR/dsh_manager/core.py"     "$STAGE/usr/lib/dsh-manager/dsh_manager/"
 install -m 0644 "$MANAGER_DIR/dsh_manager/cli.py"      "$STAGE/usr/lib/dsh-manager/dsh_manager/"
 install -m 0644 "$MANAGER_DIR/dsh_manager/gui.py"      "$STAGE/usr/lib/dsh-manager/dsh_manager/"
+install -m 0644 "$MANAGER_DIR/dsh_manager/style.css"   "$STAGE/usr/lib/dsh-manager/dsh_manager/"
 install -m 0755 "$MANAGER_DIR/bin/dsh-manager"         "$STAGE/usr/bin/dsh-manager"
 
 # 2) 随包带的桌面窗口文件（新实例的 share/ 从这里取）

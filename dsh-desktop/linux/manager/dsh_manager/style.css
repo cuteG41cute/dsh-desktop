@@ -1,0 +1,236 @@
+/* ============================================================================
+ * dsh-manager 主题：企业简洁风（白底 / 细线 / 深墨色文字 / 一处藏青强调色）
+ * 与 dsh-desktop/site/index.html 的视觉语言一致。
+ * 纯外观，不改任何逻辑；GTK 解析失败也只是回落到默认皮肤。
+ * ========================================================================== */
+
+@define-color bg          #fbfbfa;
+@define-color surface     #ffffff;
+@define-color ink         #101418;
+@define-color ink2        #454b52;
+@define-color muted       #7d838a;
+@define-color line        #e6e3de;
+@define-color line2       #f0eeea;
+@define-color accent      #1f4e79;
+@define-color accent_soft #eef2f7;
+@define-color danger      #a8372c;
+
+window,
+.background {
+  background-color: @bg;
+  color: @ink;
+}
+
+/* ---------- 顶栏 ---------- */
+headerbar {
+  background-color: @bg;
+  background-image: none;
+  border-bottom: 1px solid @line;
+  box-shadow: none;
+  padding: 6px 10px;
+  min-height: 46px;
+}
+headerbar .title {
+  color: @ink;
+  font-weight: 600;
+  font-size: 14px;
+}
+headerbar .subtitle {
+  color: @muted;
+  font-size: 11px;
+}
+headerbar button {
+  padding: 6px 11px;
+}
+
+/* 版本药丸 */
+.pill {
+  background-color: @accent_soft;
+  color: @accent;
+  border: 1px solid #dde6f0;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ---------- 按钮 ---------- */
+button {
+  background-color: @surface;
+  background-image: none;
+  color: @ink;
+  border: 1px solid @line;
+  border-radius: 9px;
+  padding: 6px 14px;
+  box-shadow: none;
+  text-shadow: none;
+  min-height: 20px;
+}
+button:hover {
+  background-color: #f7f7f5;
+  border-color: #d6d3cd;
+}
+button:active,
+button:checked {
+  background-color: #efeeeb;
+  border-color: #d6d3cd;
+}
+button:disabled {
+  color: #b9bcc0;
+  background-color: #fbfbfa;
+  border-color: @line2;
+}
+
+button.primary {
+  background-color: @ink;
+  border-color: @ink;
+  color: #ffffff;
+  font-weight: 600;
+}
+button.primary:hover { background-color: #1b2027; border-color: #1b2027; }
+button.primary:disabled {
+  background-color: #dcdad6;
+  border-color: #dcdad6;
+  color: #ffffff;
+}
+
+button.danger {
+  background-color: #fdf6f4;
+  border-color: #ecd6d1;
+  color: @danger;
+}
+button.danger:hover { background-color: #fbece8; border-color: #e5c6bf; }
+button.danger:disabled { color: #c9a8a2; border-color: @line2; background-color: #fbfbfa; }
+
+/* ---------- 卡片 / 分组 ---------- */
+.card {
+  background-color: @surface;
+  border: 1px solid @line;
+  border-radius: 12px;
+  padding: 12px;
+}
+.card-title,
+.group-label {
+  color: @muted;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+}
+
+.inst-title {
+  color: @ink;
+  font-size: 19px;
+  font-weight: 600;
+}
+.info-val {
+  color: @ink2;
+  font-size: 12.5px;
+}
+.dim-label { color: @muted; }
+
+/* 状态徽标 */
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.badge.running  { background-color: #eaf5ee; color: #2f7d4f; border: 1px solid #cfe6d8; }
+.badge.stopped  { background-color: #fdf5e8; color: #a8761f; border: 1px solid #f0e2c6; }
+.badge.broken   { background-color: #fdeeec; color: @danger; border: 1px solid #f2d3ce; }
+.badge.external,
+.badge.starting { background-color: @accent_soft; color: @accent; border: 1px solid #dde6f0; }
+
+/* ---------- 列表 ---------- */
+.panel {
+  border: 1px solid @line;
+  border-radius: 10px;
+  background-color: @surface;
+}
+.panel > viewport { background-color: @surface; }
+
+treeview.view {
+  background-color: @surface;
+  color: @ink;
+  font-size: 13px;
+}
+treeview.view:hover { background-color: #f8fafc; }
+treeview.view:selected {
+  background-color: @accent_soft;
+  color: @ink;
+}
+treeview.view header button {
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-bottom: 1px solid @line;
+  border-radius: 0;
+  box-shadow: none;
+  color: @muted;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 7px 8px;
+}
+treeview.view header button:hover { color: @ink2; background-color: #fafaf8; }
+
+/* ---------- 日志 ---------- */
+textview text {
+  background-color: @surface;
+  color: #3b4147;
+  font-size: 12px;
+}
+textview border { background-color: transparent; }
+
+/* ---------- 进度条 ---------- */
+progressbar trough {
+  background-color: @line2;
+  border-radius: 999px;
+  min-height: 4px;
+}
+progressbar progress {
+  background-color: @accent;
+  border-radius: 999px;
+  min-height: 4px;
+}
+
+/* ---------- 分栏 ---------- */
+paned > separator {
+  background-color: transparent;
+  background-image: none;
+  min-width: 8px;
+}
+paned > separator:hover { background-color: @line2; }
+
+/* ---------- 版本选择器的下拉列表 ---------- */
+.version-list {
+  background-color: @surface;
+  border: 1px solid @line;
+  border-radius: 10px;
+}
+.popover {
+  background-color: transparent;
+}
+.popover.background {
+  background-color: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.version-list row {
+  border-radius: 7px;
+  padding: 2px 4px;
+}
+.version-list row:hover { background-color: @accent_soft; }
+.version-list label { color: @ink2; font-size: 12.5px; }
+
+/* ---------- 对话框 ---------- */
+dialog .dialog-vbox,
+messagedialog { background-color: @bg; }
+entry {
+  border: 1px solid @line;
+  border-radius: 8px;
+  padding: 6px 9px;
+  background-color: @surface;
+  color: @ink;
+}
+entry:focus { border-color: #b9c7d6; box-shadow: none; }
+spinbutton { border-radius: 8px; }
