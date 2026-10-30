@@ -1,5 +1,20 @@
-# dsh-file-history 运行产物 / 临时目录
-e2e/ws/
-*.backup-*/
-.backup-*/
+# 依赖
 node_modules/
+
+# 测试/验证产物
+e2e/ws/
+*.tgz
+
+# 备份插件自身的备份区（如果在仓库根跑过测试）
+.dsh-backup/
+.dsh/
+
+# 编辑器/系统
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# 发布时的临时备份（install.ps1 会生成）
+.backup-*/

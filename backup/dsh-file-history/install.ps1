@@ -23,14 +23,15 @@ $patchFile = Join-Path $profileDir 'cordis.patch.yml'
 $marker = 'dsh-file-history'
 $block = @"
 
-# ── dsh-file-history: 改前自动快照（静态常驻版）──────────────────────────
-# 任何 write/edit 覆盖已存在文件前，自动把原文快照到 ~/.dsh/file-history；
-# 模型侧用 file_history 工具做 list/show/restore/revert_turn。
-# 配置持久化在 settings.yaml 的 file-history 段（保留天数、容量上限等）。
+# ── dsh-file-history: 改前自动备份（静态常驻版）──────────────────────────
+# 任何 write/edit 覆盖已存在文件前，先把原文备份进 <项目>/.dsh-backup/
+# （按源路径镜像，文件名＝源文件名+时间戳，每个文件保留最近 N 代）。
+# 项目级开关在 settings.yaml 的 file-history 段；版本/代数等也在那里。
+# 模型侧用 file_history 工具做 list/show/restore/revert_turn；右上角有状态芯片。
 - insert:
     - id: dsh-file-history
       name: 'dsh-file-history'
-      inject: [tools, settings, timer]
+      inject: [tools, settings, timer, agents]
 "@
 
 if ($Remove) {

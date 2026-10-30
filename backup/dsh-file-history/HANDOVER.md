@@ -1,7 +1,9 @@
 # 交接：dsh-file-history（改前自动备份）
 
-> 给"以后接手这个项目的 agent/人"的最小必要上下文。功能细节见同目录 `README.md` 与
-> `~/.dsh/skills/dsh-file-history/SKILL.md`；这里只放**部署事实、验证入口、和必须遵守的约定**。
+> **维护者内部笔记**（含本机环境细节与踩坑记录）。普通使用者看 `README.md` 即可。
+>
+> 最小必要上下文：部署事实、验证入口、必须遵守的宿主接口约定。功能细节见 `README.md` 与
+> `~/.dsh/skills/dsh-file-history/SKILL.md`。
 
 ## 1. 现在跑着什么（部署事实）
 

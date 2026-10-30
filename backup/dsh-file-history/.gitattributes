@@ -1,0 +1,9 @@
+* text=auto
+
+# 源码统一 LF；PowerShell 脚本保留 CRLF 与 UTF-8 BOM（PS 5.1 按 ANSI 读无 BOM 脚本会乱码）
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.md    text eol=lf
+*.ps1   text eol=crlf

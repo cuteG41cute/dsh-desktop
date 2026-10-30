@@ -1,7 +1,7 @@
 {
   "name": "dsh-file-history",
-  "version": "0.3.0",
-  "description": "DeepSeek Harness static plugin: snapshot-before-write file history — every `write`/`edit` that would overwrite an existing file is copied into the project's .dsh-backup/ first (filename + timestamp, last N generations kept), with a `file_history` tool to list, diff and restore, plus a top-bar status chip panel for observation.",
+  "version": "0.4.0",
+  "description": "DeepSeek Harness plugin: back up every file before an agent's write/edit overwrites it — per-project .dsh-backup/ with filename+timestamp, keeps the last N generations, plus a file_history restore tool and a top-bar status panel.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -10,8 +10,24 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib"
+    "lib",
+    "install.ps1",
+    "monitor.ps1",
+    "verify.ps1",
+    "after-restart-check.ps1",
+    "selftest.mjs",
+    "host-contract-check.mjs",
+    "HANDOVER.md",
+    "README.md",
+    "LICENSE"
   ],
+  "scripts": {
+    "test": "node selftest.mjs",
+    "contract": "node host-contract-check.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "keywords": [
     "deepseek-harness",
     "dsh",
@@ -20,10 +36,19 @@
     "file-history",
     "snapshot",
     "backup",
-    "restore"
+    "restore",
+    "undo"
   ],
   "license": "MIT",
   "author": "cuteG41cute",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cuteG41cute/dsh-file-history.git"
+  },
+  "homepage": "https://github.com/cuteG41cute/dsh-file-history#readme",
+  "bugs": {
+    "url": "https://github.com/cuteG41cute/dsh-file-history/issues"
+  },
   "dependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/schemastery": "^3.18.1"

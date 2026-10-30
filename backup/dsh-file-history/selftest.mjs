@@ -1,15 +1,18 @@
-// dsh-file-history 离线自测：用假 ctx/exec 直接驱动**已安装的**插件副本（不经过 harness 进程）。
+// dsh-file-history 离线自测：用假 ctx/exec 直接驱动插件（不经过 harness 进程）。
 // 覆盖：宿主加载路径与 schema 契约、项目内备份落点与命名、sidecar/状态标志/manifest、5 代保留、
 //       file_history 四个动作、新建不备份、子目录镜像、项目外兜底、只读大文件指纹、开关、系统提示公告。
 //
 // 注意：这里用的是替身解析，只能验证到「宿主调用约定」这一层；真依赖（schemastery / timer）
-// 的契约由 host-contract-check.mjs 在 profile 内验证。
+// 的契约由 host-contract-check.mjs 验证。
+//
+// 默认测试**仓库内的** lib/index.js（先 `npm install` 装上两个依赖）；
+// 想测已安装到 profile 的那份副本：FH_PLUGIN_URL="C:/Users/.../dsh-file-history/lib/index.js" node selftest.mjs
 
 import { mkdtemp, writeFile, readFile, readdir, mkdir, rm, stat } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const results = []
 const ok = (label, condition, extra = '') => {
@@ -17,8 +20,18 @@ const ok = (label, condition, extra = '') => {
   console.log(`${condition ? 'PASS' : 'FAIL'}  ${label}${extra ? ` — ${extra}` : ''}`)
 }
 
-const PLUGIN_PATH = 'C:/Users/twinblade/.dsh/profiles/web/node_modules/dsh-file-history/lib/index.js'
-const mod = await import(pathToFileURL(PLUGIN_PATH).href)
+const REPO_ROOT = path.dirname(fileURLToPath(import.meta.url))
+const PLUGIN_PATH = process.env.FH_PLUGIN_URL || path.join(REPO_ROOT, 'lib', 'index.js')
+let mod
+try {
+  mod = await import(pathToFileURL(PLUGIN_PATH).href)
+} catch (error) {
+  console.error(`[selftest] 无法加载插件: ${PLUGIN_PATH}`)
+  console.error(`[selftest] ${error && error.message ? error.message : error}`)
+  console.error('[selftest] 仓库内直接跑需要先安装依赖：npm install')
+  console.error('[selftest] 或者指向已安装的副本：FH_PLUGIN_URL="<profile>/node_modules/dsh-file-history/lib/index.js" node selftest.mjs')
+  process.exit(2)
+}
 ok('模块导出 apply/backupFileName/backupRootFor', typeof mod.apply === 'function' && typeof mod.backupFileName === 'function')
 ok('项目内备份目录名为 .dsh-backup', mod.BACKUP_DIR_NAME === '.dsh-backup' && mod.backupRootFor('C:/proj') === path.join(path.resolve('C:/proj'), '.dsh-backup'))
 ok('命名＝源文件名+时间戳+原扩展名', mod.backupFileName('app.ts', new Date(2026, 8, 17, 9, 55, 0)) === 'app.20260917-095500.ts')

@@ -1,5 +1,13 @@
 # dsh-file-history
 
+[![test](https://github.com/cuteG41cute/dsh-file-history/actions/workflows/ci.yml/badge.svg)](https://github.com/cuteG41cute/dsh-file-history/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+**A DeepSeek Harness plugin that backs up a file *before* an agent's `write`/`edit` overwrites it.**
+Per-project `.dsh-backup/` (filename + timestamp, last N generations), a `file_history` tool to list / diff /
+restore single files or a whole turn, a top-bar panel that shows whether it is alive, and a per-project switch.
+If a backup cannot be made, the write is refused (fail-closed). 中文说明见下。
+
 DeepSeek Harness 的「**改前自动备份**」插件：让 agent 改文件这件事从"靠自觉备份"变成"harness 兜底"。
 
 - 任何 `write` / `edit` **覆盖已存在文件**之前，自动把原文逐字节备份进**项目内**的 `.dsh-backup/`；
@@ -75,27 +83,48 @@ harness 原生只有 `dsh-atomic-write`（写入原子）和 `dsh-fs-observation
 
 ## 安装
 
+### 方式 A：克隆仓库 + 安装脚本（最直观）
+
 ```powershell
-cd "<workspace>\dsh-file-history"
+git clone https://github.com/cuteG41cute/dsh-file-history.git
+cd dsh-file-history
 powershell -ExecutionPolicy Bypass -File install.ps1 -Profile web -Force
 # 然后重启 dsh 服务 / 桌面版窗口
 ```
 
+### 方式 B：pnpm 直接装（不落源码）
+
+```powershell
+dsh plugin --profile web add github:cuteG41cute/dsh-file-history
+# 然后在 profile 的 cordis.patch.yml 里加：
+#   - insert:
+#       - id: dsh-file-history
+#         name: 'dsh-file-history'
+#         inject: [tools, settings, timer, agents]
+# 最后重启 dsh 服务
+```
+
+> 也可以 npm 方式：`npm publish` 之后 `dsh plugin --profile web add dsh-file-history`。
+
 重启是必须的：宿主侧 `@deepseek-ai/cordis-plugin-hmr` 在 `dsh-base` 里 `disabled: true`，
-改 `cordis.patch.yml` **不会**热加载新插件（客户端插件 HMR 是另一回事）。
+改 `cordis.patch.yml` **不会**热加载新插件（客户端插件 HMR 是另一回事）；客户端面板还多一步刷新页面。
 
 卸载：`powershell -ExecutionPolicy Bypass -File install.ps1 -Remove`（已产生的备份不会被删除）。
 
 ## 自测与验证
 
 ```powershell
-# 离线，秒级，43 项断言（假 ctx，不需要真依赖）
+# 1) 装依赖（只有跑测试需要）
+npm install
+
+# 2) 离线自测，秒级，60 项断言（假 ctx）
 node selftest.mjs
-# 真依赖契约检查（必须在 profile 内运行，否则找不到 @deepseek-ai/schemastery）
-node "$env:USERPROFILE\.dsh\profiles\web\node_modules\dsh-file-history\host-contract-check.mjs"
-# 重启后的体检
+
+# 3) 真依赖契约检查（仓库内或已安装目录都能跑；找不到 schemastery 会回退到 DSH profile 里那份）
+node host-contract-check.mjs
+
+# 4) 重启后的体检 + 端到端（起独立实例，不动正在运行的 3080 服务）
 powershell -ExecutionPolicy Bypass -File after-restart-check.ps1
-# 端到端，起独立实例，不动正在运行的 3080 服务
 powershell -ExecutionPolicy Bypass -File verify.ps1
 ```
 
@@ -124,7 +153,7 @@ $text = [System.IO.File]::ReadAllText($f, [System.Text.Encoding]::UTF8)
 file-history:
   enabled: true                  # 全局默认开关（没有单独设置过的项目用它）
   projects:                      # 逐项目覆盖：{ "<项目目录>": true | false }
-    c:\users\twinblade\documents\my-proj: false
+    c:\work\my-proj: false
   maxFileBytes: 2097152          # 超过只记指纹（默认 2MB）
   maxGenerations: 5              # 每个源文件保留最近几代（默认 5 轮）
   maxAgeDays: 30                 # 备份保留天数

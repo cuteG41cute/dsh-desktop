@@ -1,10 +1,13 @@
-﻿// dsh-file-history 宿主契约检查（真依赖版）
-// 运行方式（从 profile 目录里跑，这样 @deepseek-ai/schemastery 能按真实解析路径被找到）：
-//   node "C:\Users\twinblade\.dsh\profiles\web\node_modules\dsh-file-history\host-contract-check.mjs"
+// dsh-file-history 宿主契约检查（真依赖版）
 //
 // 为什么需要它：仓库内的 selftest.mjs 用假 ctx 驱动插件，schema 由替身解析，
 // 真依赖（schemastery / timer）的契约它证明不了。这个脚本直接加载真实依赖，
 // 复刻 dsh-settings 的调用约定与 timer 服务的混入方式，专治这类「接口不匹配」回归。
+//
+// 两种运行位置都支持：
+//   1) 仓库内（先 npm install）：node host-contract-check.mjs
+//   2) profile 内（已安装副本）：node "$HOME/.dsh/profiles/web/node_modules/dsh-file-history/host-contract-check.mjs"
+// 找不到 @deepseek-ai/schemastery 时会回退到 $DSH_HOME/profiles/node_modules 里那份。
 //
 // 背景（2026-09-17 两次真实加载失败）：
 //   1) schema 写成工厂函数 (s) => s.object({...})：宿主 dsh-settings resolve() 是
@@ -15,9 +18,11 @@
 //      必须 `inject = ['tools','settings','timer']`（推荐用 ctx.timeout，setTimeout 已 deprecated）。
 
 import { readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const HERE = 'C:/Users/twinblade/.dsh/profiles/web/node_modules/dsh-file-history'
-const SCHEMASTER_PATH = 'C:/Users/twinblade/.dsh/profiles/node_modules/@deepseek-ai/schemastery/lib/index.mjs'
+const HERE = dirname(fileURLToPath(import.meta.url))
 
 const results = []
 const ok = (label, pass, extra = '') => {
@@ -25,20 +30,43 @@ const ok = (label, pass, extra = '') => {
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${label}${extra ? ` — ${extra}` : ''}`)
 }
 
+/** 先按普通模块解析（npm install 后可用），再回退到 DSH profile 里那份。 */
+async function loadSchemastery() {
+  const attempts = ['@deepseek-ai/schemastery']
+  const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh')
+  const profileDirs = ['profiles', join('profiles', 'web')]
+  for (const dir of profileDirs) {
+    const candidate = join(dshHome, dir, 'node_modules', '@deepseek-ai', 'schemastery', 'lib', 'index.mjs')
+    attempts.push(pathToFileURL(candidate).href)
+  }
+  const failures = []
+  for (const specifier of attempts) {
+    try {
+      const loaded = await import(specifier)
+      return loaded.default
+    } catch (error) {
+      failures.push(`${specifier}: ${error && error.message ? error.message : error}`)
+    }
+  }
+  console.error('[host-contract-check] 找不到 @deepseek-ai/schemastery。')
+  console.error('  仓库内跑：npm install')
+  console.error('  profile 内跑：确认 ' + join(dshHome, 'profiles', 'node_modules', '@deepseek-ai', 'schemastery') + ' 存在')
+  for (const line of failures) console.error('  · ' + line)
+  process.exit(2)
+}
+
 let schemaCtor
 let mod
 let source
 try {
-  ;[{ default: schemaCtor }, mod, source] = await Promise.all([
-    import(`file:///${SCHEMASTER_PATH}`),
-    import(`file:///${HERE}/lib/index.js`),
-    readFile(`${HERE}/lib/index.js`, 'utf8'),
+  schemaCtor = await loadSchemastery()
+  ;[mod, source] = await Promise.all([
+    import(pathToFileURL(join(HERE, 'lib', 'index.js')).href),
+    readFile(join(HERE, 'lib', 'index.js'), 'utf8'),
   ])
 } catch (error) {
-  console.error('[host-contract-check] 无法加载真实依赖：' + (error && error.message ? error.message : error))
-  console.error('这个脚本必须从「已安装的插件目录」运行（profile 内的副本才能真正解析 @deepseek-ai/schemastery）：')
-  console.error('  node "' + HERE + '/host-contract-check.mjs"')
-  console.error('仓库里离线自测请用 selftest.mjs（不需要真依赖）。')
+  console.error('[host-contract-check] 无法加载插件：' + (error && error.message ? error.message : error))
+  console.error('目录：' + HERE)
   process.exit(2)
 }
 

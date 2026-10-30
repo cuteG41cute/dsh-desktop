@@ -120,12 +120,15 @@ function Show-ProjectReport([string]$project) {
 
 function Show-Scan {
     Write-Head '本机各项目的备份区（.dsh-backup）'
+    # 默认扫「文档 / 桌面 / 当前目录」；项目在别处时用 -Project 指定，或设 FH_SCAN_ROOTS（分号分隔）。
     $roots = @(
         (Join-Path $env:USERPROFILE 'Documents'),
         (Join-Path $env:USERPROFILE 'Desktop'),
-        'C:\Users\twinblade\Documents\deeepseek harness',
         (Get-Location).Path
-    ) | Select-Object -Unique
+    )
+    if ($env:FH_SCAN_ROOTS) { $roots += ($env:FH_SCAN_ROOTS -split ';') }
+    if ($Project) { $roots += $Project }
+    $roots = $roots | Where-Object { $_ } | Select-Object -Unique
     $rows = @()
     foreach ($root in $roots) {
         if (-not (Test-Path $root)) { continue }
