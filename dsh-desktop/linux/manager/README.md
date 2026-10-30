@@ -92,6 +92,9 @@ bash build-deb.sh --version 1.0.0        # 产出 ./dsh-manager_1.0.0_all.deb
 
 ### 界面：按 Kimi 的设计稿复刻（1.3.0 起）
 
+> 每个按键做什么、有哪些状态、动效是什么 —— 见 [INTERACTION.md](INTERACTION.md)。
+> 改交互/验收前先读它。
+
 设计稿在 `manager/design/`（`index.html` / `styles.css` / `app.js`，7 套主题 × 日/夜），
 界面按它重做：**左侧实例栏**（品牌 / 我的实例 / 新建实例 / 工作空间 / 运行环境）、
 **顶栏**（面包屑 / 主题选择 / 日夜切换）、**仪表盘**（标题+状态徽标 / 实例信息卡 /
