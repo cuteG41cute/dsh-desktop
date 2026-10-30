@@ -103,6 +103,7 @@ def main(argv=None):
     ap.add_argument('--kind', default='dsh')
     ap.add_argument('--json', action='store_true')
     ap.add_argument('--yes', action='store_true')
+    ap.add_argument('--id', default=None)
     ap.add_argument('-v', '--verbose', action='store_true')
     args = ap.parse_args(rest)
 
@@ -150,6 +151,45 @@ def main(argv=None):
         print(('✔ ' if ok else '✘ ') + msg)
         return 0 if ok else 1
 
+    # ---- 插件管理（第一阶段：从我们自己的 GitHub 仓库装/卸）----
+    if cmd in ('plugins', 'install-plugin', 'uninstall-plugin'):
+        from . import plugins as plug
+        if cmd == 'plugins' or args.json and not args.id:
+            status = plug.installed(mgr.instance_at(args.prefix))
+            items = []
+            for item in plug.catalog():
+                st = status.get(item['id'], {})
+                items.append({
+                    'id': item['id'], 'name': item['name'], 'repo': item['repo'],
+                    'desc': item['desc'], 'installed': st.get('installed', False),
+                    'registered': st.get('registered', False),
+                    'version': st.get('version', ''),
+                })
+            if args.json:
+                print(json.dumps(items, ensure_ascii=False, indent=2))
+            else:
+                print('%-18s %-14s %-8s %-10s %s'
+                      % ('id', '名称', '状态', '版本', '仓库'))
+                for it in items:
+                    print('%-18s %-14s %-8s %-10s %s'
+                          % (it['id'], it['name'],
+                             '已安装' if it['installed'] else '未安装',
+                             it['version'] or '-', it['repo']))
+            return 0
+
+        entry = plug.find(args.id)
+        if not entry:
+            print('目录里没有这个插件：%s（可用：%s）'
+                  % (args.id, ', '.join(i['id'] for i in plug.catalog())), file=sys.stderr)
+            return 2
+        inst = mgr.instance_at(args.prefix)
+        log = lambda line: print('  ' + str(line), flush=True)
+        if cmd == 'install-plugin':
+            ok, msg = plug.install(inst, entry, log=log)
+        else:
+            ok, msg = plug.uninstall(inst, entry, log=log)
+        print(('✔ ' if ok else '✘ ') + msg)
+        return 0 if ok else 1
     if cmd in ('start', 'stop', 'open', 'status'):
         inst = mgr.instance_at(args.prefix)
         if cmd == 'start':

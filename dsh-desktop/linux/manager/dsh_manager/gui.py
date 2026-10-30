@@ -5,6 +5,7 @@
 每个实例有自己的安装目录、Node、dsh 版本、数据目录和端口，互不干扰。
 """
 import os
+import subprocess
 import sys
 import threading
 
@@ -18,6 +19,7 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
+from . import plugins as plug  # noqa: E402
 from .core import (DEFAULT_DSH, DEFAULT_NODE, MANAGER_LIB, MANAGER_VERSION,  # noqa: E402
                    Manager, append_manager_log, config_dir, load_settings,
                    manager_log_path, port_free, read_manager_log, save_settings,
@@ -308,6 +310,8 @@ class ManagerWindow(Gtk.Window):
             ('open', '打开窗口', None))), False, False, 0)
         right.pack_start(make_group('版本', (
             ('update', '更新版本', None), ('repair', '修复', None))), False, False, 0)
+        right.pack_start(make_group('插件', (
+            ('plugins', '管理插件…', None))), False, False, 0)
         right.pack_start(make_group('其他', (
             ('folder', '在文件管理器中显示', None), ('uninstall', '卸载', 'danger'))),
             False, False, 0)
@@ -817,6 +821,130 @@ class ManagerWindow(Gtk.Window):
         except Exception as exc:
             self.append_log('✘ 打开目录失败：%s' % exc)
 
+    # ---- 插件管理（第一阶段：我们自己的 GitHub 仓库）----
+    def on_plugins(self, *_):
+        inst = self._need()
+        if not inst:
+            return
+        dlg = Gtk.Dialog(title='插件 · %s' % inst.label, transient_for=self, modal=True)
+        dlg.add_buttons('关闭', Gtk.ResponseType.CLOSE)
+        dlg.set_default_size(880, 580)
+        area = dlg.get_content_area()
+        area.set_border_width(14)
+        area.set_spacing(10)
+
+        head = Gtk.Label(xalign=0, wrap=True)
+        head.set_markup('<b>插件 · %s</b>\n'
+                        '从我们自己的 GitHub 仓库安装 / 卸载；装在这个实例自己的 profile 里：\n'
+                        '<tt>%s</tt>' % (GLib.markup_escape_text(inst.label),
+                                         GLib.markup_escape_text(plug.profile_dir(inst))))
+        area.pack_start(head, False, False, 0)
+
+        store = Gtk.ListStore(str, str, str, str)      # id, 说明, 状态, 版本
+        tree = Gtk.TreeView(model=store)
+        for idx, (title, width) in enumerate((('插件', 210), ('仓库 / 说明', 420),
+                                              ('状态', 100), ('版本', 80))):
+            renderer = Gtk.CellRendererText()
+            renderer.set_property('ellipsize', 3)
+            col = Gtk.TreeViewColumn(title, renderer)
+            col.add_attribute(renderer, 'text', idx)
+            col.set_min_width(width)
+            col.set_resizable(True)
+            tree.append_column(col)
+        sw = Gtk.ScrolledWindow()
+        sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        sw.get_style_context().add_class('panel')
+        sw.add(tree)
+        area.pack_start(sw, True, True, 0)
+
+        note = Gtk.Label(xalign=0, wrap=True)
+        note.get_style_context().add_class('dim-label')
+        area.pack_start(note, False, False, 0)
+
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        btn_install = Gtk.Button(label='安装 / 更新')
+        btn_install.get_style_context().add_class('primary')
+        btn_uninstall = Gtk.Button(label='卸载')
+        btn_uninstall.get_style_context().add_class('danger')
+        btn_refresh = Gtk.Button(label='刷新状态')
+        btn_repo = Gtk.Button(label='打开仓库')
+        for btn in (btn_install, btn_uninstall, btn_refresh, btn_repo):
+            row.pack_start(btn, False, False, 0)
+        area.pack_start(row, False, False, 0)
+
+        state = {'busy': False}
+
+        def current():
+            model, it = tree.get_selection().get_selected()
+            return model[it][0] if it is not None else None
+
+        def fill(select=None):
+            store.clear()
+            status = plug.installed(inst)
+            for item in plug.catalog():
+                st = status.get(item['id'], {})
+                if st.get('installed'):
+                    label = '已安装'
+                elif st.get('package_on_disk') or st.get('registered'):
+                    label = '半装（需修）'
+                else:
+                    label = '未安装'
+                it = store.append([item['id'], '%s · %s' % (item['repo'], item['desc']),
+                                   label, st.get('version') or '-'])
+                if select and item['id'] == select:
+                    tree.get_selection().select_iter(it)
+            if tree.get_selection().get_selected()[1] is None and store.iter_n_children(None):
+                tree.get_selection().select_iter(store.get_iter_first())
+            btn_install.set_sensitive(not state['busy'])
+            btn_uninstall.set_sensitive(not state['busy'])
+
+        def do(action):
+            pid = current()
+            if not pid:
+                return
+            entry = plug.find(pid)
+            state['busy'] = True
+            fill(select=pid)
+            note.set_text('正在%s %s…（首次会从 GitHub 下载 tarball）' % (action, pid))
+
+            def work():
+                def log(line):
+                    self.append_log('[plugin] %s' % line)
+                if action == '安装':
+                    ok, msg = plug.install(inst, entry, log=log)
+                else:
+                    ok, msg = plug.uninstall(inst, entry, log=log)
+
+                def done():
+                    state['busy'] = False
+                    self.append_log(('✔ ' if ok else '✘ ') + msg)
+                    fill(select=pid)
+                    note.set_text(msg + ('　（重启该实例的服务后生效）' if ok else ''))
+                    return False
+                GLib.idle_add(done)
+
+            threading.Thread(target=work, daemon=True).start()
+
+        def open_repo(*_):
+            pid = current()
+            if not pid:
+                return
+            url = 'https://github.com/%s' % plug.find(pid)['repo']
+            try:
+                subprocess.Popen(['xdg-open', url])
+            except Exception as exc:
+                self.append_log('✘ 打开仓库失败：%s' % exc)
+
+        btn_install.connect('clicked', lambda *a: do('安装'))
+        btn_uninstall.connect('clicked', lambda *a: do('卸载'))
+        btn_refresh.connect('clicked', lambda *a: fill(select=current()))
+        btn_repo.connect('clicked', open_repo)
+
+        fill()
+        note.set_text('安装后需要重启该实例的服务才会加载：先「停止服务」再「启动服务」。')
+        dlg.show_all()
+        dlg.run()
+        dlg.destroy()
     # ---- 更新 ----
     def on_update(self, *_):
         inst = self._need()

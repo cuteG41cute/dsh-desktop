@@ -34,7 +34,8 @@ bash build-deb.sh --version 1.0.0        # 产出 ./dsh-manager_1.0.0_all.deb
 | **修复** | 补齐缺失的 Node / dsh / 窗口文件 / 启动器，补跑被 npm 11 拦下的 install scripts，校验目录可写 |
 | **卸载** | 二次确认后删整个实例目录（含 Node、dsh 与实例的 dsh-home） |
 | 在文件管理器中显示 | `xdg-open <实例目录>` |
-| 日志 | 底部实时显示安装/更新/修复的每一步 |
+| **管理插件…** | 从我们自己的 GitHub 仓库给这个实例安装 / 卸载插件（见下节） |
+| 日志 | 底部实时显示安装/更新/修复/装插件的每一步 |
 | 忙碌进度条 | 安装/更新/修复期间顶部出现的脉冲进度条（不确定进度，类似 Win7 的滚动光条）；版本列表在后台联网获取，界面不会冻结 |
 
 版本选择器是滚动的列表（`Gtk.MenuButton + Popover + ScrolledWindow + ListBox`）——GTK 自带
@@ -55,6 +56,45 @@ bash build-deb.sh --version 1.0.0        # 产出 ./dsh-manager_1.0.0_all.deb
 | 按钮 | 按「服务 / 版本 / 其他」三组排列；主操作（启动服务、新建实例）深色实心，卸载单独标红 |
 | 日志 | 独立卡片 + 等宽字体，圆角边框 |
 
+### 插件管理（1.1.0 起，第一阶段）
+
+右侧「插件」分组里的 **管理插件…**：列出一个内置目录（我们自己的仓库），
+对**当前选中的实例**做安装 / 卸载，装完提示重启该实例的服务。
+
+目录（仓库结构是实测核对过的）：
+
+| id | 仓库 | 包所在目录 | 说明 |
+| --- | --- | --- | --- |
+| `dsh-time-stamp` | `cuteG41cute/dsh-time-stamp` | `static/` | 时间戳注入 |
+| `dsh-memory-db` | `cuteG41cute/dsh-memory-db` | `static/` | 项目记忆库 |
+| `dsh-screenshot` | `cuteG41cute/dsh-screenshot` | `static/` | 对话内截图与标注 |
+| `dsh-api` | `cuteG41cute/dsh-api` | `plugin/` | HTTP 调用接口 |
+
+**"装进一个实例"= 两件事**（与手工安装的结构完全一致）：
+
+1. 包体复制到 `<实例>/dsh-home/profiles/web/node_modules/<包名>/`
+2. 在 `<实例>/dsh-home/profiles/web/cordis.patch.yml` 里追加一条
+   `- insert:` 记录（`id` / `name` / 可选 `inject`），前面带一行
+   `# ── installed-by: dsh-manager (<id>) ──` 标记，卸载时按它精确摘除
+
+下载顺序（任一成功即用）：`api.github.com/.../tarball/<ref>` →
+`codeload.github.com/...` → 本地缓存
+`~/.cache/dsh-manager/plugin-cache/<id>-main.tar.gz`。
+所以**完全离线也能装**：把 tarball 按这个名字放进缓存目录即可。
+包里若有多个 `package.json`（根目录是动态版、`static/` 才是常驻版），按
+「带 `dsh` 字段 > 名字与 id 相同 > 非 private」挑选，实测选中 `static/`。
+
+命令行同源：
+
+```bash
+dsh-manager --headless plugins --prefix <实例目录> [--json]
+dsh-manager --headless install-plugin   --prefix <实例目录> --id dsh-time-stamp
+dsh-manager --headless uninstall-plugin --prefix <实例目录> --id dsh-time-stamp
+```
+
+已知边界（第一阶段）：不处理插件自己的 `settings.yaml` 配置段（例如 `dsh-api`
+的 `apiKey`），装完需要按插件文档手动配；卸载不会删插件写进 `settings.yaml` 的配置；
+插件依赖（npm 包）暂不自动 `npm install`。这些都留给第二阶段。
 ### 窗口唤起（1.0.8 起）
 
 窗口进程在 `$XDG_RUNTIME_DIR/dsh-desktop-<uid>.sock` 上监听一个极简控制套接字
