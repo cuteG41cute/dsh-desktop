@@ -311,7 +311,8 @@ class ManagerWindow(Gtk.Window):
         # 窗口本身也可能"活着但画面坏了"（软件渲染下上半截空白），唤起修不好，
         # 需要能重开一个：重建窗口 = 杀掉窗口进程 + 清锁 + 重新起（不动服务/会话）。
         right.pack_start(make_group('窗口', (
-            ('reload', '重载页面', None), ('rebuild', '重建窗口', None))),
+            ('reload', '重载页面', None), ('rebuild', '重建窗口', None),
+            ('token', '查看 Token', None))),
             False, False, 0)
         right.pack_start(make_group('版本', (
             ('update', '更新版本', None), ('repair', '修复', None))), False, False, 0)
@@ -348,13 +349,14 @@ class ManagerWindow(Gtk.Window):
             self.buttons['start'].set_sensitive(not self.busy and self.selected.status() == 'stopped')
             self.buttons['stop'].set_sensitive(not self.busy and bool(self.selected.running_pid()))
 
-    def append_log(self, line):
+    def append_log(self, line, persist=True):
         text = line.rstrip('\n')
         end = self.log_buf.get_end_iter()
         self.log_buf.insert(end, text + '\n')
         mark = self.log_buf.create_mark(None, self.log_buf.get_end_iter(), False)
         self.log_view.scroll_mark_onscreen(mark)
-        append_manager_log(text)          # 同时落盘，供「设置 → 管理器日志」查看
+        if persist:
+            append_manager_log(text)      # 同时落盘，供「设置 → 管理器日志」查看
         # 面板只留最近 N 行，避免长时间运行后卡顿
         limit = int(self.settings.get('logLines') or 800)
         count = self.log_buf.get_line_count()
@@ -855,6 +857,43 @@ class ManagerWindow(Gtk.Window):
             subprocess.Popen(['xdg-open', inst.prefix])
         except Exception as exc:
             self.append_log('✘ 打开目录失败：%s' % exc)
+
+    # ---- 查看 WebUI 的 Token（在浏览器里打开 dsh 用）----
+    def _show_secret(self, title, value, source='', status=''):
+        """把 token 这类敏感值只展示在界面上：**不落盘**、顺手放进剪贴板。"""
+        self.append_log('—— %s ——' % title, persist=False)
+        self.append_log(value, persist=False)
+        if status:
+            self.append_log('验证：%s' % status, persist=False)
+        if source:
+            self.append_log('来源：%s' % source, persist=False)
+        try:
+            Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(value, -1)
+            self.append_log('已复制到剪贴板，可直接粘到浏览器地址栏。', persist=False)
+        except Exception as exc:
+            self.append_log('（复制到剪贴板失败：%s；可以选中上面那行手动复制）' % exc, persist=False)
+        self.append_log('提示：这条地址等价于密码；打开一次后同一浏览器就能直接用裸地址。',
+                        persist=False)
+
+    def on_token(self, *_):
+        """查看当前实例的 WebUI 入口地址（带 token），按用户要求显示在下方日志框。"""
+        inst = self._need()
+        if not inst:
+            return
+
+        def job():
+            url, src, note = inst.web_auth_url()
+            if not url:
+                return False, note, url, src, ''
+            state, detail = inst.auth_url_status(url)
+            return True, note, url, src, detail
+
+        def done(ok, result):
+            url, src, detail = result[2], result[3], result[4]
+            if ok and url:
+                self._show_secret('入口地址（带 token）', url, src, detail)
+
+        self._run_async('查看 Token · %s' % inst.label, job, on_done=done)
 
     # ---- 插件管理（第一阶段：我们自己的 GitHub 仓库）----
     def on_plugins(self, *_):

@@ -32,6 +32,7 @@ bash build-deb.sh --version 1.0.0        # 产出 ./dsh-manager_1.0.0_all.deb
 | **打开窗口** | 先确保服务在跑，再唤起/启动该实例的 GTK 窗口：**已有窗口就提到前台**；没有则清理僵死窗口进程与旧锁，失败时自动用「强制 + 软件渲染」重试。实例里的窗口程序与本包不一致时会**顺手对齐**，不用先点修复。启动器输出写进 `<实例>/logs/desktop.log` |
 | **重载页面**（1.1.3 起） | 向窗口进程发 `reload`，让它重新加载页面。页面里的脚本把布局搞坏（比如浮层卡住、整块空白）时，这是最小的动作，不影响服务与会话 |
 | **重建窗口**（1.1.3 起） | 窗口**进程还活着、但画面已经坏了**（软件渲染下最常见的「上半截空白」）时，唤起是修不好的：这一项会结束窗口进程、清掉 `/tmp/dsh-desktop.lock*`、重新起一个，**服务与会话都不动**（窗口里没发出去的输入会丢） |
+| **查看 Token**（1.1.5 起） | 把当前实例的 **WebUI 入口地址（带 token）**显示在下方日志框里，并顺手复制到剪贴板。浏览器里直接敲 `http://127.0.0.1:3080` 只会看到 401「authentication required」，必须用这条带 token 的地址；打开一次后服务端种 cookie，同一浏览器之后就能用裸地址。地址从 `<实例>/logs/{web,server.out,server.err,desktop}.log` 和 `~/.local/state/dsh-desktop/logs/` 里取**最新**一条（大日志只读尾部 256 KB），并先请求一次告诉你状态：200 可用 / 401 已过期（服务重启过）/ 连不上（服务没在跑）。**token 等价于密码：只显示在界面上，不写 manager.log** |
 | **更新版本** | 换 dsh 版本或 Node 版本（同样有 `latest`）；只动这个实例的目录 |
 | **修复** | 补齐缺失的 Node / dsh / 窗口文件 / 启动器，补跑被 npm 11 拦下的 install scripts，校验目录可写 |
 | **卸载** | 二次确认后删整个实例目录（含 Node、dsh 与实例的 dsh-home） |
@@ -143,6 +144,7 @@ quit     → 退出
 dsh-manager --headless reload  --prefix <实例目录>   # 重载页面
 dsh-manager --headless repaint --prefix <实例目录>   # 只重绘
 dsh-manager --headless rebuild --prefix <实例目录>   # 重建窗口（也可 open --rebuild）
+dsh-manager --headless token   --prefix <实例目录>   # 只打印带 token 的入口地址（标准输出）
 ```
 
 窗口程序本身也加了兜底（1.1.4 起判据改对了）：`/dev/dri` **存在不等于 GL 可用**。

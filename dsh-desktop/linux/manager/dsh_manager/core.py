@@ -31,7 +31,7 @@ DEFAULT_ROOT = os.path.expanduser('~/.local/opt')
 FALLBACK_DSH_VERSIONS = ['0.1.5-rc.1']
 FALLBACK_NODE_VERSIONS = ['24.19.0', '22.11.0', '20.19.0']
 SYSTEM_SHARE = '/usr/lib/dsh-manager/share'      # deb 里随包带的窗口文件
-MANAGER_VERSION = '1.1.4'
+MANAGER_VERSION = '1.1.5'
 MANAGER_LIB = '/usr/lib/dsh-manager'             # 管理器自己的安装目录（deb）
 
 
@@ -223,6 +223,72 @@ class Instance:
         if code == 401 or 'dsh web authentication required' in body:
             return 'auth'
         return ''
+
+    # ---- WebUI 入口地址（带 token）----
+    # 说明：dsh >=0.1.5 的 WebUI 要认证，裸地址 http://127.0.0.1:<port>/ 只会回一张
+    # "authentication required" 的页面。真正的入口是 `dsh web` 启动时打印的那条
+    #   dsh web: http://127.0.0.1:3080/?token=xxxx
+    # 打开一次之后服务端会种下 cookie，同一浏览器此后可以直接用裸地址。
+    # token 等价于密码：界面展示归展示，**不要写进 manager.log**。
+    AUTH_LINE = re.compile(r'dsh web:\s*(https?://[^\s]+)')
+
+    def auth_log_candidates(self):
+        """可能记录了入口地址的日志文件（按"服务是谁起的"分两处）。"""
+        state = os.path.join(os.environ.get('XDG_STATE_HOME')
+                             or os.path.expanduser('~/.local/state'),
+                             'dsh-desktop', 'logs')
+        names = ('web.log', 'server.out.log', 'server.err.log', 'desktop.log')
+        out = [os.path.join(self.prefix, 'logs', n) for n in names]
+        out += [os.path.join(state, n) for n in ('web.log', 'desktop.log')]
+        return out
+
+    def web_auth_url(self):
+        """从日志里找**最新**一条带 token 的入口地址。
+
+        返回 (url, 来源文件, 说明)。找不到时 url 为 None，说明里写清原因。
+        """
+        best_mtime, best_url, best_path = -1.0, '', ''
+        for path in self.auth_log_candidates():
+            try:
+                st = os.stat(path)
+                if st.st_size <= 0:
+                    continue
+                found = None
+                with open(path, 'r', encoding='utf-8', errors='replace') as fh:
+                    # 日志可能很大：只读尾部 256 KB，避免把界面卡住
+                    if st.st_size > 262144:
+                        fh.seek(st.st_size - 262144)
+                        fh.readline()            # 丢掉可能被截断的半行
+                    for line in fh:
+                        m = self.AUTH_LINE.search(line)
+                        if m:
+                            found = m.group(1)
+            except OSError:
+                continue
+            if found and st.st_mtime >= best_mtime:
+                best_mtime, best_url, best_path = st.st_mtime, found, path
+        if not best_url:
+            return None, '', ('日志里没有带 token 的入口地址：'
+                              '服务可能还没被启动过，或者日志被清空了。'
+                              '先「启动服务」，再点一次「查看 Token」。')
+        return best_url, best_path, '已取到最新的一条入口地址'
+
+    def auth_url_status(self, url, timeout=4.0):
+        """这条地址现在还有效吗？返回 (状态, 说明)。
+
+        200 = 可用；401 = token 过期（服务重启过）；'' = 连不上（服务没在跑）。
+        """
+        try:
+            code, body = probe(url, timeout=timeout)
+        except Exception as exc:
+            return '', '请求失败：%s' % exc
+        if code == 200:
+            return 'ok', 'HTTP 200，地址可用'
+        if code == 401 or 'authentication required' in (body or ''):
+            return 'expired', 'HTTP 401 —— 这个 token 已过期（服务重启过），重启服务后再看'
+        if code == 0:
+            return '', '连不上（服务没在运行？）'
+        return '', 'HTTP %s，不像是入口地址' % code
 
     def status(self):
         pid = self.running_pid()

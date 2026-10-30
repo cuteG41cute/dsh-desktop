@@ -9,6 +9,8 @@
   dsh-manager --headless repair  --prefix P
   dsh-manager --headless uninstall --prefix P [--yes]
   dsh-manager --headless start|stop|open|status --prefix P [--json]
+  dsh-manager --headless reload|repaint|rebuild --prefix P      # 窗口重载页面 / 重绘 / 重建
+  dsh-manager --headless token --prefix P                       # 打印带 token 的 WebUI 入口地址
   dsh-manager --headless versions [--kind dsh|node] [--json]
   dsh-manager --version
 """
@@ -196,7 +198,7 @@ def main(argv=None):
             ok, msg = plug.uninstall(inst, entry=entry, pid=args.id, log=log)
         print(('✔ ' if ok else '✘ ') + msg)
         return 0 if ok else 1
-    if cmd in ('start', 'stop', 'open', 'rebuild', 'reload', 'repaint', 'status'):
+    if cmd in ('start', 'stop', 'open', 'rebuild', 'reload', 'repaint', 'token', 'status'):
         inst = mgr.instance_at(args.prefix)
         if cmd == 'start':
             ok, msg = inst.start()
@@ -214,6 +216,21 @@ def main(argv=None):
             ok, msg = inst.repaint_window(), '已请求整窗重绘'
             if not ok:
                 msg = '窗口没响应 repaint（旧版窗口？）'
+        elif cmd == 'token':
+            # 只打印地址本身（便于脚本/手动复制）；说明走 stderr，别污染地址
+            url, src, note = inst.web_auth_url()
+            if not url:
+                print('✘ ' + note)
+                return 1
+            if not getattr(args, 'json', False):
+                state, detail = inst.auth_url_status(url)
+                print(detail, file=sys.stderr)
+                if src:
+                    print('来源：%s' % src, file=sys.stderr)
+                print('提示：这条地址等价于密码；打开一次后同一浏览器可直接用裸地址。',
+                      file=sys.stderr)
+            print(url)
+            return 0
         else:
             ok, msg = True, json.dumps(inst.to_dict(), ensure_ascii=False)
         print(('✔ ' if ok else '✘ ') + msg)
