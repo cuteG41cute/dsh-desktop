@@ -457,6 +457,54 @@ def control_socket_path():
     return os.path.join(base, 'dsh-desktop-%d.sock' % uid)
 
 
+def nudge_repaint(win, delay=90):
+    """让整个窗口重新画一遍（软件渲染下"上半截空白"的兜底）。
+
+    现象：没有 GPU 时（WEBKIT_DISABLE_COMPOSITING_MODE=1）窗口被隐藏/最小化
+    再显示回来，WebKit 只重绘它认为脏掉的那一块，剩下一条没画过的灰带。
+    改一次窗口尺寸再改回去会让 GTK 作废整个后备存储，是这类问题的通用解法。
+
+    Gdk/GLib 在 run_gui() 里才 import，模块级函数必须自己再导一次（踩过 NameError）。
+    """
+    from gi.repository import GLib
+
+    def bump():
+        try:
+            w, h = win.get_size()
+            win.resize(w, max(1, h - 1))
+        except Exception:
+            return False
+
+        def restore():
+            try:
+                win.resize(w, h)
+            except Exception:
+                pass
+            try:
+                gdkwin = win.get_window()
+                if gdkwin is not None:
+                    gdkwin.invalidate_rect(None, True)
+            except Exception:
+                pass
+            web = getattr(win, 'web', None)
+            for obj in (web, win):
+                try:
+                    if obj is not None:
+                        obj.queue_draw()
+                except Exception:
+                    pass
+            return False
+
+        GLib.timeout_add(90, restore)
+        return False
+
+    try:
+        GLib.timeout_add(delay, bump)
+        return True
+    except Exception:
+        return False
+
+
 def raise_window(win):
     """把窗口显示出来并提到前台（跨进程唤起时也走这里）。
 
@@ -475,6 +523,7 @@ def raise_window(win):
                 win.present_with_time(Gdk.CURRENT_TIME)
             else:
                 win.present()
+            nudge_repaint(win, delay=150)      # 从托盘/最小化回来时补一次整窗重绘
             return True
         except Exception:
             continue
@@ -520,6 +569,12 @@ def start_control_server(win):
             elif data.startswith('raise'):
                 GLib.idle_add(lambda: (raise_window(win), False)[1])
                 conn.sendall(b'raised\n')
+            elif data.startswith('repaint'):
+                GLib.idle_add(lambda: (nudge_repaint(win, delay=0), False)[1])
+                conn.sendall(b'repainted\n')
+            elif data.startswith('reload'):
+                GLib.idle_add(lambda: (win.web.reload(), False)[1])
+                conn.sendall(b'reloaded\n')
             elif data.startswith('quit'):
                 conn.sendall(b'bye\n')
                 GLib.idle_add(lambda: (quit_primary(), False)[1])

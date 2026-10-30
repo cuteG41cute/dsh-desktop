@@ -31,7 +31,7 @@ DEFAULT_ROOT = os.path.expanduser('~/.local/opt')
 FALLBACK_DSH_VERSIONS = ['0.1.5-rc.1']
 FALLBACK_NODE_VERSIONS = ['24.19.0', '22.11.0', '20.19.0']
 SYSTEM_SHARE = '/usr/lib/dsh-manager/share'      # deb 里随包带的窗口文件
-MANAGER_VERSION = '1.1.2'
+MANAGER_VERSION = '1.1.3'
 MANAGER_LIB = '/usr/lib/dsh-manager'             # 管理器自己的安装目录（deb）
 
 
@@ -349,8 +349,23 @@ class Instance:
         return 0
 
     def raise_window(self):
-        """把已有窗口提到前台（正是"点了打开窗口却没反应"该做的事）。"""
-        return self._sock_request('raise').startswith('raised')
+        """把已有窗口提到前台（正是"点了打开窗口却没反应"该做的事）。
+
+        唤起之后顺手要一次整窗重绘：软件渲染下窗口从托盘/最小化回来时，
+        WebKit 可能只重绘局部，留下一大块没画过的灰带（实测见过）。
+        """
+        if not self._sock_request('raise').startswith('raised'):
+            return False
+        self._sock_request('repaint', timeout=0.8)
+        return True
+
+    def reload_page(self):
+        """让窗口重新加载页面（页面脚本把布局搞坏时的最小动作）。"""
+        return self._sock_request('reload', timeout=2.0).startswith('reloaded')
+
+    def repaint_window(self):
+        """强制整窗重绘（不改页面，不动会话）。"""
+        return self._sock_request('repaint', timeout=2.0).startswith('repainted')
 
     def _window_pids(self):
         """找属于本实例、但已经不可控的窗口进程（旧版没有控制套接字）。"""
@@ -443,11 +458,36 @@ class Instance:
             return True, '窗口已打开'
         return False, '启动器退出码 %s' % proc.poll()
 
-    def open_window(self, settle=8.0):
-        """打开窗口：先唤起已有窗口；没有则清理旧现场、必要时强制+软件渲染重试。"""
+    def open_window(self, settle=8.0, rebuild=False):
+        """打开窗口：先唤起已有窗口；没有则清理旧现场、必要时强制+软件渲染重试。
+
+        rebuild=True 表示「重建窗口」：即使控件套接字还活着也先杀掉重开——
+        窗口进程活着但画面坏掉（上半截空白）时，唤起是修不好的。
+        """
         if not os.path.exists(self.desktop):
             return False, '缺少启动器：%s（试试「修复」）' % self.desktop
         logpath = os.path.join(self.prefix, 'logs', 'desktop.log')
+
+        if rebuild:
+            notes = ['按「重建窗口」处理']
+            killed = self.kill_stale_windows()
+            if killed:
+                notes.append('结束窗口进程 %s' % ', '.join(str(p) for p in killed))
+            else:
+                notes.append('没有可结束的窗口进程')
+            locks = self.clear_stale_locks()
+            if locks:
+                notes.append('清理旧锁 %d 个' % len(locks))
+            ok, msg = self._spawn_launcher(logpath, settle)
+            if ok:
+                return True, ' '.join(notes)
+            ok, msg2 = self._spawn_launcher(logpath, settle, force=True, gl='off')
+            if ok:
+                notes.append('已用「强制 + 软件渲染」重试成功')
+                return True, ' '.join(notes)
+            tail = self._tail(logpath, 900)
+            return False, ('重建失败（%s）。日志：%s\n%s'
+                           % (' / '.join(notes) or msg2, logpath, tail))
 
         # 1) 已经有窗口：提到前台（这才是"再点一次"该有的行为）
         pid = self.window_alive()
@@ -850,16 +890,18 @@ class Manager:
         except Exception as exc:
             return False, '更新失败：%s' % exc, inst
 
-    def open_window(self, prefix):
+    def open_window(self, prefix, rebuild=False):
         """打开实例窗口：先确保实例里的窗口程序是本包版本，再交给实例的逻辑。
 
         实例的 share/ 只在「安装 / 更新 / 修复」时刷新；管理器升级后，
         旧实例里还是旧启动器（例如不懂控制套接字的老版本）。这里顺手对齐，
         省得用户每次都要点一次「修复」。
+
+        rebuild=True：窗口活着也要重开（画面坏掉时唤起修不好）。
         """
         inst = self.instance_at(prefix)
         refreshed = self._refresh_share_if_stale(inst)
-        ok, msg = inst.open_window()
+        ok, msg = inst.open_window(rebuild=rebuild)
         if refreshed and ok:
             msg = msg + '（已顺手把实例的窗口程序更新到本包版本）'
         return ok, msg, inst

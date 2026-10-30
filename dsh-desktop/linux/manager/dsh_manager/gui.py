@@ -308,6 +308,11 @@ class ManagerWindow(Gtk.Window):
         right.pack_start(make_group('服务', (
             ('start', '启动服务', 'primary'), ('stop', '停止服务', None),
             ('open', '打开窗口', None))), False, False, 0)
+        # 窗口本身也可能"活着但画面坏了"（软件渲染下上半截空白），唤起修不好，
+        # 需要能重开一个：重建窗口 = 杀掉窗口进程 + 清锁 + 重新起（不动服务/会话）。
+        right.pack_start(make_group('窗口', (
+            ('reload', '重载页面', None), ('rebuild', '重建窗口', None))),
+            False, False, 0)
         right.pack_start(make_group('版本', (
             ('update', '更新版本', None), ('repair', '修复', None))), False, False, 0)
         right.pack_start(make_group('插件', (('plugins', '管理插件…', None),)),
@@ -810,6 +815,36 @@ class ManagerWindow(Gtk.Window):
             # 再交给实例的 open_window（唤起已有窗口 / 清理旧现场 / 强制重试）
             return self.manager.open_window(inst.prefix)
         self._run_async('打开窗口 %s' % inst.label, job)
+
+    def on_reload(self, *_):
+        """让窗口重新加载页面（页面脚本把布局搞坏时最快的动作）。"""
+        inst = self._need()
+        if not inst:
+            return
+        pid = inst.window_alive()
+        if not pid:
+            self.append_log('✘ 没有正在运行的窗口；先点「打开窗口」。')
+            return
+
+        def job():
+            if inst.reload_page():
+                return True, '已让窗口重新加载页面（PID %s）' % pid
+            return False, ('窗口没响应 reload 命令（PID %s，可能是旧版窗口）——'
+                           '请点「重建窗口」' % pid)
+        self._run_async('重载页面 %s' % inst.label, job)
+
+    def on_rebuild(self, *_):
+        """重建窗口：杀掉窗口进程、清锁、重新起一个（服务与会话都不动）。"""
+        inst = self._need()
+        if not inst:
+            return
+
+        def job():
+            ok, msg = inst.start()
+            if not ok:
+                return ok, msg
+            return self.manager.open_window(inst.prefix, rebuild=True)
+        self._run_async('重建窗口 %s' % inst.label, job)
 
     def on_folder(self, *_):
         inst = self._need()

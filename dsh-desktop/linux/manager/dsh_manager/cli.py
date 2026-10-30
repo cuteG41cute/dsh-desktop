@@ -103,6 +103,8 @@ def main(argv=None):
     ap.add_argument('--kind', default='dsh')
     ap.add_argument('--json', action='store_true')
     ap.add_argument('--yes', action='store_true')
+    ap.add_argument('--rebuild', action='store_true',
+                    help='open：即使已有窗口也先杀掉重开（画面坏掉时用）')
     ap.add_argument('--id', default=None)
     ap.add_argument('--tarball', default=None)
     ap.add_argument('-v', '--verbose', action='store_true')
@@ -194,14 +196,24 @@ def main(argv=None):
             ok, msg = plug.uninstall(inst, entry=entry, pid=args.id, log=log)
         print(('✔ ' if ok else '✘ ') + msg)
         return 0 if ok else 1
-    if cmd in ('start', 'stop', 'open', 'status'):
+    if cmd in ('start', 'stop', 'open', 'rebuild', 'reload', 'repaint', 'status'):
         inst = mgr.instance_at(args.prefix)
         if cmd == 'start':
             ok, msg = inst.start()
         elif cmd == 'stop':
             ok, msg = inst.stop()
         elif cmd == 'open':
-            ok, msg = inst.open_window()
+            ok, msg = inst.open_window(rebuild=getattr(args, 'rebuild', False))
+        elif cmd == 'rebuild':
+            ok, msg = inst.open_window(rebuild=True)
+        elif cmd == 'reload':
+            ok, msg = inst.reload_page(), '已让窗口重新加载页面'
+            if not ok:
+                msg = '窗口没响应 reload（旧版窗口？）'
+        elif cmd == 'repaint':
+            ok, msg = inst.repaint_window(), '已请求整窗重绘'
+            if not ok:
+                msg = '窗口没响应 repaint（旧版窗口？）'
         else:
             ok, msg = True, json.dumps(inst.to_dict(), ensure_ascii=False)
         print(('✔ ' if ok else '✘ ') + msg)
