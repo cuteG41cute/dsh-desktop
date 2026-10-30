@@ -14,6 +14,19 @@
  * 预先渲染好的背景图（$(bg-image)）上，视觉上等价。
  * ========================================================================== */
 
+/* ---------- 动效 ----------
+ * GTK3 的 transition 只支持少数属性（颜色/背景/边框/阴影），但它们正是设计稿里
+ * hover、选中、切换那些观感的来源。transform / backdrop-filter 这类 GTK 不支持，
+ * 所以 hover 的"上浮"用阴影变化代替。 */
+button, .btn, .side-link, .instance-item, .quick-action, .icon-btn,
+.theme-trigger, .mode-toggle, .new-instance,
+popover modelbutton, popover button.flat {
+  transition: background-color 160ms ease-out,
+              color 160ms ease-out,
+              border-color 160ms ease-out,
+              box-shadow 160ms ease-out;
+}
+
 /* ---------- 窗口：设计稿 body 的渐变 + .scene 背景 ---------- */
 window.dsh-window,
 .dsh-window {

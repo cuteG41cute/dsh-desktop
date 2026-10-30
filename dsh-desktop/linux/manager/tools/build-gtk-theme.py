@@ -36,9 +36,20 @@ def load_themes():
         return json.load(fh)
 
 
+# 只有这些令牌是"颜色"，才能写进 @define-color；
+# 其余（radius / shadow / *-rgb）写进去会让 GTK 解析整份样式表失败（踩过：
+#   @define-color dsh_accent_rgb 121,104,232;  → 整个文件被拒，界面全裸奔）。
+COLOR_TOKENS = ['bg', 'bg2', 'app', 'sidebar', 'topbar', 'card', 'card-solid',
+                'text', 'muted', 'subtle', 'border', 'inner-border', 'accent',
+                'accent2', 'accent-soft', 'on-accent', 'hover', 'success', 'danger']
+
+
 def render(template, key, values):
     css = HEADER.format(theme=values.get('label', key), mode=values.get('hint', key))
-    body = template.replace('$(bg-image)', 'url("../backgrounds/%s.png")' % key)
+    body = template
+    if '*/' in body:                      # 模板头注释是给维护者看的，不进产物
+        body = body.split('*/', 1)[1]
+    body = body.replace('$(bg-image)', 'url("../backgrounds/%s.png")' % key)
     for name in PLACEHOLDERS:
         if name not in values:
             raise SystemExit('FAIL: %s 缺少令牌 %s' % (key, name))
@@ -53,9 +64,14 @@ def render(template, key, values):
         return 'font-weight: bold' if int(match.group(1)) >= 600 else 'font-weight: normal'
 
     body = re.sub(r'font-weight: (\d{3})', _weight, body)
-    palette = ['/* 调色板：设计稿的 25 个令牌，逐个写成 GTK 命名颜色（便于核对与复用） */']
+    palette = ['/* 调色板：设计稿里属于"颜色"的令牌（其余是长度/阴影，见下方注释） */']
     for name in PLACEHOLDERS:
-        palette.append('@define-color dsh_%s %s;' % (name.replace('-', '_'), values[name]))
+        if name in COLOR_TOKENS:
+            palette.append('@define-color dsh_%s %s;' % (name.replace('-', '_'), values[name]))
+    palette.append('/* 非颜色令牌（供核对，不能写进 @define-color）： */')
+    for name in PLACEHOLDERS:
+        if name not in COLOR_TOKENS:
+            palette.append('/*   %s = %s */' % (name, values[name]))
     return css + '\n'.join(palette) + '\n\n' + body
 
 

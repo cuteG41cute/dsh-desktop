@@ -1,7 +1,7 @@
 /* 自动生成，请勿手改：来源 design/styles.css（液态玻璃 / 流动高光）
  * 生成脚本：tools/build-gtk-theme.py    校验：tools/theme-token-check.py
  */
-/* 调色板：设计稿的 25 个令牌，逐个写成 GTK 命名颜色（便于核对与复用） */
+/* 调色板：设计稿里属于"颜色"的令牌（其余是长度/阴影，见下方注释） */
 @define-color dsh_bg #081729;
 @define-color dsh_bg2 #1d1737;
 @define-color dsh_app rgba(12,28,48,.57);
@@ -16,33 +16,33 @@
 @define-color dsh_inner_border rgba(58,94,145,.1);
 @define-color dsh_accent #72b6ff;
 @define-color dsh_accent2 #747ef1;
-@define-color dsh_accent_rgb 114,182,255;
 @define-color dsh_accent_soft rgba(114,182,255,.16);
 @define-color dsh_on_accent #fff;
 @define-color dsh_hover rgba(255,255,255,.075);
 @define-color dsh_success #62d7bd;
-@define-color dsh_success_rgb 98,215,189;
 @define-color dsh_danger #ef8c9a;
-@define-color dsh_radius 25px;
-@define-color dsh_app_radius 32px;
-@define-color dsh_shadow 0 30px 80px rgba(45,86,145,.18),inset 0 1px 0 rgba(255,255,255,.7);
-@define-color dsh_card_shadow 0 8px 24px rgba(0,0,0,.08);
+/* 非颜色令牌（供核对，不能写进 @define-color）： */
+/*   accent-rgb = 114,182,255 */
+/*   success-rgb = 98,215,189 */
+/*   radius = 25px */
+/*   app-radius = 32px */
+/*   shadow = 0 30px 80px rgba(45,86,145,.18),inset 0 1px 0 rgba(255,255,255,.7) */
+/*   card-shadow = 0 8px 24px rgba(0,0,0,.08) */
 
-/* ============================================================================
- * DeepSeek Harness 管理器 · GTK 主题模板
- *
- * 本文件不是直接用的：tools/build-gtk-theme.py 把下面这些占位符替换成
- * design/styles.css 里抽出来的令牌，生成 dsh_manager/theme/<主题>-<日/夜>.css。
- * 占位符：
- *   #081729 #1d1737 rgba(12,28,48,.57) rgba(10,23,41,.4) rgba(25,25,43,.3) rgba(27,50,76,.43) #14273d #e7f2ff
- *   #91aac2 #637d97 rgba(255,255,255,.8) rgba(58,94,145,.1) #72b6ff #747ef1
- *   114,182,255 rgba(114,182,255,.16) #fff rgba(255,255,255,.075) #62d7bd #ef8c9a
- *   25px 32px 0 30px 80px rgba(45,86,145,.18),inset 0 1px 0 rgba(255,255,255,.7) 0 8px 24px rgba(0,0,0,.08) url("../backgrounds/liquid-night.png")
- *
- * 与设计稿的对应关系写在每段的注释里，方便以后对照检查。
- * GTK3 的 CSS 没有 backdrop-filter / CSS 变量 / flex：透明面板叠在
- * 预先渲染好的背景图（url("../backgrounds/liquid-night.png")）上，视觉上等价。
- * ========================================================================== */
+
+
+/* ---------- 动效 ----------
+ * GTK3 的 transition 只支持少数属性（颜色/背景/边框/阴影），但它们正是设计稿里
+ * hover、选中、切换那些观感的来源。transform / backdrop-filter 这类 GTK 不支持，
+ * 所以 hover 的"上浮"用阴影变化代替。 */
+button, .btn, .side-link, .instance-item, .quick-action, .icon-btn,
+.theme-trigger, .mode-toggle, .new-instance,
+popover modelbutton, popover button.flat {
+  transition: background-color 160ms ease-out,
+              color 160ms ease-out,
+              border-color 160ms ease-out,
+              box-shadow 160ms ease-out;
+}
 
 /* ---------- 窗口：设计稿 body 的渐变 + .scene 背景 ---------- */
 window.dsh-window,

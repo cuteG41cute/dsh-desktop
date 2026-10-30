@@ -86,6 +86,25 @@ def main():
                 bad.append('%s: 用了 GTK3 不支持的写法 %s' % (key, banned))
         if re.search(r'font-weight: \d', css):
             bad.append('%s: font-weight 还是数值形态' % key)
+        # @define-color 的值必须是颜色：把这行写成 121,104,232 或 20px 会让
+        # GTK 判定整份样式表非法 → 界面完全没主题（1.3.0 就是这么裸奔的）
+        for line in css.splitlines():
+            line = line.strip()
+            if not line.startswith('@define-color'):
+                continue
+            parts = line.rstrip(';').split(None, 2)
+            if len(parts) < 3:
+                bad.append('%s: @define-color 写法不完整 %s' % (key, line[:40]))
+                continue
+            name, value = parts[1], parts[2].strip()
+            if not re.match(r'^[a-z0-9_]+$', name):
+                bad.append('%s: 颜色名不合法 %s' % (key, name))
+            if not re.match(r'^(#[0-9a-fA-F]{3,8}|rgba?\(|@)', value):
+                bad.append('%s: %s 的值不是颜色：%s' % (key, name, value[:40]))
+        if 'transition:' not in css:
+            bad.append('%s: 没有 transition（动效丢了）' % key)
+        if css.count('{') != css.count('}'):
+            bad.append('%s: 花括号不配对' % key)
     checks.append(('14 份主题 CSS 的令牌与背景引用全部对上', not bad))
 
     # ---- 3) 背景图 ----

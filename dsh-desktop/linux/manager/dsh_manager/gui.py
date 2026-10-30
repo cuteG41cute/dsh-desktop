@@ -73,6 +73,11 @@ def theme_index():
                            'frost-night': ['毛玻璃', '夜间']}}
 
 
+def last_theme_error():
+    """上一次主题加载失败的原因（供界面显示；成功时为空）。"""
+    return _PROVIDER.get('error') or ''
+
+
 def theme_path(theme, mode):
     return os.path.join(THEME_DIR, '%s-%s.css' % (theme, mode))
 
@@ -95,8 +100,10 @@ def load_css(theme='frost', mode='day'):
         provider = Gtk.CssProvider()
         provider.load_from_path(path)
     except Exception as exc:                     # 文件缺失 / GTK 语法不被支持
+        _PROVIDER['error'] = str(exc)
         sys.stderr.write('[dsh-manager] 主题未加载（继续用默认皮肤）：%s\n' % exc)
         return False, theme, mode
+    _PROVIDER['error'] = ''
     screen = Gdk.Screen.get_default()
     if screen is None:
         return False, theme, mode
@@ -268,6 +275,8 @@ class ManagerWindow(Gtk.Window):
         self._build()
         self._sync_theme_labels(theme, mode)
         self.refresh()
+        if not self.theme_loaded and os.environ.get('DSH_MANAGER_NO_THEME') != '1':
+            self.append_log('✘ 主题未加载：%s（界面会用 GTK 默认皮肤）' % (last_theme_error() or '未知原因'))
         GLib.timeout_add(400, self._drain_log)
         GLib.timeout_add(4000, self._tick)
 
@@ -962,6 +971,11 @@ class ManagerWindow(Gtk.Window):
         note = self._label('主题切换会立即生效，无需重启管理器。', 'field-hint')
         note.set_margin_top(10)
         card.pack_start(note, False, False, 0)
+        if not getattr(self, 'theme_loaded', True):
+            warn = self._label('主题未加载：%s' % (last_theme_error() or '未知原因')[:160],
+                               'field-hint', wrap=True)
+            warn.set_margin_top(6)
+            card.pack_start(warn, False, False, 0)
         return card
 
     # ---- 页面切换 ----
