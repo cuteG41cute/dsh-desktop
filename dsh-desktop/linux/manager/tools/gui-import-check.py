@@ -107,6 +107,13 @@ checks.append(('日志查看器会填满对话框', 'area.pack_start(sw, True, T
                and 'area.add(sw)' not in src))
 checks.append(('对话框尺寸按窗口百分比给', 'def _dialog_size' in src and 'win_h * 0.80' in src))
 
+# 版本选择器改用原生下拉框 + 预设列表 + 更新按钮（自定义 Popover 在用户桌面上点不开）
+checks.append(('版本选择器用原生下拉框', 'class VersionPicker(Gtk.Box)' in src and 'Gtk.ComboBoxText()' in src))
+checks.append(('版本选择器有预设列表与手动输入', 'FALLBACK_DSH_VERSIONS' in src and 'self._entry' in src))
+checks.append(('版本选择器有「更新」按钮且会覆盖旧列表',
+               "Gtk.Button(label='更新')" in src and 'self.set_options([\'latest\']' in src))
+checks.append(('更新对话框也带 fetcher', 'fetcher=lambda: self.manager.available_node_versions()' in src))
+
 # 真正构造一次窗口（用桩 GTK）：能抓到 _build() 里的解包/参数错误这类运行时问题
 try:
     _win = gui.ManagerWindow()

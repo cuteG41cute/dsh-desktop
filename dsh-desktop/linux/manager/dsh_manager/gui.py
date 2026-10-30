@@ -80,77 +80,122 @@ def load_css():
     return True
 
 
-class VersionPicker(Gtk.MenuButton):
-    """可滚动的版本选择器。
+class VersionPicker(Gtk.Box):
+    """版本选择器 = 原生下拉框（ComboBoxText）+ 手动输入 + 「更新」按钮。
 
-    GTK 自带的 Gtk.ComboBox 用的是菜单式下拉，列表一长就滚不动（只能滚一下），
-    这里换成 Popover + ScrolledWindow + ListBox：给死最小/最大高度，永远能滚，
-    并且可以放 'latest' 这种"由管理器去解析"的伪版本。
+    以前用的是 Gtk.MenuButton + 自定义 Popover + ListBox（为了长列表能滚）。
+    实测在用户的 Wayland/KDE 桌面上**点了没反应**：那套 popover 依赖自定义样式和
+    行激活事件，出问题时不好定位。现在退回最稳的 `Gtk.ComboBoxText`（原生下拉、
+    键盘鼠标都能选），列表先用**预设版本号**填满，右边一个「更新」按钮联网刷新，
+    新列表**覆盖**旧的；旁边保留手动输入框，任何情况下都能直接打版本号。
     """
 
-    def __init__(self, options=None, value=None, width_chars=24):
-        Gtk.MenuButton.__init__(self)
+    def __init__(self, options=None, value=None, width_chars=16, fetcher=None, hint=None):
+        Gtk.Box.__init__(self, orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self._value = ''
-        self._label = Gtk.Label(xalign=0.0)
-        self._label.set_width_chars(width_chars)
-        self._label.set_ellipsize(3)              # 末尾省略号
-        self.add(self._label)                     # GTK3 的 MenuButton 是 Gtk.Bin
+        self._fetcher = fetcher
         self.set_valign(Gtk.Align.CENTER)
-        self.set_tooltip_text('点击选择版本（列表可滚动）')
 
-        sw = Gtk.ScrolledWindow()
-        sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        sw.set_min_content_height(180)
-        sw.set_max_content_height(300)
-        sw.set_propagate_natural_height(True)
-        sw.set_size_request(240, -1)
-        self._list = Gtk.ListBox()
-        self._list.set_selection_mode(Gtk.SelectionMode.NONE)
-        self._list.get_style_context().add_class('version-list')
-        self._list.connect('row-activated', self._on_row)
-        sw.add(self._list)
+        self._combo = Gtk.ComboBoxText()
+        self._combo.set_size_request(width_chars * 9, -1)
+        self._combo.set_valign(Gtk.Align.CENTER)
+        self._combo.set_tooltip_text('点开选择版本号')
+        self._combo.connect('changed', self._on_combo_changed)
+        self.pack_start(self._combo, False, False, 0)
 
-        pop = Gtk.Popover.new(self)
-        pop.add(sw)
-        self.set_popover(pop)
+        self._entry = Gtk.Entry()
+        self._entry.set_width_chars(18)
+        self._entry.set_placeholder_text(hint or '或手动输入版本号')
+        self._entry.set_tooltip_text('手动输入的版本优先于下拉框')
+        self.pack_start(self._entry, True, True, 0)
+
+        self._btn = None
+        if fetcher is not None:
+            self._btn = Gtk.Button(label='更新')
+            self._btn.set_tooltip_text('联网重新获取版本列表，并用新列表覆盖当前列表')
+            self._btn.set_valign(Gtk.Align.CENTER)
+            self._btn.connect('clicked', self._on_refresh)
+            self.pack_start(self._btn, False, False, 0)
 
         self.set_options(options or [])
         if value:
             self.set_value(value)
 
+    # ---- 列表 ----
     def set_options(self, options):
-        for child in self._list.get_children():
-            self._list.remove(child)
+        options = [o for o in (options or []) if o]
+        current = self._value or self._combo.get_active_text() or ''
+        self._combo.remove_all()
         for opt in options:
-            row = Gtk.ListBoxRow()
-            row.value = opt
-            lbl = Gtk.Label(label=opt, xalign=0.0)
-            lbl.set_margin_top(6)
-            lbl.set_margin_bottom(6)
-            lbl.set_margin_start(10)
-            lbl.set_margin_end(10)
-            row.add(lbl)
-            self._list.add(row)
-        self._list.show_all()
-        if self._value in options:
-            self.set_value(self._value)
-        elif options:
-            self.set_value(options[0])
+            self._combo.append_text(opt)
+        if not options:
+            self._value = ''
+            return
+        if current in options:
+            self._combo.set_active(options.index(current))
         else:
-            self.set_value('')
+            self._combo.set_active(0)
+            self._value = options[0]
 
-    def _on_row(self, _lb, row):
-        self.set_value(getattr(row, 'value', ''))
-        pop = self.get_popover()
-        if pop is not None:
-            pop.popdown()
+    def _on_combo_changed(self, combo):
+        text = combo.get_active_text()
+        if text:
+            self._value = text
 
     def set_value(self, value):
-        self._value = value or ''
-        self._label.set_text(self._value or '—')
+        value = value or ''
+        self._value = value
+        if value == '':
+            self._combo.set_active(-1)
+            return
+        model = self._combo.get_model()
+        if model is not None:
+            for row in model:
+                if row[0] == value:
+                    self._combo.set_active_iter(row.iter)
+                    return
+        # 不在列表里：加进去并选中（手动输入的版本也能显示出来）
+        self._combo.append_text(value)
+        self._combo.set_active(self._combo.get_model().iter_n_children(None) - 1)
 
     def get_value(self):
-        return self._value
+        """手动输入优先；否则用下拉框当前项。"""
+        manual = self._entry.get_text().strip()
+        if manual:
+            return manual
+        return self._combo.get_active_text() or self._value or ''
+
+    # ---- 联网刷新（覆盖旧列表）----
+    def _on_refresh(self, *_a):
+        if self._btn is not None:
+            self._btn.set_sensitive(False)
+            self._btn.set_label('更新中…')
+
+        def work():
+            items, err = [], ''
+            try:
+                items = list(self._fetcher() or [])
+            except Exception as exc:
+                err = '%s: %s' % (type(exc).__name__, exc)
+            GLib.idle_add(self._apply_refresh, items, err)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _apply_refresh(self, items, err):
+        try:
+            if items:
+                self.set_options(['latest'] + [v for v in items if v != 'latest'])
+            if self._btn is not None:
+                self._btn.set_sensitive(True)
+                if items:
+                    self._btn.set_label('更新')
+                    self._btn.set_tooltip_text('已更新：%d 个版本' % len(items))
+                else:
+                    self._btn.set_label('更新')
+                    self._btn.set_tooltip_text('更新失败：%s' % (err or '拿不到列表'))
+        except Exception:
+            pass
+        return False
 
 
 def make_pulse_bar():
@@ -600,22 +645,14 @@ class ManagerWindow(Gtk.Window):
         ent_port = Gtk.SpinButton.new_with_range(1024, 65535, 1)
         ent_port.set_value(self.manager.next_port())
 
-        # 版本选择：先摆出 latest + 内置清单（对话框立刻可用），联网列表在后台拉，
-        # 拉回来再塞进去；右侧再给一个输入框，列表不准/拉不到时可以直接手打版本号。
-        picker_dsh = VersionPicker(['latest'] + list(FALLBACK_DSH_VERSIONS), value='latest')
-        picker_node = VersionPicker(['latest'] + list(FALLBACK_NODE_VERSIONS), value='latest')
-        ent_dsh_manual = Gtk.Entry()
-        ent_dsh_manual.set_placeholder_text('或手动输入 dsh 版本，如 0.2.1-rc.5')
-        ent_dsh_manual.set_width_chars(22)
-        ent_node_manual = Gtk.Entry()
-        ent_node_manual.set_placeholder_text('或手动输入 Node 版本，如 26.13.0')
-        ent_node_manual.set_width_chars(22)
-        box_dsh = Gtk.Box(spacing=6)
-        box_dsh.pack_start(picker_dsh, False, False, 0)
-        box_dsh.pack_start(ent_dsh_manual, True, True, 0)
-        box_node = Gtk.Box(spacing=6)
-        box_node.pack_start(picker_node, False, False, 0)
-        box_node.pack_start(ent_node_manual, True, True, 0)
+        # 版本选择：预设版本号直接可用（原生下拉框 + 手动输入 + 各自一个「更新」按钮）。
+        # 打开对话框时后台再拉一次联网列表，拉到就用新列表**覆盖**旧的。
+        picker_dsh = VersionPicker(['latest'] + list(FALLBACK_DSH_VERSIONS), value='latest',
+                                   fetcher=lambda: self.manager.available_dsh_versions(14),
+                                   hint='或手动输入 dsh 版本，如 0.2.1-rc.5')
+        picker_node = VersionPicker(['latest'] + list(FALLBACK_NODE_VERSIONS), value='latest',
+                                    fetcher=lambda: self.manager.available_node_versions(),
+                                    hint='或手动输入 Node 版本，如 26.13.0')
 
         ver_state = {'done': False}
         ver_bar = make_pulse_bar()
@@ -689,7 +726,7 @@ class ManagerWindow(Gtk.Window):
         box_prefix.pack_start(btn_browse, False, False, 0)
 
         rows = [('安装目录', box_prefix), ('显示名称', ent_label), ('端口', ent_port),
-                ('dsh 版本', box_dsh), ('Node 版本', box_node)]
+                ('dsh 版本', picker_dsh), ('Node 版本', picker_node)]
         for r, (label, widget) in enumerate(rows):
             grid.attach(Gtk.Label(label=label, xalign=0), 0, r, 1, 1)
             grid.attach(widget, 1, r, 1, 1)
@@ -709,8 +746,8 @@ class ManagerWindow(Gtk.Window):
         prefix = ent_prefix.get_text().strip()
         label = ent_label.get_text().strip() or os.path.basename(prefix)
         port = int(ent_port.get_value())
-        dsh = ent_dsh_manual.get_text().strip() or picker_dsh.get_value() or 'latest'
-        node = ent_node_manual.get_text().strip() or picker_node.get_value() or 'latest'
+        dsh = picker_dsh.get_value() or 'latest'
+        node = picker_node.get_value() or 'latest'
         ver_state['done'] = True
         dlg.destroy()
         if os.path.exists(prefix) and not os.path.isdir(prefix):
@@ -1204,11 +1241,15 @@ class ManagerWindow(Gtk.Window):
         grid = Gtk.Grid(column_spacing=8, row_spacing=10, border_width=12)
         dlg.get_content_area().add(grid)
 
-        # 与「新建」一致：立刻显示、后台拉版本、点开可滚动，并能选 latest
-        picker_dsh = VersionPicker(['latest', inst.dsh_version or DEFAULT_DSH],
-                                   value=inst.dsh_version or DEFAULT_DSH)
-        picker_node = VersionPicker(['latest', inst.node_version or DEFAULT_NODE],
-                                    value=inst.node_version or DEFAULT_NODE)
+        # 与「新建」一致：预设版本号直接可用；各自带「更新」按钮，打开时也后台拉一次
+        picker_dsh = VersionPicker(['latest'] + list(FALLBACK_DSH_VERSIONS),
+                                   value=inst.dsh_version or DEFAULT_DSH,
+                                   fetcher=lambda: self.manager.available_dsh_versions(14),
+                                   hint='或手动输入 dsh 版本')
+        picker_node = VersionPicker(['latest'] + list(FALLBACK_NODE_VERSIONS),
+                                    value=inst.node_version or DEFAULT_NODE,
+                                    fetcher=lambda: self.manager.available_node_versions(),
+                                    hint='或手动输入 Node 版本')
 
         ver_state = {'done': False}
         ver_bar = make_pulse_bar()
@@ -1222,19 +1263,26 @@ class ManagerWindow(Gtk.Window):
         dlg.connect('destroy', lambda *a: ver_state.__setitem__('done', True))
 
         def fetch_versions():
+            dsh_list, node_list = [], []
             try:
-                dsh_list = self.manager.available_dsh_versions(14)
-                node_list = self.manager.available_node_versions()
+                dsh_list = self.manager.available_dsh_versions(14) or []
             except Exception:
-                dsh_list, node_list = [], []
+                pass
+            try:
+                node_list = self.manager.available_node_versions() or []
+            except Exception:
+                pass
 
             def apply():
                 ver_state['done'] = True
                 try:
                     ver_bar.hide()
-                    ver_lbl.set_text('版本列表已就绪（latest = 最新的非 alpha 版本）')
-                    picker_dsh.set_options(['latest'] + [v for v in dsh_list if v != 'latest'])
-                    picker_node.set_options(['latest'] + [v for v in node_list if v != 'latest'])
+                    if dsh_list or node_list:
+                        ver_lbl.set_text('版本列表已就绪（latest = 最新的非 alpha 版本）')
+                    else:
+                        ver_lbl.set_text('联网获取失败，用的是预设版本号；也可以手动输入')
+                    picker_dsh.set_options(['latest'] + [v for v in (dsh_list or []) if v != 'latest'])
+                    picker_node.set_options(['latest'] + [v for v in (node_list or []) if v != 'latest'])
                 except Exception:
                     pass
                 return False
