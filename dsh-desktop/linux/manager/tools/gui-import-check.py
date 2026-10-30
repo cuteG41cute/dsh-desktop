@@ -91,6 +91,16 @@ imp_at = src.find('from gi.repository import Gdk')
 checks.append(('Gdk 版本声明在 import 之前', 0 <= req_at < imp_at))
 checks.append(('声明的是 Gdk 3.0', "require_version('Gdk', '3.0')" in src))
 
+# 结构锁：小屏上「看不到底」是因为右侧按钮组把日志挤出窗口、窗口本身又比屏幕高。
+# 修法分四段，任何一段被删掉都会复发，所以在这里钉住（和上面 Gdk 顺序同类的静态断言）。
+checks.append(('打开时按显示器工作区收尺寸（不超出屏幕）', 'get_workarea' in src))
+# 用户明确要求：别限制窗口最小高度，想缩就缩。所以窗口本身不许设硬性最小尺寸。
+checks.append(('窗口没有被写死最小尺寸', 'self.set_size_request(' not in src))
+checks.append(('右侧上部按钮区可滚动', 'top_scroll = Gtk.ScrolledWindow()' in src))
+checks.append(('日志卡只留很小的底高、且放进竖直分栏',
+               'log_card.set_size_request(-1, 64)' in src and 'vpaned.pack2(log_card' in src))
+checks.append(('竖直分栏真的存在', 'Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)' in src))
+
 # 真正构造一次窗口（用桩 GTK）：能抓到 _build() 里的解包/参数错误这类运行时问题
 try:
     _win = gui.ManagerWindow()

@@ -180,13 +180,40 @@ class ManagerWindow(Gtk.Window):
         self.set_position(Gtk.WindowPosition.CENTER)
         self.selected = None
         self.busy = False
+        self.win_width = 1060      # _fit_to_screen 会按屏幕修正
+        self.win_height = 720
         self.settings = load_settings()
         # 主题只是外观：想回到 GTK 默认皮肤，设 DSH_MANAGER_NO_THEME=1 或删掉 style.css
         self.theme_loaded = load_css()
+        self._fit_to_screen()
         self._build()
         self.refresh()
         GLib.timeout_add(400, self._drain_log)
         GLib.timeout_add(4000, self._tick)
+
+    def _fit_to_screen(self):
+        """把「初始尺寸」缩到屏幕工作区内。
+
+        踩过：默认 1060×720 的窗口放在 1280×720 的小屏上，标题栏 + 任务栏一挤，
+        窗口底部就跑到屏幕外了 —— 最后一组按钮和日志框**根本点不到也拉不上来**。
+
+        注意：这里只决定**打开时多大**，不设窗口最小尺寸 —— 想缩多小由用户自己拖，
+        极限由内容自己决定（上部是滚动区、日志卡只有 64px 底）。
+        """
+        try:
+            display = Gdk.Display.get_default()
+            if display is None:
+                return
+            monitor = display.get_primary_monitor() or display.get_monitor(0)
+            area = monitor.get_workarea()
+            width = max(760, min(1060, area.width - 60))
+            height = max(520, min(720, area.height - 60))
+            self.win_width = width
+            self.win_height = height
+            self.set_default_size(width, height)
+            self.resize(width, height)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------ 界面
     def _build(self):
@@ -230,7 +257,8 @@ class ManagerWindow(Gtk.Window):
 
         # ---------- 中部：左列表 + 右详情 ----------
         paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        paned.set_position(600)
+        # 左列表按窗口宽度取 45%（小屏上写死 600 会把右侧按钮区挤没）
+        paned.set_position(max(320, min(560, int(getattr(self, "win_width", 1060) * 0.45))))
         root.pack_start(paned, True, True, 0)
 
         # 左：实例列表（卡片 + 细线表格）
@@ -264,9 +292,16 @@ class ManagerWindow(Gtk.Window):
         left.pack_start(self.lbl_prefix, False, False, 0)
         paned.pack1(left, True, False)
 
-        # 右：标题 + 徽标 / 信息卡 / 分组按钮 / 日志卡
-        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        # 右：上部（标题 / 信息卡 / 分组按钮，可滚动）+ 下部（日志，有最小高度、可拉动）
+        # 只有一块「长东西」时也必须能滚到底：小屏上按钮组会把日志挤出窗口外（踩过）。
+        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         right.set_border_width(14)
+
+        top = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        top_scroll = Gtk.ScrolledWindow()
+        top_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        top_scroll.set_shadow_type(Gtk.ShadowType.NONE)
+        top_scroll.add(top)
 
         title_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.lbl_title = Gtk.Label(label='选择左侧的实例', xalign=0)
@@ -276,7 +311,7 @@ class ManagerWindow(Gtk.Window):
         self.lbl_badge.set_no_show_all(True)
         title_row.pack_start(self.lbl_title, False, False, 0)
         title_row.pack_start(self.lbl_badge, False, False, 0)
-        right.pack_start(title_row, False, False, 0)
+        top.pack_start(title_row, False, False, 0)
 
         self.info_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.info_card.get_style_context().add_class('card')
@@ -284,13 +319,13 @@ class ManagerWindow(Gtk.Window):
         self.lbl_info.set_selectable(True)
         self.lbl_info.get_style_context().add_class('info-val')
         self.info_card.pack_start(self.lbl_info, False, False, 0)
-        right.pack_start(self.info_card, False, False, 0)
+        top.pack_start(self.info_card, False, False, 0)
 
-        # 按钮按「服务 / 版本 / 其他」分三组，危险操作单独标红
+        # 按钮按「服务 / 窗口 / 版本 / 插件 / 其他」分组，危险操作单独标红
         self.buttons = {}
 
         def make_group(title, items):
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
             label = Gtk.Label(label=title, xalign=0)
             label.get_style_context().add_class('group-label')
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -305,25 +340,26 @@ class ManagerWindow(Gtk.Window):
             box.pack_start(row, False, False, 0)
             return box
 
-        right.pack_start(make_group('服务', (
+        top.pack_start(make_group('服务', (
             ('start', '启动服务', 'primary'), ('stop', '停止服务', None),
             ('open', '打开窗口', None))), False, False, 0)
         # 窗口本身也可能"活着但画面坏了"（软件渲染下上半截空白），唤起修不好，
         # 需要能重开一个：重建窗口 = 杀掉窗口进程 + 清锁 + 重新起（不动服务/会话）。
-        right.pack_start(make_group('窗口', (
+        top.pack_start(make_group('窗口', (
             ('reload', '重载页面', None), ('rebuild', '重建窗口', None),
             ('token', '查看 Token', None))),
             False, False, 0)
-        right.pack_start(make_group('版本', (
+        top.pack_start(make_group('版本', (
             ('update', '更新版本', None), ('repair', '修复', None))), False, False, 0)
-        right.pack_start(make_group('插件', (('plugins', '管理插件…', None),)),
-                         False, False, 0)
-        right.pack_start(make_group('其他', (
+        top.pack_start(make_group('插件', (('plugins', '管理插件…', None),)),
+                       False, False, 0)
+        top.pack_start(make_group('其他', (
             ('folder', '在文件管理器中显示', None), ('uninstall', '卸载', 'danger'))),
             False, False, 0)
 
         log_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         log_card.get_style_context().add_class('card')
+        log_card.set_size_request(-1, 64)       # 只留 64px 底（约两行）：想缩窗口时不会挡住
         log_head = Gtk.Label(label='日志', xalign=0)
         log_head.get_style_context().add_class('card-title')
         log_card.pack_start(log_head, False, False, 0)
@@ -337,7 +373,13 @@ class ManagerWindow(Gtk.Window):
         self.log_buf = self.log_view.get_buffer()
         sw.add(self.log_view)
         log_card.pack_start(sw, True, True, 0)
-        right.pack_start(log_card, True, True, 0)
+
+        vpaned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
+        # 默认给日志留 ~200px，其余给按钮区；窗口被拖小后 GTK 会自己收紧，分隔条随时可拖
+        vpaned.set_position(max(140, int(getattr(self, 'win_height', 720)) - 200))
+        vpaned.pack1(top_scroll, True, False)  # 窗口变矮时上部自己滚动，不再挤掉日志
+        vpaned.pack2(log_card, False, True)
+        right.pack_start(vpaned, True, True, 0)
 
         paned.pack2(right, True, False)
         self.set_buttons_sensitive(False)
