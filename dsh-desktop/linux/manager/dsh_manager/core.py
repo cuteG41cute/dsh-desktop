@@ -31,7 +31,7 @@ DEFAULT_ROOT = os.path.expanduser('~/.local/opt')
 FALLBACK_DSH_VERSIONS = ['0.1.5-rc.1']
 FALLBACK_NODE_VERSIONS = ['24.19.0', '22.11.0', '20.19.0']
 SYSTEM_SHARE = '/usr/lib/dsh-manager/share'      # deb 里随包带的窗口文件
-MANAGER_VERSION = '1.1.3'
+MANAGER_VERSION = '1.1.4'
 MANAGER_LIB = '/usr/lib/dsh-manager'             # 管理器自己的安装目录（deb）
 
 
@@ -903,7 +903,13 @@ class Manager:
         refreshed = self._refresh_share_if_stale(inst)
         ok, msg = inst.open_window(rebuild=rebuild)
         if refreshed and ok:
-            msg = msg + '（已顺手把实例的窗口程序更新到本包版本）'
+            if '提到前台' in msg:
+                # 程序文件换了，但正在跑的那个窗口进程还是旧的（它不懂 reload/repaint）。
+                # 这里必须说清楚，否则用户会以为"装了新版也没用"。
+                msg = msg + ('（实例的窗口程序已更新，但当前窗口仍是旧进程，'
+                             '新功能要点「重建窗口」才会生效）')
+            else:
+                msg = msg + '（已顺手把实例的窗口程序更新到本包版本）'
         return ok, msg, inst
 
     def _refresh_share_if_stale(self, inst):

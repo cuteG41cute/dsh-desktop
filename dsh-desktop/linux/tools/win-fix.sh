@@ -35,7 +35,20 @@ say() { printf '%s\n' "$*" >>"$REPORT"; printf '%s\n' "$*"; }
 sec() { say ""; say "===== $* ====="; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# /dev/dri 存在不代表 GL 可用：虚拟机里常是 virtio_gpu，Mesa 会 ZINK/dri2 screen 失败
+dri_driver() {
+    local p
+    for p in /sys/class/drm/card*/device/driver; do
+        [ -e "$p" ] || continue
+        basename "$(readlink -f "$p")"
+        return 0
+    done
+    return 1
+}
+
 # ---------------------------------------------------------------- 截图（多后端）
+# Wayland（KDE）下只有 spectacle / gnome-screenshot 这类走 portal 的工具能截；
+# X11 的 import/scrot 在 Wayland 会话里通常截不到东西，所以放在后面。
 shot() {
     local name="$1" f="$OUT/$1.png"
     rm -f "$f"
@@ -43,12 +56,25 @@ shot() {
         spectacle -b -n -o "$f" >/dev/null 2>&1 || true
     elif have gnome-screenshot; then
         gnome-screenshot -f "$f" >/dev/null 2>&1 || true
+    elif have grim; then
+        grim "$f" >/dev/null 2>&1 || true
     elif have import; then
         import -window root "$f" >/dev/null 2>&1 || true
     elif have scrot; then
         scrot "$f" >/dev/null 2>&1 || true
     fi
-    if [ -s "$f" ]; then say "[截图] $f"; else say "[截图] $name 失败（没有可用的截图工具）"; fi
+    # KDE 自带 DBus 截图接口（Plasma 5 的写法，不需要装任何东西）
+    if [ ! -s "$f" ] && have gdbus; then
+        gdbus call --session --dest org.kde.KWin --object-path /Screenshot \
+            --method org.kde.kwin.Screenshot.screenshotFullscreen "$f" >/dev/null 2>&1 || true
+        sleep 1
+    fi
+    if [ -s "$f" ]; then
+        say "[截图] $f"
+    else
+        say "[截图] $name 失败：这台机器没有可用的截图工具"
+        say "        装一个就好（之后报告里就有图了）：sudo apt install -y spectacle"
+    fi
 }
 
 # ---------------------------------------------------------------- 控制套接字
@@ -104,7 +130,9 @@ say "实例前缀  : ${PREFIX:-（没找到）}"
 say "启动器    : ${DESKTOP:-（缺失）} $([ -n "$DESKTOP" ] && [ -x "$DESKTOP" ] && echo '(可执行)' || echo '(不可执行)')"
 say "显示      : DISPLAY=${DISPLAY:-} WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-} XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-}"
 say "缩放      : GDK_SCALE=${GDK_SCALE:-unset} GDK_DPI_SCALE=${GDK_DPI_SCALE:-unset} QT_SCALE_FACTOR=${QT_SCALE_FACTOR:-unset}"
-say "GPU       : /dev/dri $([ -e /dev/dri ] && echo 存在 || echo 不存在)"
+say "GPU       : /dev/dri $([ -e /dev/dri ] && echo 存在 || echo 不存在)  DRM 驱动=$(dri_driver 2>/dev/null || echo 未知)"
+say "          （/dev/dri 存在 ≠ GL 可用：virtio_gpu 上 Mesa 常报 ZINK/dri2 screen 失败，"
+say "            那种机器必须 DSH_DESKTOP_GL=off 走软件渲染）"
 
 if have xrandr; then
     sec "1.1 分辨率与缩放（xrandr）"
@@ -161,7 +189,8 @@ for f in "$LOG_DIR/desktop.log" "$LOG_DIR/web.log" "$PREFIX/logs/desktop.log" "$
 done
 
 sec "1.8 已装的外部插件"
-for d in "$HOME/.dsh/profiles/web/node_modules" "$HOME"/.dsh/profiles/*/node_modules; do
+# 实例的 profile 在 <前缀>/dsh-home 里，不是 ~/.dsh（踩过：这里查错了目录，永远是空的）
+for d in "${PREFIX:-/nonexistent}/dsh-home/profiles/web/node_modules" "$HOME"/.dsh/profiles/*/node_modules; do
     [ -d "$d" ] || continue
     say "--- $d"
     ls "$d" 2>/dev/null | grep -E '^dsh-' | sed 's/^/    /' >>"$REPORT"
@@ -179,9 +208,18 @@ fi
 
 # ---------------------------------------------------------------- 2. 无损尝试
 sec "2. 无损尝试：让现有窗口重绘"
-say "reload 命令应答 : $(sock_cmd reload)"
-say "repaint 命令应答: $(sock_cmd repaint)"
-say "raise 命令应答  : $(sock_cmd raise)"
+R1="$(sock_cmd reload)"
+R2="$(sock_cmd repaint)"
+R3="$(sock_cmd raise)"
+say "reload 命令应答 : ${R1:-（无应答）}"
+say "repaint 命令应答: ${R2:-（无应答）}"
+say "raise 命令应答  : ${R3:-（无应答）}"
+if [ "$R1" = "unknown" ] || [ "$R2" = "unknown" ]; then
+    say ""
+    say "说明：这个窗口进程只认识旧的 ping/raise/quit（repaint/reload 回 unknown），"
+    say "      说明它还是旧版程序。这种情况只能重开窗口 —— 下面第 3 步就是。"
+    say "      重开后（新版程序）以后就能用「重载页面 / 重建窗口」按钮自救。"
+fi
 sleep 2
 shot after-raise
 

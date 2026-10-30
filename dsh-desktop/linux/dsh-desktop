@@ -428,14 +428,59 @@ if [ -z "$PY" ]; then
 fi
 
 # ---- 软件渲染兜底 ----
-# Hyper-V 等没有 DRI 的虚拟机里，WebKit 拿不到 GL 上下文 → 窗口白屏或干脆不显示
-# （日志里会有 libEGL/MESA: failed to choose pdev）。默认自动：没有 /dev/dri 就关掉
-# 合成、走软件渲染；可用 DSH_DESKTOP_GL=on/off 强制覆盖。
+# 没有可用 GPU 时 WebKit 拿不到 GL 上下文 → 窗口白屏 / 只画出一部分（实测：Wayland 下
+# 上半截是一块没画过的灰板）。判据不能只看 /dev/dri 存不存在：Hyper-V/KVM 的虚拟机里
+# /dev/dri 常常是 virtio_gpu，而 MESA 会报
+#   libEGL warning: failed to get driver name for fd -1
+#   MESA: error: ZINK: failed to choose pdev
+#   libEGL warning: egl: failed to create dri2 screen
+# 这种情况必须走软件渲染，否则整窗重绘永远不完整。
+# 判据（两者任一成立就关合成）：
+#   1) /dev/dri 不存在；
+#   2) DRM 驱动是虚拟/半虚拟显卡（virtio_gpu / vmwgfx / qxl / bochs / vboxvideo / vkms）。
+# 还可以用 DSH_DESKTOP_GL=on/off 强制覆盖；窗口程序内部还会再做一次 GL 上下文探测。
+# 判据这段（GL_POLICY_BEGIN/END 之间）由 tools/gl-detect-check.py 直接抽出来跑，
+# 所以路径用 DEV_DRI / SYSFS_DRM 变量（默认就是真实路径），测试里指到临时目录。
 GL_MODE="${DSH_DESKTOP_GL:-auto}"
-if [ "$GL_MODE" = "off" ] || { [ "$GL_MODE" = "auto" ] && [ ! -e /dev/dri ]; }; then
+DEV_DRI="${DEV_DRI:-/dev/dri}"
+SYSFS_DRM="${SYSFS_DRM:-/sys/class/drm}"
+# ---- GL_POLICY_BEGIN ----
+dri_driver() {
+    local p
+    for p in "$SYSFS_DRM"/card*/device/driver; do
+        [ -e "$p" ] || continue
+        basename "$(readlink -f "$p")"
+        return 0
+    done
+    return 1
+}
+# DRM_DRIVER 可以直接指定驱动名（判据测试与排障时用，跳过 sysfs 探测）
+if [ -n "${DRM_DRIVER:-}" ]; then
+    DRV="$DRM_DRIVER"
+else
+    DRV="$(dri_driver 2>/dev/null || true)"
+fi
+VIRT_DRV=0
+case "$DRV" in
+    virtio_gpu|virtio-gpu|vmwgfx|qxl|bochs|vboxvideo|vkms|simpledrm) VIRT_DRV=1 ;;
+esac
+SOFT_REASON=""
+if [ "$GL_MODE" = "off" ]; then
+    SOFT_REASON="DSH_DESKTOP_GL=off"
+elif [ "$GL_MODE" = "auto" ]; then
+    if [ ! -e "$DEV_DRI" ]; then
+        SOFT_REASON="/dev/dri 不存在"
+    elif [ "$VIRT_DRV" = "1" ]; then
+        SOFT_REASON="检测到虚拟显卡驱动 ${DRV:-未知}（这类驱动通常给不出可用的 GL）"
+    fi
+fi
+# ---- GL_POLICY_END ----
+if [ -n "$SOFT_REASON" ]; then
     export WEBKIT_DISABLE_COMPOSITING_MODE=1
     export LIBGL_ALWAYS_SOFTWARE=1
-    log "未检测到可用 GPU（/dev/dri 不存在，或 DSH_DESKTOP_GL=off）：已切到软件渲染。"
+    log "改用软件渲染：$SOFT_REASON。"
+else
+    log "使用 GPU 渲染（DRM 驱动：${DRV:-未知}）。若窗口出现空白/只画出一部分，用 DSH_DESKTOP_GL=off 重启。"
 fi
 
 log "正在打开桌面窗口: $WINDOW_URL"

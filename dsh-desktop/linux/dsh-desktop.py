@@ -401,6 +401,7 @@ def selftest():
         ('主窗口拒绝页面发起的 window.close()', '_on_view_close'),
         ('窗口可被跨进程唤起（控制套接字）', 'start_control_server'),
         ('无 GPU 时自动软件渲染', 'software_render_if_no_gpu'),
+        ('创建 WebView 前真去建一次 GL 上下文', 'probe_gl_context'),
         ('内置浏览器（登录 / 外部页面）', 'class BrowserWindow'),
         ('空白弹窗也返回真实窗口（window.open 不为 null）', 'about:blank'),
     )
@@ -641,6 +642,60 @@ def software_render_if_no_gpu():
         os.environ.setdefault('LIBGL_ALWAYS_SOFTWARE', '1')
 
 
+def probe_gl_context():
+    """真去建一次 GL 上下文，用来判断这台机器的 GL 栈到底能不能用。
+
+    为什么不能只看 /dev/dri：KVM / Hyper-V 的虚拟机里 /dev/dri 往往是 virtio_gpu，
+    设备节点在、Mesa 却选不到 pdev（日志：
+      libEGL warning: failed to get driver name for fd -1
+      MESA: error: ZINK: failed to choose pdev
+      libEGL warning: egl: failed to create dri2 screen
+    ）—— 那种机器必须走软件渲染，否则窗口只画出一部分（实测：上半截一块灰板）。
+
+    WebKit 的 EGL 和 GDK 的 EGL 是同一套 Mesa/EGL，所以这个探测能预先发现它。
+    **必须在创建 WebView 之前调用**：软件渲染靠环境变量，WebKit 只在初始化时读一次。
+
+    返回 None 表示能用 GPU；返回字符串表示问题描述。
+    """
+    if os.environ.get('DSH_DESKTOP_GL') == 'on':
+        return None                     # 用户强制走 GPU，就别拦
+    from gi.repository import Gtk       # 模块级函数自己导入（踩过 NameError）
+    holder = None
+    try:
+        holder = Gtk.OffscreenWindow()
+        holder.set_default_size(2, 2)
+        holder.show_all()
+        gdkwin = holder.get_window()
+        if gdkwin is None:
+            holder.destroy()
+            holder = Gtk.Window()
+            holder.set_default_size(2, 2)
+            holder.realize()
+            gdkwin = holder.get_window()
+        if gdkwin is None:
+            return 'GDK 窗口没有底层 surface'
+        if not hasattr(gdkwin, 'create_gl_context'):
+            return None                 # 老 GTK 没有这个 API，无从判断
+        ctx = gdkwin.create_gl_context()
+        if ctx is None:
+            return 'GDK 没能创建 GL 上下文'
+        if hasattr(ctx, 'make_current'):
+            try:
+                if not ctx.make_current():
+                    return 'GL 上下文无法设为当前'
+            except Exception as exc:
+                return 'GL 上下文不可用：%s' % exc
+        return None
+    except Exception as exc:
+        return 'GL 上下文探测失败：%s' % exc
+    finally:
+        try:
+            if holder is not None:
+                holder.destroy()
+        except Exception:
+            pass
+
+
 # ---------------------------------------------------------------------------
 # 图形界面
 # ---------------------------------------------------------------------------
@@ -654,6 +709,17 @@ def run_gui():
         except ValueError:
             continue
     from gi.repository import Gtk, Gdk, GLib, Gio, WebKit2
+
+    # 创建 WebView 之前先确认 GL 真的能用：不可用就强制软件渲染。
+    # 这一步必须在这里做（而不是只靠启动器看 /dev/dri），否则 WebKit 已经按 GPU
+    # 初始化了，再设环境变量也没用。
+    gl_problem = probe_gl_context()
+    if gl_problem:
+        os.environ['WEBKIT_DISABLE_COMPOSITING_MODE'] = '1'
+        os.environ.setdefault('LIBGL_ALWAYS_SOFTWARE', '1')
+        sys.stderr.write('[dsh-desktop] %s → 已强制软件渲染\n' % gl_problem)
+    else:
+        sys.stderr.write('[dsh-desktop] GL 探测通过，使用 GPU 渲染\n')
 
     # 共享的内存态 WebContext：不碰系统密钥环（Deepin 上会弹「解锁登录密钥环」），多窗口共享会话
     context = WebKit2.WebContext.new_ephemeral()

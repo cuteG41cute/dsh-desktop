@@ -145,8 +145,27 @@ dsh-manager --headless repaint --prefix <实例目录>   # 只重绘
 dsh-manager --headless rebuild --prefix <实例目录>   # 重建窗口（也可 open --rebuild）
 ```
 
-窗口程序本身也加了兜底：`/dev/dri` 不存在时自动 `WEBKIT_DISABLE_COMPOSITING_MODE=1` +
-`LIBGL_ALWAYS_SOFTWARE=1`（可用 `DSH_DESKTOP_GL=on` 强制走 GPU）。
+窗口程序本身也加了兜底（1.1.4 起判据改对了）：`/dev/dri` **存在不等于 GL 可用**。
+KVM / Hyper-V 虚拟机里 `/dev/dri` 常常是 `virtio_gpu`，Mesa 却选不到 pdev：
+
+```
+libEGL warning: failed to get driver name for fd -1
+MESA: error: ZINK: failed to choose pdev
+libEGL warning: egl: failed to create dri2 screen
+```
+
+这种机器如果走 GPU 路径，窗口就会只画出一部分（实测：上半截是一块没画过的灰板）。
+现在两层拦截：
+
+1. **启动器判据**：`/dev/dri` 不存在 **或** DRM 驱动是虚拟显卡
+   （`virtio_gpu / vmwgfx / qxl / bochs / vboxvideo / vkms / simpledrm`）→
+   自动 `WEBKIT_DISABLE_COMPOSITING_MODE=1` + `LIBGL_ALWAYS_SOFTWARE=1`；
+   可用 `DSH_DESKTOP_GL=on|off` 覆盖、`DRM_DRIVER=<名字>` 直接指定驱动；
+2. **窗口内 GL 探测**：创建 WebView **之前**用 GDK 真去建一次 GL 上下文，建不出来就
+   立刻切软件渲染（环境变量只在 WebKit 初始化时读一次，所以必须在这之前）。
+
+判据本身有 gate：`python dsh-desktop/linux/tools/gl-detect-check.py` 会把启动器里那段
+判据原样剪出来、用假 sysfs 真跑 12 个用例（含 `virtio_gpu + /dev/dri 存在 → 软件渲染`）。
 ### 管理器设置（1.0.5 起）
 
 顶栏右侧的齿轮按钮，专门管「管理器自己」：
