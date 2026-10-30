@@ -5,15 +5,19 @@
 > 一份可安装的 deb + 一份测试报告。
 >
 > 先读完这一份文件再动手。里面写了：目标、环境、文件在哪、怎么跑、怎么截图比对、
-> 哪些是 GTK3 的硬限制（别去追）、验收标准、以及必须交回什么。
+> **每个效果怎么真的做出来（含需要的依赖）**、验收标准、以及必须交回什么。
+>
+> 态度上请**尽量都试**：这份文档不给"做不到"的结论，只给"怎么做"的路子；
+> 真试不出来再记录原因（§6.7）。目标是让我们看看这套 GTK 界面能逼近设计稿到什么程度。
 
 ---
 
 ## 0. 一句话目标
 
 - **视觉**：7 套主题 × 日/夜，每一种状态下窗口截图都与 `design/references/` 里对应的
-  参考图**在布局、间距、圆角、配色、字重、图标位置上一致**（允许因 GTK 渲染差异
-  造成的 1~2px 偏差；不允许"看着像但不是"）。
+  参考图**在布局、间距、圆角、配色、字重、图标位置上一致**。先按像素目标做（1~2px 内），
+  做不到的地方记录原因与试过的手段（§6.7）。**鼓励把 §6 的方案都试一遍**——
+  包括自绘模糊、cairo 位移、SVG 图标、字体替换，甚至另开 GTK4 实验分支。
 - **功能**：界面上**每一个**按钮/菜单项/输入控件都能用，且行为符合设计意图；
   不允许出现"点了没反应""报错弹窗""状态不刷新"。
 - **交付**：`dsh-manager_<版本>_all.deb`（可安装）+ `REPORT.md`（视觉对照 +
@@ -46,8 +50,9 @@ sudo apt update && sudo apt install -y spectacle imagemagick python3-pil
 
 ```
 dsh-manager-ui-redesign/
-├── PROMPT.md                  ← 本文件
+├── PROMPT.md                  ← 本文件（任务书）
 ├── README.md                  ← 快速索引（和本文件重复度低，可先扫一眼）
+├── KICKOFF.txt                ← 贴给会话的开场提示词
 ├── design/                    ← **设计稿原件**（Kimi 做的）
 │   ├── index.html             ← 结构（侧栏 / 顶栏 / 仪表盘 / 设置页 / 弹窗 / toast）
 │   ├── styles.css             ← 全部样式 + 7 套主题的令牌（唯一色值来源）
@@ -65,7 +70,8 @@ dsh-manager-ui-redesign/
 │   │   │   ├── themes.json    ← 从设计稿抽出的 14 组 × 25 个令牌
 │   │   │   ├── theme/         ← 14 份生成好的 GTK 主题 CSS（**不要手改**）
 │   │   │   └── backgrounds/   ← 14 张背景图（**不要手改**）
-│   │   ├── design/            ← 设计稿副本（生成器读它）
+│   │   ├── INTERACTION.md     ← **每个按键的功能、状态与动效规格**（改交互前必读）
+│   ├── design/            ← 设计稿副本（生成器读它）
 │   │   ├── tools/             ← 生成器 + 全部 gate（见 §5）
 │   │   └── build-deb.sh       ← 构建 deb
 │   └── tools/                 ← 桌面壳侧 gate + 诊断脚本
@@ -148,22 +154,160 @@ spectacle -b -n -o /tmp/shot-now.png
 
 ---
 
-## 6. GTK3 的硬限制（**别去追**，追不到）
+## 6. 效果攻坚手册：设计稿里的每个效果，怎么在 GTK 里真的做出来
 
-| 设计稿里有的 | GTK3 的现状 | 正确做法 |
-| --- | --- | --- |
-| `backdrop-filter: blur()` 真毛玻璃 | **没有** | 用预渲染背景图（`backgrounds/*.png`）+ 半透明面板近似 |
-| `transform: translateY(-2px)` hover 上浮 | **没有** | 用 `box-shadow` 变化表达"抬起" |
-| flex / grid 布局 | **没有** | 用 `Gtk.Box`/`Gtk.Grid` + CSS 的 padding/margin |
-| CSS 变量 `var(--x)` | **没有** | 生成器把令牌**字面量**写进 CSS |
-| `GtkLabel` 有背景色 | **没有** | 用 `Gtk.EventBox`（代码里已有 `_chip()` 专门干这个） |
-| 渐变角度/多重阴影 | 支持，但写法挑剔 | `linear-gradient(135deg, a, b)`、`box-shadow: x y blur rgba(...)` |
-| `font-weight: 550/680` | 只有 normal/bold | 生成器已归一为 bold/normal，别改回去 |
-| 平滑滚动/弹簧动画 | 没有 | `transition` 只支持颜色/背景/边框/阴影，已用上 |
+**原则：能试的都试。** 下面每一条都先给"为什么常规写法不行"，再给**可行的实现路子和依赖**。
+只有在你实际试过并记录了失败原因之后，才允许在报告里写"这个效果没做到"——并且要写清
+"试了什么、卡在哪、需要什么依赖或上游修复"。
 
-⚠️ **主题 CSS 是"全有或全无"**：GTK3 遇到一处非法值会**丢弃整个文件**，
-界面退回默认皮肤（我们踩过：`@define-color` 里写了 `121,104,232` 就全裸奔）。
-所以：任何改动都要靠 `theme-token-check.py` 兜底，别凭感觉。
+先装这批依赖（按需，装了不会坏事）：
+
+```bash
+sudo apt update
+sudo apt install -y \
+    spectacle imagemagick python3-pil python3-numpy \
+    python3-cairo python3-gi-cairo \
+    librsvg2-common fonts-inter fonts-noto-cjk fonts-dejavu-core \
+    gtk-3-examples accerciser xdotool wmctrl
+```
+
+| 装的东西 | 用来干什么 |
+| --- | --- |
+| `spectacle` | Wayland 下截窗口（唯一稳的） |
+| `imagemagick` / `python3-pil` / `python3-numpy` | 像素比对、逐区域 RMSE、模糊/合成 |
+| `python3-cairo` + `python3-gi-cairo` | 自绘（模糊面板、位移、渐变、圆角路径） |
+| `librsvg2-common` | **加载设计稿里的 SVG 图标**（现在用的 Unicode 字符必然不像） |
+| `fonts-inter` / `fonts-noto-cjk` | 设计稿是 Segoe UI/YaHei；Inter 是与它最接近的开源替代 |
+| `gtk-3-examples` | `gtk3-demo`：现场试验 widget 能力 |
+| `accerciser` | 查看真实控件树 / 确认某个控件有没有背景节点 |
+
+### 6.1 真毛玻璃（模糊背景）——**可以做**
+
+常规写法不行是因为 GTK3 没有 `backdrop-filter`。但我们的背景是**预渲染的静态 PNG**，
+于是"模糊"完全可以自己算：
+
+1. 子类化一个 `Gtk.EventBox`（或在 `draw` 里接管绘制）；
+2. 用 `widget.translate_coordinates(win, 0, 0)` 拿到控件在窗口里的位置和尺寸；
+3. 从 `backgrounds/<主题>-<日/夜>.png` 裁出**同一区域**（按窗口尺寸等比缩放对齐）；
+4. 用 PIL/numpy 做高斯模糊（半径取设计稿的 `blur` 值：22~28px），**按（主题,尺寸）缓存**；
+5. 用 cairo 画圆角矩形路径 → `set_source_surface(blurred)` → `paint()` → 再叠一层主题色
+   半透明（`rgba(255,255,255,.25)` 之类）。
+
+```python
+# 骨架（放在 gui.py 的通用组件里）
+import cairo, numpy as np
+from gi.repository import Gdk, GdkPixbuf, Gtk
+from PIL import Image, ImageFilter
+
+_blur_cache = {}
+
+def _blurred_surface(theme_key, win_size, alloc, radius):
+    key = (theme_key, win_size, alloc, radius)
+    if key in _blur_cache:
+        return _blur_cache[key]
+    # 1) 背景图按窗口尺寸缩放 → 2) 裁剪 → 3) 模糊 → 4) 转 cairo surface
+    ...
+
+class GlassBox(Gtk.EventBox):
+    radius = 20
+    def do_draw(self, cr):
+        surface = _blurred_surface(...)
+        cr.new_sub_path()
+        cr.arc(...)   # 圆角矩形路径
+        cr.set_source_surface(surface, 0, 0)
+        cr.fill()
+        cr.set_source_rgba(1, 1, 1, 0.25)
+        cr.fill()
+```
+
+- 实测注意：`do_draw` 里不要做重活；模糊一定缓存（320×200 一次约几毫秒，但每帧都做会卡）。
+- 备选：`Gdk.pixbuf_get_from_window()` 抓像素再模糊——X11 可行，**Wayland 下抓不到**，所以
+  优先用"从背景图裁"的方案（背景本来就是我们自己渲染的，等价且稳定）。
+
+### 6.2 transform（hover 上浮 / 缩放 / 位移动画）——**可以做**
+
+GTK3 CSS 没有 `transform`，但绘制层有完整的 cairo 变换：
+
+1. 在控件的 `draw`（或 `Gtk.DrawingArea` 的 `draw`）里 `cr.translate(0, -dy)`，自己画底和阴影；
+2. 用 `GLib.timeout_add(16, …)` 跑 160ms 的插值（`ease-out`：`1-(1-t)^3`），更新 `dy` 后
+   `queue_draw()`；
+3. 鼠标进出用 `enter-notify-event` / `leave-notify-event`（或 CSS `:hover` 设个类切换）。
+
+```python
+def _animate(widget, start, end, ms=160, on_frame=None):
+    t0 = time.time()
+    def step():
+        t = min(1.0, (time.time() - t0) * 1000 / ms)
+        e = 1 - (1 - t) ** 3                     # ease-out
+        on_frame(start + (end - start) * e)
+        widget.queue_draw()
+        return t < 1.0
+    GLib.timeout_add(16, step)
+```
+
+- 更省事的近似：动画 `margin-top`（真位移但会触发重排，只在小卡片上试），或用
+  `Gtk.Fixed` + `move()`（重排代价小）。
+- 如果还想更接近：GTK4 有真 `transform` 与部分 `filter`，可以**另开一个实验分支**试
+  GTK4 + libadwaita（管理器是独立进程，不影响桌面壳用的 GTK3/WebKitGTK 4.1）。
+  决定前先确保现有 gate 全绿、且能回滚。
+
+### 6.3 设计稿的 SVG 图标 ——**应该做，收益最大**
+
+现在用的是 Unicode 字符替代（`⚙ ☾ ▤ …`），形状和线宽必然和设计稿不一样。
+设计稿 `index.html` 里有 24 个 `<symbol>`，直接导出成独立 SVG 就能 1:1：
+
+```bash
+# 1) 从 index.html 抽出每个 <symbol id="i-xxx">…</symbol>，包成
+#    <svg xmlns=... viewBox="0 0 24 24" fill="none" stroke="currentColor"
+#         stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">…</svg>
+#    存到 manager/dsh_manager/icons/i-xxx.svg（写个 20 行脚本即可，可复用）
+# 2) 代码里替换 _label(glyph) 为：
+img = Gtk.Image.new_from_pixbuf(
+    GdkPixbuf.Pixbuf.new_from_file_at_scale(path, 16, 16, True))
+```
+
+- 颜色：SVG 用 `stroke="currentColor"` 时 GdkPixbuf 不解析 CSS 颜色 → 两种做法：
+  ① 生成两套（浅色 `#747288` / 深色 `#aaa6bb`）分别给日/夜；② 用 `Gtk.Image` 的
+  `mask`/`style` 重新着色（`Gtk.Image#set_from_surface` + cairo 着色）。
+- 这一步做完，图标区域的像素差异会立刻小一大截。
+
+### 6.4 字体对齐 ——**应该做**
+
+```bash
+fc-match "Segoe UI"        # 会回退到 DejaVu，字形/字宽都不一样
+sudo apt install -y fonts-inter fonts-noto-cjk
+# CSS 里改成：font-family: "Inter", "Noto Sans CJK SC", "DejaVu Sans", sans-serif;
+```
+
+装完用 `fc-match Inter` 确认命中；再按截图微调 `font-size`（可写小数，如 11.5px）与
+`letter-spacing`（GTK3 的 CSS 对 `letter-spacing` 支持不稳，若报错就去掉，改用文本对比）。
+
+### 6.5 主题切换的"过渡" ——**可以试**
+
+CSS 无法 crossfade 两套主题，但可以：切换前用 `Gdk.pixbuf_get_from_window`（X11）或
+`Gtk.Widget.draw` 到 `cairo_surface` 抓一张当前窗口快照 → 放到 `Gtk.Overlay` 里的
+`Gtk.Image` → 换主题 → 用 §6.2 的动画把快照 `opacity` 从 1 淡到 0（cairo
+`set_source_surface` + `paint_with_alpha`）。能成就在报告里单独记一笔。
+
+### 6.6 已经确认可用的 GTK3 能力（放心用）
+
+- CSS：`border-radius` / `box-shadow`（含 `inset`）/ `linear-gradient(<angle>, …)` /
+  `background-image: url()` / `background-size` / `transition`（颜色/背景/边框/阴影）/ `alpha()`
+- 容器：`Gtk.Box`、`Gtk.Grid`、`Gtk.Stack`（含 SLIDE/CROSSFADE/OVER 等过渡）、
+  `Gtk.Revealer`（多种滑动/淡入）、`Gtk.Paned`、`Gtk.FlowBox`、`Gtk.Overlay`
+- 自绘：`Gtk.EventBox`/`Gtk.DrawingArea` 的 `draw` 信号给的是完整 cairo 上下文（变换、
+  裁剪、模糊后的位图、渐变全都行）
+- 动画调度：`GLib.timeout_add(16, …)` 跑 60fps 插值；`Gtk.ProgressBar.pulse()` 做脉冲
+
+### 6.7 真做不到时怎么写报告
+
+允许结论是"这一步没做到"，但必须**三件事齐全**：
+
+1. 试过的方案（代码片段/命令）；
+2. 失败的具体症状（报错原文、截图、崩溃栈）；
+3. 需要什么才能做到（缺哪个依赖/需要 GTK4/需要上游修复的那个 issue）。
+
+不许写"GTK 不支持所以跳过了"——那不是结论，那是没试完。
 
 ---
 
@@ -171,6 +315,10 @@ spectacle -b -n -o /tmp/shot-now.png
 
 用下面这张矩阵逐项测试，把"操作 / 期望 / 实际 / 结论"写进 `REPORT.md`。
 **测试要在**装好你自己构建的 deb、并且窗口是**重开过**的状态下做。
+
+**先读 project/dsh-desktop/linux/manager/INTERACTION.md** —— 那里写清了每个按键
+「点了会发生什么 / 有哪些状态 / 动效时长与属性 / 对应代码位置」。下面这张矩阵是
+它的可执行版；两者不一致时以 INTERACTION.md 为准，并顺手把矩阵补上。
 
 ### A. 侧栏
 1. 点实例行 → 右侧卡片全部切到该实例（标题、徽标、路径、版本胶囊、PID、端口、状态）
@@ -239,6 +387,8 @@ spectacle -b -n -o /tmp/shot-now.png
 - 按钮/链接/实例行/快捷卡 hover 有 160ms 过渡（颜色/边框/阴影）
 - 主题切换有 Stack 的 crossfade / toast 有 SLIDE_UP
 - 忙碌时：顶部脉冲进度条出现，所有操作按钮禁用（避免并发）
+- 上面这些 160ms 过渡 / crossfade / SLIDE_UP 是**当前已实现**的；设计稿里还有更强的动效
+  （模糊、位移、主题交叉淡入），按 §6 的方案去试，成了就同步更新 INTERACTION.md 与本节
 - 危险操作（卸载）有二次确认
 
 ---
@@ -251,7 +401,7 @@ spectacle -b -n -o /tmp/shot-now.png
    - 视觉：14 个状态（7 主题 × 日/夜）各一张截图 + 与参考图的**分区**比对结论；
      不一致处列出"参考值 → 实际值 → 改动点"；
    - 功能：上面 40 项矩阵逐行填（操作/期望/实际/结论）；
-   - 已知限制：明确写出哪些是 GTK3 做不到的（从 §6 抄，可补）；
+   - 效果攻坚记录：逐个列出设计稿里非常规的效果（毛玻璃 / 位移 / SVG 图标 / 字体 / 主题过渡），写清**试了什么、结果如何、最终采用哪种实现**；没成功的按 §6.7 三件事写全；
    - 变更清单：改了哪些文件、版本号、gate 结果；
 3. `shots/` —— 全部截图（命名 `<主题>-<日/夜>-<区域>.png`）；
 4. 若改了源码：**在 `REPORT.md` 里贴关键 diff 片段**（VM 上没有 GitHub 凭据，
@@ -261,6 +411,8 @@ spectacle -b -n -o /tmp/shot-now.png
 
 ## 10. 工作纪律
 
+- **鼓励实验**：§6 里的方案都可以试点；实验性改动放独立分支/独立文件，
+  保证随时能退回（gate 绿 + 能构建 = 可回滚）。别因为"难"就不试。
 - **一次只改一件事**，改完立刻 `bash tools/vm-verify.sh`；红了先修红再往下。
 - **不要**为了"看起来像"去硬编码像素值到 `gui.py`（间距应写在 CSS 模板里）。
 - **不要**手改生成物（`theme/`、`backgrounds/`、`themes.json` 里 `values` 段）。

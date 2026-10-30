@@ -1,7 +1,7 @@
 # dsh-manager UI 复刻包（设计稿 + 当前实现 + 任务说明）
 
 给虚拟机上的 DSH agent 用。**先读 `PROMPT.md`**——那是完整任务书
-（目标 / 环境 / 文件位置 / 工作流 / GTK3 硬限制 / 40 项功能测试矩阵 / 交付物）。
+（目标 / 环境 / 文件位置 / 工作流 / **效果攻坚手册（含依赖清单）** / 40 项功能测试矩阵 / 交付物）。
 
 ## 一分钟看懂包里有什么
 
@@ -26,8 +26,10 @@ bash tools/vm-verify.sh            # 基线（应全绿）
 
 1. **主题 CSS 是全有或全无**：一个非法值就整份丢弃 → 界面裸奔。曾因
    `@define-color dsh_accent_rgb 121,104,232;` 踩过，`theme-token-check.py` 现在会拦。
-2. **GTK3 没有** `backdrop-filter` / `transform` / CSS 变量 / flex；`GtkLabel` 也不画背景
-   （色块要用 `Gtk.EventBox`，代码里已有 `_chip()`）。细节见 PROMPT §6，别去追做不到的。
+2. 设计稿里那些"看起来 GTK 做不到"的效果（毛玻璃、上浮、SVG 图标、字体）**都有实现路子**：
+   见 PROMPT §6「效果攻坚手册」——按控件 allocation 裁背景图 + 高斯模糊就能做出真毛玻璃，
+   cairo `translate` + 16ms 插值就能做位移，`librsvg2-common` 就能用设计稿的 SVG 图标。
+   依赖清单也在那一节。**鼓励都试**，试不出来再按 §6.7 记录原因。
 3. **改样式 = 改模板再生成**：`tools/gtk-theme-template.css.in` → `build-gtk-theme.py`
    → `dsh_manager/theme/*.css`；直接改生成物会在下次生成时被覆盖且 gate 变红。
 4. **装完 deb 必须重开管理器窗口**，否则跑的是内存里的旧代码。

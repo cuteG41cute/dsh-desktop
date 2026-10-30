@@ -25,11 +25,23 @@
 | 禁用态 | 按钮变灰且**不响应点击**；禁用原因通常是"没选实例"或"正在忙" |
 | 键盘 | 菜单/对话框使用 GTK 原生键盘行为（Tab 切换焦点、Esc 关闭 popover/对话框、空格/回车激活） |
 
-### GTK3 做不到的动效（别按设计稿去要求它）
+### 动效怎么实现（含"看起来做不到"的那几个）
 
-`backdrop-filter`（真毛玻璃）、`transform`（位移/缩放/旋转）、CSS 变量、flex/grid 布局、
-`GtkLabel` 自身背景色。对应替代：预渲染背景图、`box-shadow` 变化、生成器写入字面量、
-`Gtk.Box`/`Gtk.Grid`、`Gtk.EventBox`（代码里的 `_chip()`）。
+设计稿里的效果**都有路子**，细节与代码骨架见 `HANDOFF-PROMPT.md` §6（效果攻坚手册）：
+
+| 设计稿效果 | 可行的实现路径 | 需要装的依赖 |
+| --- | --- | --- |
+| 真毛玻璃（`backdrop-filter`） | 背景是我们自己的静态 PNG：按控件 allocation 裁剪 → 高斯模糊（缓存）→ cairo 圆角裁切绘制 + 主题色叠加 | `python3-pil`、`python3-numpy`、`python3-cairo`、`python3-gi-cairo` |
+| hover 上浮 / 缩放 / 位移（`transform`） | 控件 `draw` 里 `cr.translate()` + `GLib.timeout_add(16)` 跑 160ms ease-out 插值；或用 `Gtk.Fixed`+`move()` | `python3-cairo`、`python3-gi-cairo` |
+| 设计稿的 SVG 图标 | 从 `design/index.html` 的 24 个 `<symbol>` 导出 `icons/*.svg`，`GdkPixbuf`/`Gtk.Image` 加载（日/夜各一套颜色） | `librsvg2-common` |
+| 字体与字宽 | 装 `fonts-inter`（最接近 Segoe UI）+ `fonts-noto-cjk`，CSS 里换 `font-family`，必要时微调 `font-size` 小数 | `fonts-inter`、`fonts-noto-cjk` |
+| 主题切换过渡 | 抓窗口快照放进 `Gtk.Overlay`，换主题后用 cairo `paint_with_alpha` 淡出 | `python3-cairo` |
+| 色块 / 圆点 / 药丸背景 | 用 `Gtk.EventBox`（代码里的 `_chip()`）或 `Gtk.DrawingArea` 自绘 | — |
+| 布局（flex/grid） | `Gtk.Grid` / `Gtk.Box` / `Gtk.FlowBox` / `Gtk.Overlay` | — |
+| CSS 变量 | 生成器把令牌写成字面量（现状），或用 `@define-color` + `alpha()` | — |
+
+> 这些是"难"不是"不能"。真试不出来时，按 PROMPT §6.7 记录：试过什么 / 失败症状 /
+> 还缺什么（依赖、GTK4、上游修复）。**不接受"GTK 不支持所以跳过"这种结论。**
 
 ---
 
