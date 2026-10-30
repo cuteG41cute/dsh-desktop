@@ -4,6 +4,7 @@
 一次装好、长期用：在同一个窗口里管多个 DSH 实例 ——
 每个实例有自己的安装目录、Node、dsh 版本、数据目录和端口，互不干扰。
 """
+import json
 import os
 import subprocess
 import sys
@@ -44,40 +45,71 @@ STATUS_DOT = {
 }
 
 CSS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'style.css')
+def _gtk_version():
+    """GTK 版本字符串；桩 GTK / 老版本取不到时退化成 0.0.0，绝不让它抛错。"""
+    parts = []
+    for fn in ('get_major_version', 'get_minor_version', 'get_micro_version'):
+        try:
+            parts.append(int(getattr(Gtk, fn)()))
+        except Exception:
+            parts.append(0)
+    return '%d.%d.%d' % tuple(parts)
 
 
-def status_markup(status):
-    """列表「状态」列的 Pango 标记：一个彩色圆点 + 文案。"""
-    color = STATUS_DOT.get(status, '#7d838a')
-    text = STATUS_TEXT.get(status, status or '')
-    return '<span foreground="%s">●</span>  %s' % (color, GLib.markup_escape_text(text))
+gtk_ver = _gtk_version()
+
+THEME_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'theme')
+_PROVIDER = {'provider': None}
 
 
-def load_css():
-    """挂上企业简洁风主题。
+def theme_index():
+    """主题索引（由 tools/build-gtk-theme.py 生成）：7 套 × 日/夜。"""
+    try:
+        with open(os.path.join(THEME_DIR, 'index.json'), encoding='utf-8') as fh:
+            return json.load(fh)
+    except Exception:
+        return {'order': ['frost'], 'variants': ['frost-day', 'frost-night'],
+                'labels': {'frost-day': ['毛玻璃', '日间'],
+                           'frost-night': ['毛玻璃', '夜间']}}
 
-    开关来源（优先级从高到低）：环境变量 DSH_MANAGER_NO_THEME=1 → settings.json 的 theme。
-    加载失败只是回落默认皮肤，绝不影响功能。
+
+def theme_path(theme, mode):
+    return os.path.join(THEME_DIR, '%s-%s.css' % (theme, mode))
+
+
+def load_css(theme='frost', mode='day'):
+    """挂上设计稿主题（Kimi 那套：7 主题 × 日/夜）。
+
+    主题文件由 tools/build-gtk-theme.py 从 design/styles.css 的令牌生成，
+    所以色值与设计稿逐项一致（tools/theme-token-check.py 会核对）。
+    关掉主题：DSH_MANAGER_NO_THEME=1，或 settings.theme 置空。
+    返回 (是否加载, 实际主题, 实际模式)。
     """
     if os.environ.get('DSH_MANAGER_NO_THEME') == '1':
-        return False
-    try:
-        if not load_settings().get('theme', True):
-            return False
-    except Exception:
-        pass
+        return False, theme, mode
+    path = theme_path(theme, mode)
+    if not os.path.exists(path):
+        theme, mode = 'frost', 'day'
+        path = theme_path(theme, mode)
     try:
         provider = Gtk.CssProvider()
-        provider.load_from_path(CSS_FILE)
+        provider.load_from_path(path)
     except Exception as exc:                     # 文件缺失 / GTK 语法不被支持
         sys.stderr.write('[dsh-manager] 主题未加载（继续用默认皮肤）：%s\n' % exc)
-        return False
+        return False, theme, mode
     screen = Gdk.Screen.get_default()
     if screen is None:
-        return False
+        return False, theme, mode
+    old = _PROVIDER.get('provider')
+    if old is not None:                          # 换主题时先摘掉旧的，避免叠加
+        try:
+            Gtk.StyleContext.remove_provider_for_screen(screen, old)
+        except Exception:
+            pass
     Gtk.StyleContext.add_provider_for_screen(
-        screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-    return True
+        screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER)
+    _PROVIDER['provider'] = provider
+    return True, theme, mode
 
 
 class VersionPicker(Gtk.Box):
@@ -229,10 +261,12 @@ class ManagerWindow(Gtk.Window):
         self.win_width = 1060      # _fit_to_screen 会按屏幕修正
         self.win_height = 720
         self.settings = load_settings()
-        # 主题只是外观：想回到 GTK 默认皮肤，设 DSH_MANAGER_NO_THEME=1 或删掉 style.css
-        self.theme_loaded = load_css()
+        # 主题只是外观：想回到 GTK 默认皮肤，设 DSH_MANAGER_NO_THEME=1 或在设置里清空主题。
+        theme, mode = self._theme_state()
+        self.theme_loaded, theme, mode = load_css(theme, mode)
         self._fit_to_screen()
         self._build()
+        self._sync_theme_labels(theme, mode)
         self.refresh()
         GLib.timeout_add(400, self._drain_log)
         GLib.timeout_add(4000, self._tick)
@@ -252,8 +286,9 @@ class ManagerWindow(Gtk.Window):
                 return
             monitor = display.get_primary_monitor() or display.get_monitor(0)
             area = monitor.get_workarea()
-            width = max(760, min(1060, area.width - 60))
-            height = max(520, min(720, area.height - 60))
+            # 设计稿画布是 1440x900：能放下就用它，放不下按屏幕收缩（留 60px 余量）
+            width = max(900, min(1440, area.width - 60))
+            height = max(560, min(900, area.height - 60))
             self.win_width = width
             self.win_height = height
             self.set_default_size(width, height)
@@ -261,299 +296,950 @@ class ManagerWindow(Gtk.Window):
         except Exception:
             pass
 
+    # ------------------------------------------------------------ 主题
+    def _theme_state(self):
+        """当前主题/模式（兼容老版本 settings 里的布尔值）。"""
+        theme = self.settings.get('theme')
+        if isinstance(theme, bool):
+            theme = 'frost' if theme else ''
+        theme = (theme or '').strip() or 'frost'
+        index = theme_index()
+        if theme not in index.get('order', []):
+            theme = (index.get('order') or ['frost'])[0]
+        mode = self.settings.get('mode') or 'day'
+        if mode not in ('day', 'night'):
+            mode = 'day'
+        return theme, mode
+
+    def apply_theme(self, theme=None, mode=None, persist=True):
+        """切主题 / 日夜：换 CSS、更新顶栏标签、可选落盘。"""
+        cur_theme, cur_mode = self._theme_state()
+        theme = theme or cur_theme
+        mode = mode or cur_mode
+        ok, theme, mode = load_css(theme, mode)
+        self.theme_loaded = ok
+        self.settings['theme'] = theme if ok else ''
+        self.settings['mode'] = mode
+        if persist and ok:
+            save_settings({'theme': theme, 'mode': mode})
+        self._sync_theme_labels(theme, mode)
+        return ok
+
+    def _sync_theme_labels(self, theme, mode):
+        """把当前主题/模式写到界面各处（顶栏、设置页、菜单勾选）。"""
+        index = theme_index()
+        labels = index.get('labels', {}).get('%s-%s' % (theme, mode), [theme, mode])
+        if getattr(self, 'lbl_theme_name', None) is not None:
+            self.lbl_theme_name.set_text(labels[0])
+        if getattr(self, 'btn_mode', None) is not None:
+            self.btn_mode.set_label('☾  夜间' if mode == 'night' else '☀  日间')
+        if getattr(self, 'lbl_settings_theme', None) is not None:
+            self.lbl_settings_theme.set_text(labels[0])
+            self.lbl_settings_mode.set_text(labels[1])
+        self._mark_theme_menu(theme, mode)
+
+    def _mark_theme_menu(self, theme, mode='day'):
+        index = theme_index()
+        for key, btn in getattr(self, '_theme_buttons', {}).items():
+            ctx = btn.get_style_context()
+            if key == theme:
+                ctx.add_class('selected')
+            else:
+                ctx.remove_class('selected')
+            labels = index.get('labels', {}).get('%s-%s' % (key, mode), [key, ''])
+            btn.set_tooltip_text('%s · %s' % (labels[0], labels[1]))
+
+    def on_toggle_mode(self, *_):
+        _theme, mode = self._theme_state()
+        self.apply_theme(mode=('day' if mode == 'night' else 'night'))
+        self._toast('已切换到%s模式' % ('日间' if mode == 'night' else '夜间'))
+
+    def on_pick_theme(self, widget):
+        theme = getattr(widget, 'theme_key', '')
+        if not theme:
+            return
+        self.apply_theme(theme=theme)
+        pop = getattr(self, '_theme_popover', None)
+        if pop is not None:
+            pop.popdown()
+        self._toast('主题已切换到「%s」' % (widget.get_label() if hasattr(widget, 'get_label') else theme))
+
+    # ------------------------------------------------------------ 小工具
+    @staticmethod
+    def _label(text, *classes, **kwargs):
+        lbl = Gtk.Label(label=text, xalign=kwargs.get('xalign', 0.0))
+        if kwargs.get('wrap'):
+            lbl.set_line_wrap(True)
+        if kwargs.get('selectable'):
+            lbl.set_selectable(True)
+        for cls in classes:
+            lbl.get_style_context().add_class(cls)
+        return lbl
+
+    @staticmethod
+    def _icon(text, *classes):
+        lbl = Gtk.Label(label=text, xalign=0.5, yalign=0.5)
+        lbl.get_style_context().add_class('glyph')
+        for cls in classes:
+            lbl.get_style_context().add_class(cls)
+        return lbl
+
+    def _button(self, key, label, *classes, **kwargs):
+        """建按钮并登记到 self.buttons（set_buttons_sensitive 用）。"""
+        btn = Gtk.Button()
+        if kwargs.get('icon'):
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=7)
+            box.pack_start(self._icon(kwargs['icon']), False, False, 0)
+            box.pack_start(Gtk.Label(label=label), False, False, 0)
+            btn.add(box)
+        else:
+            btn.set_label(label)
+        for cls in classes:
+            btn.get_style_context().add_class(cls)
+        handler = kwargs.get('handler')
+        if handler is None:
+            handler = getattr(self, 'on_' + key) if hasattr(self, 'on_' + key) else None
+        if handler is not None:
+            btn.connect('clicked', handler)
+        if key:
+            self.buttons[key] = btn
+        return btn
+
+    def _toast(self, text):
+        """底部居中气泡（设计稿 .toast），2.6 秒后自动收起。"""
+        try:
+            self.lbl_toast.set_text(text)
+            self.toast_revealer.set_reveal_child(True)
+        except Exception:
+            return
+
+        def hide():
+            try:
+                self.toast_revealer.set_reveal_child(False)
+            except Exception:
+                pass
+            return False
+        GLib.timeout_add(2600, hide)
+
     # ------------------------------------------------------------ 界面
     def _build(self):
-        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.add(root)
+        self.buttons = {}
+        self._need_selection = {'start', 'stop', 'open', 'reload', 'rebuild', 'token',
+                                'folder', 'uninstall', 'plugins', 'update', 'repair'}
+        self._theme_buttons = {}
+        self._recent = []
+        # 完整日志只存缓冲区（界面上的「最近日志」只显示 3 行；完整内容走对话框）
+        self.log_buf = Gtk.TextBuffer()
+        self.set_titlebar(None)          # 设计稿没有系统标题栏样式，用自绘顶栏
+        self.get_style_context().add_class('dsh-window')
 
-        # ---------- 顶栏 ----------
-        hb = Gtk.HeaderBar()
-        hb.set_show_close_button(True)
-        hb.props.title = 'DeepSeek Harness 管理器'
-        hb.props.subtitle = '多实例 · 多版本 · 安装 / 更新 / 修复 / 卸载'
-        btn_new = Gtk.Button(label='＋ 新建实例')
-        btn_new.get_style_context().add_class('primary')
-        btn_new.connect('clicked', self.on_new)
-        hb.pack_start(btn_new)
-        pill = Gtk.Label(label='v%s' % MANAGER_VERSION)
-        pill.get_style_context().add_class('pill')
-        hb.pack_end(pill)
-        btn_refresh = Gtk.Button.new_from_icon_name('view-refresh-symbolic', Gtk.IconSize.BUTTON)
-        btn_refresh.set_tooltip_text('刷新')
-        btn_refresh.connect('clicked', lambda *a: self.refresh())
-        hb.pack_end(btn_refresh)
-        btn_settings = Gtk.Button.new_from_icon_name('emblem-system-symbolic', Gtk.IconSize.BUTTON)
-        btn_settings.set_tooltip_text('管理器设置（版本 / 主题 / 日志 / 卸载）')
-        btn_settings.connect('clicked', self.on_settings)
-        hb.pack_end(btn_settings)
-        self.set_titlebar(hb)
+        toast = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        toast.get_style_context().add_class('toast')
+        toast.pack_start(self._icon('✓', 'toast-icon'), False, False, 0)
+        self.lbl_toast = self._label('操作已完成', 'toast-text')
+        toast.pack_start(self.lbl_toast, False, False, 0)
+        self.toast_revealer = Gtk.Revealer()
+        self.toast_revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
+        self.toast_revealer.set_halign(Gtk.Align.CENTER)
+        self.toast_revealer.set_valign(Gtk.Align.END)
+        self.toast_revealer.set_margin_bottom(26)
+        self.toast_revealer.add(toast)
+        self.toast_revealer.set_reveal_child(False)
 
-        # 忙碌指示条（安装/更新/修复期间）：脉冲进度 + 一行说明
-        self.busy_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        self.busy_box.set_border_width(10)
-        self.busy_lbl = Gtk.Label(xalign=0)
-        self.busy_lbl.get_style_context().add_class('dim-label')
+        overlay = Gtk.Overlay()
+        shell = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        shell.get_style_context().add_class('dsh-shell')
+        shell.set_margin_top(20)
+        shell.set_margin_bottom(20)
+        shell.set_margin_start(20)
+        shell.set_margin_end(20)
+        overlay.add(shell)
+        overlay.add_overlay(self.toast_revealer)
+        self.add(overlay)
+
+        shell.pack_start(self._build_sidebar(), False, False, 0)
+        shell.pack_start(self._build_main(), True, True, 0)
+
+        # 忙碌指示条（安装/更新期间）：放在顶栏下面，不打断布局
+        self.busy_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.busy_box.get_style_context().add_class('busy-bar')
+        self.busy_lbl = self._label('', 'busy-text')
         self.busy_bar = make_pulse_bar()
         self.busy_box.pack_start(self.busy_lbl, False, False, 0)
-        self.busy_box.pack_start(self.busy_bar, False, False, 0)
+        self.busy_box.pack_start(self.busy_bar, True, True, 0)
         self.busy_box.set_no_show_all(True)
-        root.pack_start(self.busy_box, False, False, 0)
+        self.main_box.pack_start(self.busy_box, False, False, 0)
         self.busy_box.hide()
         self._busy_pulse_id = None
 
-        # ---------- 中部：左列表 + 右详情 ----------
-        paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        # 左列表按窗口宽度取 45%（小屏上写死 600 会把右侧按钮区挤没）
-        paned.set_position(max(320, min(560, int(getattr(self, "win_width", 1060) * 0.45))))
-        root.pack_start(paned, True, True, 0)
-
-        # 左：实例列表（卡片 + 细线表格）
-        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        left.set_border_width(14)
-        list_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        list_card.get_style_context().add_class('card')
-        self.store = Gtk.ListStore(str, str, str, str, str, str)   # label, prefix, dsh, node, port, status(markup)
-        self.tree = Gtk.TreeView(model=self.store)
-        self.tree.set_headers_visible(True)
-        for title, width, idx, prop in (('名称', 170, 0, 'text'), ('dsh', 96, 2, 'text'),
-                                        ('node', 84, 3, 'text'), ('端口', 58, 4, 'text'),
-                                        ('状态', 128, 5, 'markup')):
-            renderer = Gtk.CellRendererText()
-            renderer.set_property('ellipsize', 3)      # END
-            col = Gtk.TreeViewColumn(title, renderer)
-            col.add_attribute(renderer, prop, idx)
-            col.set_resizable(True)
-            col.set_min_width(width)
-            self.tree.append_column(col)
-        self.tree.connect('cursor-changed', self.on_select)
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        scroll.get_style_context().add_class('panel')
-        scroll.add(self.tree)
-        list_card.pack_start(scroll, True, True, 0)
-        left.pack_start(list_card, True, True, 0)
-        self.lbl_prefix = Gtk.Label(label='', xalign=0)
-        self.lbl_prefix.set_ellipsize(3)      # END
-        self.lbl_prefix.get_style_context().add_class('dim-label')
-        left.pack_start(self.lbl_prefix, False, False, 0)
-        paned.pack1(left, True, False)
-
-        # 右：上部（标题 / 信息卡 / 分组按钮，可滚动）+ 下部（日志，有最小高度、可拉动）
-        # 只有一块「长东西」时也必须能滚到底：小屏上按钮组会把日志挤出窗口外（踩过）。
-        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        right.set_border_width(14)
-
-        top = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        top_scroll = Gtk.ScrolledWindow()
-        top_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        top_scroll.set_shadow_type(Gtk.ShadowType.NONE)
-        top_scroll.add(top)
-
-        title_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        self.lbl_title = Gtk.Label(label='选择左侧的实例', xalign=0)
-        self.lbl_title.get_style_context().add_class('inst-title')
-        self.lbl_badge = Gtk.Label(label='')
-        self.lbl_badge.get_style_context().add_class('badge')
-        self.lbl_badge.set_no_show_all(True)
-        title_row.pack_start(self.lbl_title, False, False, 0)
-        title_row.pack_start(self.lbl_badge, False, False, 0)
-        top.pack_start(title_row, False, False, 0)
-
-        self.info_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self.info_card.get_style_context().add_class('card')
-        self.lbl_info = Gtk.Label(label='', xalign=0, wrap=True)
-        self.lbl_info.set_selectable(True)
-        self.lbl_info.get_style_context().add_class('info-val')
-        self.info_card.pack_start(self.lbl_info, False, False, 0)
-        top.pack_start(self.info_card, False, False, 0)
-
-        # 按钮按「服务 / 窗口 / 版本 / 插件 / 其他」分组，危险操作单独标红
-        self.buttons = {}
-
-        def make_group(title, items):
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-            label = Gtk.Label(label=title, xalign=0)
-            label.get_style_context().add_class('group-label')
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            for key, text, cls in items:
-                btn = Gtk.Button(label=text)
-                if cls:
-                    btn.get_style_context().add_class(cls)
-                btn.connect('clicked', getattr(self, 'on_' + key))
-                row.pack_start(btn, False, False, 0)
-                self.buttons[key] = btn
-            box.pack_start(label, False, False, 0)
-            box.pack_start(row, False, False, 0)
-            return box
-
-        top.pack_start(make_group('服务', (
-            ('start', '启动服务', 'primary'), ('stop', '停止服务', None),
-            ('open', '打开窗口', None))), False, False, 0)
-        # 窗口本身也可能"活着但画面坏了"（软件渲染下上半截空白），唤起修不好，
-        # 需要能重开一个：重建窗口 = 杀掉窗口进程 + 清锁 + 重新起（不动服务/会话）。
-        top.pack_start(make_group('窗口', (
-            ('reload', '重载页面', None), ('rebuild', '重建窗口', None),
-            ('token', '查看 Token', None))),
-            False, False, 0)
-        top.pack_start(make_group('版本', (
-            ('update', '更新版本', None), ('repair', '修复', None))), False, False, 0)
-        top.pack_start(make_group('插件', (('plugins', '管理插件…', None),)),
-                       False, False, 0)
-        top.pack_start(make_group('其他', (
-            ('folder', '在文件管理器中显示', None), ('uninstall', '卸载', 'danger'))),
-            False, False, 0)
-
-        log_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        log_card.get_style_context().add_class('card')
-        log_card.set_size_request(-1, 120)      # 日志至少留 120px（约 4~5 行），缩窗口时不会被压没
-        log_head = Gtk.Label(label='日志', xalign=0)
-        log_head.get_style_context().add_class('card-title')
-        log_card.pack_start(log_head, False, False, 0)
-        sw = Gtk.ScrolledWindow()
-        sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        sw.get_style_context().add_class('panel')
-        self.log_view = Gtk.TextView()
-        self.log_view.set_editable(False)
-        self.log_view.set_monospace(True)
-        self.log_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        self.log_buf = self.log_view.get_buffer()
-        sw.add(self.log_view)
-        log_card.pack_start(sw, True, True, 0)
-
-        vpaned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
-        # 日志高度按**窗口高度的百分比**走（默认 38%），窗口变大变小它跟着变；
-        # 拖动分隔条会覆盖这个比例并被记住（不再是写死的像素值）。
-        self._log_ratio = 0.38
-        vpaned.set_position(
-            max(120, int(getattr(self, 'win_height', 720) * (1.0 - self._log_ratio))))
-        vpaned.pack1(top_scroll, True, False)  # 窗口变矮时上部自己滚动，不再挤掉日志
-        vpaned.pack2(log_card, True, True)     # 日志也参与分配：窗口变高时它一起变高
-
-        def apply_ratio(*_a):
-            total = vpaned.get_allocated_height() or self.get_allocated_height()
-            if not total or total < 200:
-                return False
-            log_h = max(90, int(total * self._log_ratio))
-            pos = max(80, total - log_h)
-            if abs(vpaned.get_position() - pos) > 6:
-                vpaned.set_position(pos)
-            return False
-
-        def remember_ratio(*_a):
-            total = vpaned.get_allocated_height() or self.get_allocated_height()
-            if not total:
-                return
-            ratio = 1.0 - (vpaned.get_position() / float(total))
-            self._log_ratio = max(0.12, min(0.85, ratio))
-
-        vpaned.connect('notify::position', remember_ratio)
-        # 窗口尺寸变化时重算（只移动几个像素就跳过的判断在里面，不会打架）
-        self.connect('configure-event', lambda *a: (apply_ratio(), False)[1])
-        GLib.timeout_add(400, lambda: (apply_ratio(), False)[1])
-
-        right.pack_start(vpaned, True, True, 0)
-
-        paned.pack2(right, True, False)
         self.set_buttons_sensitive(False)
 
-    def set_buttons_sensitive(self, has_selection):
-        for key, btn in self.buttons.items():
-            btn.set_sensitive(has_selection and not self.busy)
+    # ---- 侧栏 ----
+    def _build_sidebar(self):
+        side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        side.get_style_context().add_class('sidebar')
+        side.set_size_request(248, -1)
+
+        brand = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=11)
+        brand.set_margin_bottom(24)
+        mark = self._label('D', 'brand-mark')
+        mark.set_size_request(38, 38)
+        brand.pack_start(mark, False, False, 0)
+        brand_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        brand_text.pack_start(self._label('DeepSeek Harness', 'brand-title'), False, False, 0)
+        brand_text.pack_start(self._label('管理器 v%s' % MANAGER_VERSION, 'brand-sub'),
+                              False, False, 0)
+        brand.pack_start(brand_text, False, False, 0)
+        side.pack_start(brand, False, False, 0)
+
+        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=7)
+        head.get_style_context().add_class('side-section-title')
+        head.pack_start(self._label('我的实例', 'side-section-title'), False, False, 0)
+        self.lbl_count = self._label('0', 'count-pill')
+        head.pack_start(self.lbl_count, False, False, 0)
+        btn_add = self._button('new', '', 'icon-btn', 'small', icon='＋')
+        btn_add.set_tooltip_text('新建实例')
+        btn_add.set_margin_start(6)
+        head.pack_end(btn_add, False, False, 0)
+        side.pack_start(head, False, False, 0)
+
+        self.instance_list = Gtk.ListBox()
+        self.instance_list.get_style_context().add_class('instance-list')
+        self.instance_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self.instance_list.connect('row-selected', self.on_row_selected)
+        sw = Gtk.ScrolledWindow()
+        sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        sw.add(self.instance_list)
+        side.pack_start(sw, True, True, 0)
+
+        btn_new = self._button('new', '＋  新建实例', 'new-instance')
+        btn_new.set_margin_top(12)
+        btn_new.set_margin_start(4)
+        btn_new.set_margin_end(4)
+        side.pack_start(btn_new, False, False, 0)
+
+        bottom = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        bottom.set_margin_top(18)
+        bottom.pack_start(self._label('工作空间', 'side-caption'), False, False, 0)
+        self.btn_overview = self._button('', '▦  实例概览', 'side-link', 'selected',
+                                         handler=lambda *a: self._show_page('dashboard'))
+        bottom.pack_start(self.btn_overview, False, False, 0)
+        self.btn_settings = self._button('settings', '⚙  管理器设置', 'side-link')
+        bottom.pack_start(self.btn_settings, False, False, 0)
+        self.btn_help = self._button('', '？  使用帮助', 'side-link',
+                                     handler=self.on_help)
+        bottom.pack_start(self.btn_help, False, False, 0)
+
+        runtime = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
+        runtime.get_style_context().add_class('runtime')
+        icon = self._label('Py', 'runtime-icon')
+        icon.set_size_request(28, 28)
+        runtime.pack_start(icon, False, False, 0)
+        rt_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        rt_text.pack_start(self._label('运行环境正常', 'runtime-title'), False, False, 0)
+        self.lbl_runtime = self._label(
+            'Python %s · GTK %s' % (sys.version.split()[0], gtk_ver), 'runtime-sub')
+        rt_text.pack_start(self.lbl_runtime, False, False, 0)
+        runtime.pack_start(rt_text, True, True, 0)
+        dot = self._label('', 'status-dot')
+        dot.set_size_request(7, 7)
+        runtime.pack_start(dot, False, False, 0)
+        bottom.pack_start(runtime, False, False, 0)
+        side.pack_start(bottom, False, False, 0)
+        return side
+
+    # ---- 主区 ----
+    def _build_main(self):
+        self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.main_box.pack_start(self._build_topbar(), False, False, 0)
+
+        self.stack = Gtk.Stack()
+        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self.stack.set_transition_duration(150)
+        self.stack.add_named(self._build_dashboard(), 'dashboard')
+        self.stack.add_named(self._build_settings_page(), 'settings')
+        self.main_box.pack_start(self.stack, True, True, 0)
+        return self.main_box
+
+    def _build_topbar(self):
+        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        bar.get_style_context().add_class('topbar')
+
+        crumb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
+        crumb.pack_start(self._label('工作空间', 'breadcrumb'), False, False, 0)
+        crumb.pack_start(self._label('/', 'breadcrumb'), False, False, 0)
+        self.lbl_crumb = self._label('实例概览', 'breadcrumb-current')
+        crumb.pack_start(self.lbl_crumb, False, False, 0)
+        bar.pack_start(crumb, False, False, 0)
+
+        # 主题选择：MenuButton + Popover（设计稿 .theme-trigger / .theme-menu）
+        trigger = Gtk.MenuButton()
+        trigger.get_style_context().add_class('theme-trigger')
+        inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        swatch = Gtk.Box()
+        swatch.get_style_context().add_class('theme-swatch')
+        swatch.set_size_request(14, 14)
+        inner.pack_start(swatch, False, False, 0)
+        self.lbl_theme_name = self._label('毛玻璃')
+        inner.pack_start(self.lbl_theme_name, False, False, 0)
+        inner.pack_start(self._icon('⌄'), False, False, 0)
+        trigger.add(inner)
+
+        popover = Gtk.Popover()
+        popover.get_style_context().add_class('theme-menu')
+        menu = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        menu.set_border_width(7)
+        menu.pack_start(self._label('选择界面主题', 'menu-header'), False, False, 0)
+        index = theme_index()
+        for key in index.get('order', []):
+            labels = index.get('labels', {}).get('%s-day' % key, [key, ''])
+            row = Gtk.Button()
+            row.get_style_context().add_class('flat')
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
+            box.pack_start(self._label('●', 'theme-dot'), False, False, 0)
+            name = Gtk.Label(label=labels[0], xalign=0.0)
+            name.set_width_chars(10)
+            box.pack_start(name, False, False, 0)
+            hint = self._label(labels[1], 'theme-hint')
+            box.pack_end(hint, False, False, 0)
+            row.add(box)
+            row.theme_key = key
+            row.connect('clicked', self.on_pick_theme)
+            menu.pack_start(row, False, False, 0)
+            self._theme_buttons[key] = row
+        popover.add(menu)
+        trigger.set_popover(popover)
+        self._theme_popover = popover
+        self.btn_mode = self._button('', '☀  日间', 'mode-toggle',
+                                     handler=self.on_toggle_mode)
+        bar.pack_end(self.btn_mode, False, False, 0)
+        info = self._button('', 'ⓘ', 'icon-btn', handler=self.on_about)
+        info.set_tooltip_text('关于 / 版本信息')
+        bar.pack_end(info, False, False, 0)
+        bar.pack_end(trigger, False, False, 0)
+        return bar
+
+    def _build_dashboard(self):
+        sw = Gtk.ScrolledWindow()
+        sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        page.get_style_context().add_class('content')
+        page.set_margin_top(22)
+        page.set_margin_bottom(14)
+        page.set_margin_start(26)
+        page.set_margin_end(26)
+        sw.add(page)
+
+        heading = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
+        heading.set_margin_bottom(20)
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        text.pack_start(self._label('INSTANCE OVERVIEW', 'eyebrow'), False, False, 0)
+        title_line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        self.lbl_title = self._label('选择左侧的实例', 'page-title')
+        title_line.pack_start(self.lbl_title, False, False, 0)
+        self.lbl_badge = self._label('—', 'badge')
+        title_line.pack_start(self.lbl_badge, False, False, 0)
+        text.pack_start(title_line, False, False, 0)
+        text.pack_start(self._label('管理服务、窗口与扩展，让实例始终保持最佳状态。',
+                                    'page-desc'), False, False, 0)
+        heading.pack_start(text, True, True, 0)
+
+        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        actions.set_valign(Gtk.Align.CENTER)
+        self.btn_open = self._button('open', '打开窗口', 'btn', 'btn-primary', icon='↗')
+        actions.pack_start(self.btn_open, False, False, 0)
+        more = Gtk.MenuButton()
+        more.get_style_context().add_class('btn')
+        more.get_style_context().add_class('btn-secondary')
+        more.add(self._icon('⋯'))
+        more.set_tooltip_text('更多操作')
+        menu = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        menu.set_border_width(6)
+        for key, label, glyph in (
+                ('token', '查看 Token', '⚿'),
+                ('rebuild', '重建窗口', '↻'),
+                ('folder', '在文件管理器中显示', '▤'),
+                (None, None, None),
+                ('uninstall', '卸载实例', '✕')):
+            if key is None:
+                menu.pack_start(Gtk.Separator(), False, False, 2)
+                continue
+            btn = self._button(key, label, 'flat', icon=glyph)
+            if key == 'uninstall':
+                btn.get_style_context().add_class('danger-text')
+            menu.pack_start(btn, False, False, 0)
+        pop = Gtk.Popover()
+        pop.add(menu)
+        more.set_popover(pop)
+        actions.pack_start(more, False, False, 0)
+        heading.pack_start(actions, False, False, 0)
+        page.pack_start(heading, False, False, 0)
+
+        # 两张卡：实例信息 / 快捷控制
+        grid = Gtk.Grid(column_spacing=16, row_spacing=16)
+        grid.set_column_homogeneous(False)
+        info_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        info_card.get_style_context().add_class('card')
+        info_card.set_hexpand(True)
+        top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        top.pack_start(self._label('实例信息', 'card-label'), False, False, 0)
+        top.pack_end(self._label('本地实例', 'subtle-tag'), False, False, 0)
+        info_card.pack_start(top, False, False, 0)
+        meta = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=13)
+        meta.set_margin_top(16)
+        self.lbl_avatar = self._label('--', 'large-avatar')
+        self.lbl_avatar.set_size_request(48, 48)
+        meta.pack_start(self.lbl_avatar, False, False, 0)
+        meta_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.lbl_meta_name = self._label('—', 'meta-name')
+        meta_text.pack_start(self.lbl_meta_name, False, False, 0)
+        self.lbl_meta_path = self._label('—', 'meta-path')
+        self.lbl_meta_path.set_selectable(True)
+        meta_text.pack_start(self.lbl_meta_path, False, False, 0)
+        pills = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        pills.set_margin_top(4)
+        self.lbl_pill_dsh = self._label('dsh —', 'version-pill')
+        self.lbl_pill_node = self._label('Node —', 'version-pill')
+        pills.pack_start(self.lbl_pill_dsh, False, False, 0)
+        pills.pack_start(self.lbl_pill_node, False, False, 0)
+        meta_text.pack_start(pills, False, False, 0)
+        meta.pack_start(meta_text, True, True, 0)
+        info_card.pack_start(meta, False, False, 0)
+        sep = Gtk.Separator()
+        sep.set_margin_top(14)
+        info_card.pack_start(sep, False, False, 0)
+        metrics = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        metrics.set_margin_top(12)
+        self.lbl_metric_pid = self._metric(metrics, '进程 PID', '—', first=True)
+        self.lbl_metric_port = self._metric(metrics, '服务端口', '—')
+        self.lbl_metric_status = self._metric(metrics, '运行状态', '—', accent=True)
+        info_card.pack_start(metrics, False, False, 0)
+
+        control = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        control.get_style_context().add_class('card')
+        control.set_size_request(320, -1)
+        ctop = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        ctop.pack_start(self._label('快捷控制', 'card-label'), False, False, 0)
+        self.lbl_live = self._label('● 服务正常', 'live-indicator')
+        ctop.pack_end(self.lbl_live, False, False, 0)
+        control.pack_start(ctop, False, False, 0)
+        control.pack_start(self._control_row('服务', '后台进程与连接',
+                                             [('start', '启动', '▶', ('btn', 'btn-secondary', 'compact')),
+                                              ('stop', '停止', '■', ('btn', 'btn-danger-soft', 'compact'))]),
+                           False, False, 0)
+        line = Gtk.Separator()
+        line.set_margin_top(14)
+        control.pack_start(line, False, False, 0)
+        control.pack_start(self._control_row('窗口', '界面与页面状态',
+                                             [('reload', '重载', '↺', ('btn', 'btn-secondary', 'compact')),
+                                              ('rebuild', '重建', '↻', ('btn', 'btn-secondary', 'compact'))]),
+                           False, False, 0)
+        grid.attach(info_card, 0, 0, 1, 1)
+        grid.attach(control, 1, 0, 1, 1)
+        page.pack_start(grid, False, False, 0)
+
+        # 常用功能
+        section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        section.set_margin_top(20)
+        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        head.pack_start(self._label('常用功能', 'section-title'), False, False, 0)
+        head.pack_start(self._label('管理实例的扩展与文件', 'section-sub'), False, False, 0)
+        section.pack_start(head, False, False, 0)
+        quick = Gtk.Grid(column_spacing=11, row_spacing=11)
+        quick.set_column_homogeneous(True)
+        for idx, (key, title, sub, glyph) in enumerate((
+                ('token', '查看 Token', '访问凭证与连接信息', '⚿'),
+                ('plugins', '管理插件', '安装、启用与配置扩展', '⊞'),
+                ('update', '检查更新', '获取最新的 dsh 与 Node', '↓'),
+                ('folder', '数据目录', '浏览配置与本地数据', '▤'))):
+            btn = self._quick_action(key, title, sub, glyph)
+            quick.attach(btn, idx, 0, 1, 1)
+        section.pack_start(quick, False, False, 0)
+        page.pack_start(section, False, False, 0)
+
+        # 最近日志
+        log_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        log_card.get_style_context().add_class('card')
+        log_card.set_margin_top(20)
+        lhead = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        lhead.get_style_context().add_class('log-header')
+        lhead.pack_start(self._icon('▶'), False, False, 0)
+        lhead.pack_start(self._label('最近日志', 'log-title'), False, False, 0)
+        self.lbl_log_count = self._label('0', 'log-count')
+        lhead.pack_start(self.lbl_log_count, False, False, 0)
+        view_btn = self._button('', '查看完整日志  →', 'text-btn', handler=self.on_view_log)
+        lhead.pack_end(view_btn, False, False, 0)
+        log_card.pack_start(lhead, False, False, 0)
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        body.set_margin_top(8)
+        self.log_rows = []
+        for _ in range(3):
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            t = self._label('', 'log-time')
+            lvl = self._label('', 'log-level')
+            msg = self._label('', 'log-line')
+            msg.set_ellipsize(3)
+            row.pack_start(t, False, False, 0)
+            row.pack_start(lvl, False, False, 0)
+            row.pack_start(msg, True, True, 0)
+            body.pack_start(row, False, False, 0)
+            self.log_rows.append((t, lvl, msg))
+        log_card.pack_start(body, False, False, 0)
+        page.pack_start(log_card, False, False, 0)
+
+        footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        footer.set_margin_top(12)
+        footer.pack_start(self._label('●  所有更改已自动保存', 'page-footer'), False, False, 0)
+        self.lbl_footer_root = self._label('实例根目录 · %s' % self.manager.root, 'page-footer')
+        footer.pack_end(self.lbl_footer_root, False, False, 0)
+        page.pack_start(footer, False, False, 0)
+        return sw
+
+    def _metric(self, parent, label, value, first=False, accent=False):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        box.set_hexpand(True)
+        if not first:
+            box.set_margin_start(14)
+            sep = None
+        box.pack_start(self._label(label, 'metric-label'), False, False, 0)
+        val = self._label(value, 'metric-value', *(['accent'] if accent else []))
+        box.pack_start(val, False, False, 0)
+        parent.pack_start(box, True, True, 0)
+        return val
+
+    def _control_row(self, title, sub, buttons):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.set_margin_top(18)
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        text.pack_start(self._label(title, 'control-title'), False, False, 0)
+        text.pack_start(self._label(sub, 'control-sub'), False, False, 0)
+        row.pack_start(text, True, True, 0)
+        holder = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        for key, label, glyph, classes in buttons:
+            btn = self._button(key, label, *classes, icon=glyph)
+            holder.pack_start(btn, False, False, 0)
+        row.pack_end(holder, False, False, 0)
+        return row
+
+    def _quick_action(self, key, title, sub, glyph):
+        btn = Gtk.Button()
+        btn.get_style_context().add_class('quick-action')
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        icon = self._icon(glyph, 'quick-icon')
+        icon.set_size_request(34, 34)
+        box.pack_start(icon, False, False, 0)
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        text.pack_start(self._label(title, 'quick-title'), False, False, 0)
+        sub_lbl = self._label(sub, 'quick-sub')
+        sub_lbl.set_ellipsize(3)
+        text.pack_start(sub_lbl, False, False, 0)
+        box.pack_start(text, True, True, 0)
+        box.pack_end(self._icon('→', 'quick-arrow'), False, False, 0)
+        btn.add(box)
+        self.buttons[key] = btn
+        handler = getattr(self, 'on_' + key, None)
+        if handler is not None:
+            btn.connect('clicked', handler)
+        return btn
+
+    # ---- 设置页（设计稿的第二页） ----
+    def _build_settings_page(self):
+        sw = Gtk.ScrolledWindow()
+        sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        page.get_style_context().add_class('content')
+        page.set_margin_top(22)
+        page.set_margin_bottom(14)
+        page.set_margin_start(26)
+        page.set_margin_end(26)
+        sw.add(page)
+
+        heading = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
+        heading.set_margin_bottom(18)
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        text.pack_start(self._label('MANAGER PREFERENCES', 'eyebrow'), False, False, 0)
+        text.pack_start(self._label('管理器设置', 'page-title'), False, False, 0)
+        text.pack_start(self._label('查看运行环境，管理外观与维护选项。', 'page-desc'),
+                        False, False, 0)
+        heading.pack_start(text, True, True, 0)
+        heading.pack_start(self._button('saveSettings', '✓  保存设置', 'btn', 'btn-primary',
+                                        handler=self.on_save_settings), False, False, 0)
+        page.pack_start(heading, False, False, 0)
+
+        grid = Gtk.Grid(column_spacing=16, row_spacing=16)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        left.pack_start(self._info_card(), False, False, 0)
+        left.pack_start(self._maintenance_card(), False, False, 0)
+
+        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        right.pack_start(self._appearance_card(), False, False, 0)
+        right.set_size_request(340, -1)
+        grid.attach(left, 0, 0, 1, 1)
+        grid.attach(right, 1, 0, 1, 1)
+        page.pack_start(grid, False, False, 0)
+        return sw
+
+    def _settings_card(self, glyph, title, sub):
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        card.get_style_context().add_class('card')
+        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        icon = self._icon(glyph, 'quick-icon')
+        icon.set_size_request(34, 34)
+        head.pack_start(icon, False, False, 0)
+        titles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        titles.pack_start(self._label(title, 'card-label'), False, False, 0)
+        titles.pack_start(self._label(sub, 'card-sub'), False, False, 0)
+        head.pack_start(titles, True, True, 0)
+        card.pack_start(head, False, False, 0)
+        return card
+
+    def _info_card(self):
+        card = self._settings_card('ⓘ', '管理器信息', '当前安装与运行环境')
+        lines = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=7)
+        lines.set_margin_top(14)
+        for key, value in (
+                ('管理器版本', 'v%s' % MANAGER_VERSION),
+                ('程序目录', MANAGER_LIB),
+                ('配置目录', config_dir()),
+                ('运行环境', 'Python %s · GTK %s' % (sys.version.split()[0], gtk_ver)),
+                ('实例根目录', self.manager.root)):
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            name = self._label(key, 'metric-label')
+            name.set_width_chars(12)
+            row.pack_start(name, False, False, 0)
+            val = self._label(value, 'metric-value')
+            val.set_selectable(True)
+            val.set_ellipsize(3)
+            row.pack_start(val, True, True, 0)
+            lines.pack_start(row, False, False, 0)
+        card.pack_start(lines, False, False, 0)
+        return card
+
+    def _maintenance_card(self):
+        card = self._settings_card('⚒', '维护与诊断', '排查问题或重新安装管理器')
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.set_margin_top(14)
+        box.pack_start(self._button('', '查看管理器日志', 'btn', 'btn-secondary', icon='▶',
+                                    handler=self.on_view_log), False, False, 0)
+        box.pack_start(self._button('', '复制诊断信息', 'btn', 'btn-secondary', icon='▣',
+                                    handler=self.on_copy_diag), False, False, 0)
+        box.pack_start(self._button('repair', '修复 / 重装', 'btn', 'btn-secondary', icon='⚒'),
+                       False, False, 0)
+        card.pack_start(box, False, False, 0)
+        return card
+
+    def _appearance_card(self):
+        card = self._settings_card('◑', '外观与日志', '个性化你的工作空间')
+        card.pack_start(self._label('界面主题', 'field-label'), False, False, 0)
+        preview = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        preview.set_margin_top(6)
+        swatch = Gtk.Box()
+        swatch.get_style_context().add_class('theme-swatch')
+        swatch.set_size_request(16, 16)
+        preview.pack_start(swatch, False, False, 0)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self.lbl_settings_theme = self._label('毛玻璃', 'quick-title')
+        self.lbl_settings_mode = self._label('日间', 'quick-sub')
+        names.pack_start(self.lbl_settings_theme, False, False, 0)
+        names.pack_start(self.lbl_settings_mode, False, False, 0)
+        preview.pack_start(names, True, True, 0)
+        preview.pack_end(self._button('', '更换主题', 'text-btn', handler=self.on_cycle_theme),
+                         False, False, 0)
+        card.pack_start(preview, False, False, 0)
+
+        hint = self._label('日志面板保留行数', 'field-label')
+        hint.set_margin_top(14)
+        card.pack_start(hint, False, False, 0)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        row.set_margin_top(6)
+        spin = Gtk.SpinButton.new_with_range(100, 5000, 50)
+        spin.set_value(int(self.settings.get('logLines') or 800))
+        spin.set_hexpand(True)
+        row.pack_start(spin, True, True, 0)
+        row.pack_start(self._label('行', 'field-hint'), False, False, 0)
+        card.pack_start(row, False, False, 0)
+        self.spin_log_lines = spin
+        note = self._label('主题切换会立即生效，无需重启管理器。', 'field-hint')
+        note.set_margin_top(10)
+        card.pack_start(note, False, False, 0)
+        return card
+
+    # ---- 页面切换 ----
+    def _show_page(self, name):
+        self.stack.set_visible_child_name(name)
+        for btn, key in ((self.btn_overview, 'dashboard'), (self.btn_settings, 'settings')):
+            ctx = btn.get_style_context()
+            if key == name:
+                ctx.add_class('selected')
+            else:
+                ctx.remove_class('selected')
+        self.lbl_crumb.set_text('实例概览' if name == 'dashboard' else '管理器设置')
+
+    def on_help(self, *_):
+        self._text_dialog('使用帮助',
+                          '\n'.join([
+                              'DeepSeek Harness 管理器 v%s' % MANAGER_VERSION,
+                              '',
+                              '· 左侧列表选择实例，右侧卡片显示状态；「打开窗口」唤起桌面窗口。',
+                              '· 「窗口」组：重载页面（页面脚本卡住时用）、重建窗口（画面坏掉时用）。',
+                              '· 「查看 Token」把带 token 的入口地址显示在日志里，并复制到剪贴板。',
+                              '· 「管理插件…」从我们自己的 GitHub 仓库给该实例安装/卸载插件。',
+                              '· 顶栏右侧：切换 7 套主题与日/夜模式（立即生效）。',
+                              '',
+                              '排障：设置页 →「复制诊断信息」，或 <前缀>/logs/desktop.log。',
+                          ]))
+
+    def on_about(self, *_):
+        self._text_dialog('关于', '\n'.join([
+            'DeepSeek Harness 管理器 v%s' % MANAGER_VERSION,
+            '界面：7 套主题 × 日/夜（token 从 design/styles.css 抽取生成）',
+            '程序目录：%s' % MANAGER_LIB,
+            '配置目录：%s' % config_dir(),
+            '运行环境：Python %s · GTK %s' % (sys.version.split()[0], gtk_ver),
+        ]))
+
+    def on_copy_diag(self, *_):
+        text = self._diagnostics_text()
+        self._copy(text)
+        self._toast('诊断信息已复制到剪贴板')
+
+    def on_cycle_theme(self, *_):
+        index = theme_index()
+        order = index.get('order') or ['frost']
+        theme, _mode = self._theme_state()
+        nxt = order[(order.index(theme) + 1) % len(order)] if theme in order else order[0]
+        self.apply_theme(theme=nxt)
+        self._toast('主题已切换到「%s」' % index.get('labels', {}).get('%s-day' % nxt, [nxt])[0])
+
+    def on_save_settings(self, *_):
+        values = {'theme': self.settings.get('theme') or '',
+                  'mode': self.settings.get('mode') or 'day',
+                  'logLines': int(self.spin_log_lines.get_value())}
+        ok = save_settings(values)
+        self.settings.update(values)
+        self._toast('设置已保存' if ok else '保存失败（配置目录不可写？）')
+
+    def on_view_log(self, *_):
+        lines = read_manager_log(400)
+        buffer = self.log_buf.get_text(self.log_buf.get_start_iter(),
+                                       self.log_buf.get_end_iter(), False)
+        live = [line for line in buffer.splitlines() if line.strip()]
+        head = ['—— 管理器日志 ——',
+                '文件：%s' % manager_log_path(),
+                '文件里 %d 行；下面是本次运行的面板日志（%d 行）+ 文件最后 400 行' % (len(lines), len(live)),
+                '']
+        body = (['【本次运行】'] + live if live else []) + (['', '【已落盘】'] + lines if lines else [])
+        self._text_dialog('管理器日志', '\n'.join(head + (body or ['（还没有日志）'])))
+
+    def _diagnostics_text(self):
+        parts = ['DeepSeek Harness 管理器 v%s' % MANAGER_VERSION,
+                 '主题: %s / %s' % self._theme_state(),
+                 '程序目录: %s' % MANAGER_LIB,
+                 '配置目录: %s' % config_dir(),
+                 '运行环境: Python %s · GTK %s' % (sys.version.split()[0], gtk_ver),
+                 '实例根目录: %s' % self.manager.root,
+                 '', '实例:']
+        for inst in self.manager.list_instances():
+            parts.append('  - %s  dsh %s  node %s  端口 %d  %s  %s'
+                         % (inst.label, inst.dsh_version or '?', inst.node_version or '?',
+                            inst.port, STATUS_TEXT.get(inst.status(), inst.status()), inst.prefix))
+        return '\n'.join(parts)
+
+    # ------------------------------------------------------------ 列表/详情
+    def _list_rows(self):
+        """实例行的列表（桩 GTK 下 get_children() 不是可迭代对象，包一层）。"""
+        try:
+            return list(self.instance_list.get_children())
+        except Exception:
+            return []
+
+    def refresh(self):
+        keep = self.selected.prefix if self.selected is not None else None
+        for child in self._list_rows():
+            self.instance_list.remove(child)
+        instances = self.manager.list_instances()
+        self.lbl_count.set_text(str(len(instances)))
+        target = None
+        for inst in instances:
+            row = self._instance_row(inst)
+            self.instance_list.add(row)
+            if keep and inst.prefix == keep:
+                target = row
+        self.instance_list.show_all()
+        if target is not None:
+            self.instance_list.select_row(target)
+        elif instances:
+            first = self.instance_list.get_row_at_index(0)
+            if first is not None:
+                self.instance_list.select_row(first)
+        else:
+            self.selected = None
+            self.set_buttons_sensitive(False)
+        try:
+            self.lbl_footer_root.set_text('实例根目录 · %s' % self.manager.root)
+        except Exception:
+            pass
+
+    def _instance_row(self, inst):
+        row = Gtk.ListBoxRow()
+        row.inst = inst
+        row.get_style_context().add_class('instance-item')
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        initials = (inst.label or 'DS')[:2].upper()
+        avatar = self._label(initials, 'instance-avatar')
+        avatar.set_size_request(34, 34)
+        box.pack_start(avatar, False, False, 0)
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        name = self._label(inst.label or inst.prefix, 'instance-name')
+        name.set_ellipsize(3)
+        text.pack_start(name, False, False, 0)
+        sub = self._label('v%s' % (inst.dsh_version or '?'), 'instance-sub')
+        text.pack_start(sub, False, False, 0)
+        box.pack_start(text, True, True, 0)
+        dot = self._label('', 'status-dot')
+        dot.set_size_request(7, 7)
+        box.pack_end(dot, False, False, 0)
+        row.add(box)
+        row.dot = dot
+        row.sub = sub
+        return row
+
+    def on_row_selected(self, listbox, row):
+        for child in self._list_rows():
+            ctx = child.get_style_context()
+            if child is row:
+                ctx.add_class('active')
+            else:
+                ctx.remove_class('active')
+        if row is None:
+            self.selected = None
+            self.set_buttons_sensitive(False)
+            return
+        inst = getattr(row, 'inst', None)
+        if inst is None:
+            return
+        self.selected = self.manager.instance_at(inst.prefix)
+        self._fill_details(self.selected)
+        self.set_buttons_sensitive(True)
+
+    def on_select(self, *_a):
+        """兼容旧调用：把当前选择重新填一遍。"""
         if self.selected is not None:
-            self.buttons['start'].set_sensitive(not self.busy and self.selected.status() == 'stopped')
-            self.buttons['stop'].set_sensitive(not self.busy and bool(self.selected.running_pid()))
+            self._fill_details(self.selected)
+
+    def _fill_details(self, inst):
+        status = inst.status()
+        pid = inst.running_pid()
+        self.lbl_title.set_text(inst.label)
+        self.lbl_crumb.set_text('实例概览')
+
+        ctx = self.lbl_badge.get_style_context()
+        for cls in ('running', 'needs-repair', 'stopped'):
+            ctx.remove_class(cls)
+        if status == 'running':
+            ctx.add_class('running')
+        elif status == 'broken':
+            ctx.add_class('needs-repair')
+        self.lbl_badge.set_text(STATUS_TEXT.get(status, status or '—'))
+
+        self.lbl_avatar.set_text((inst.label or 'DS')[:2].upper())
+        self.lbl_meta_name.set_text(inst.label or 'DeepSeek Harness')
+        self.lbl_meta_path.set_text(inst.prefix)
+        self.lbl_pill_dsh.set_text('dsh %s' % (inst.dsh_version or '?'))
+        self.lbl_pill_node.set_text('Node %s' % (inst.node_version or '?'))
+        self.lbl_metric_pid.set_text(str(pid) if pid else '—')
+        self.lbl_metric_port.set_text(str(inst.port))
+        self.lbl_metric_status.set_text(STATUS_TEXT.get(status, status or '—'))
+        running = bool(pid)
+        self.lbl_live.set_text('● 服务正常' if running else '● 未运行')
+
+    def _tick(self):
+        if self.busy:
+            return True
+        instances = {inst.prefix: inst for inst in self.manager.list_instances()}
+        for child in self._list_rows():
+            inst = instances.get(getattr(getattr(child, 'inst', None), 'prefix', ''))
+            if inst is None:
+                continue
+            child.inst = inst
+            ctx = child.dot.get_style_context()
+            if inst.status() in ('stopped', 'broken'):
+                ctx.add_class('stopped')
+            else:
+                ctx.remove_class('stopped')
+            child.sub.set_text('v%s' % (inst.dsh_version or '?'))
+        if self.selected is not None:
+            fresh = self.manager.instance_at(self.selected.prefix)
+            self.selected = fresh
+            self._fill_details(fresh)
+        return True
+
+    # ------------------------------------------------------------ 日志
+    def _push_recent_log(self, text):
+        """把一行日志塞进「最近日志」卡（新的在上，最多 3 条）。"""
+        import time as _time
+        stamp = _time.strftime('%H:%M:%S')
+        level, cls, body = '信息', 'info', text
+        if text.startswith('✔'):
+            level, cls, body = '成功', 'success', text[1:].strip()
+        elif text.startswith('✘'):
+            level, cls, body = '失败', 'danger', text[1:].strip()
+        elif text.startswith('——') and text.rstrip().endswith('——'):
+            level, cls, body = '系统', 'muted', text.strip('— ').strip()
+        self._recent.insert(0, (stamp, level, cls, body[:180]))
+        del self._recent[3:]
+        try:
+            self.lbl_log_count.set_text(str(len(self._recent)))
+            for idx, (t, lvl, klass, msg) in enumerate(self._recent):
+                t_lbl, lvl_lbl, msg_lbl = self.log_rows[idx]
+                t_lbl.set_text(t)
+                lvl_lbl.set_text(lvl)
+                lctx = lvl_lbl.get_style_context()
+                for name in ('success', 'info', 'muted', 'danger'):
+                    lctx.remove_class(name)
+                lctx.add_class(klass)
+                msg_lbl.set_text(msg)
+                msg_lbl.set_tooltip_text(msg)
+        except Exception:
+            pass
 
     def append_log(self, line, persist=True):
-        text = line.rstrip('\n')
+        text = (line or '').rstrip('\n')
+        if not text:
+            return
         end = self.log_buf.get_end_iter()
         self.log_buf.insert(end, text + '\n')
-        mark = self.log_buf.create_mark(None, self.log_buf.get_end_iter(), False)
-        self.log_view.scroll_mark_onscreen(mark)
         if persist:
-            append_manager_log(text)      # 同时落盘，供「设置 → 管理器日志」查看
-        # 面板只留最近 N 行，避免长时间运行后卡顿
-        limit = int(self.settings.get('logLines') or 800)
-        count = self.log_buf.get_line_count()
-        if count > limit + 200:
-            start = self.log_buf.get_start_iter()
-            cut = self.log_buf.get_iter_at_line(count - limit)
-            self.log_buf.delete(start, cut)
+            append_manager_log(text)      # 同时落盘，供「查看完整日志」查看
+        try:                                   # 裁剪只是防内存膨胀，失败不能影响日志本身
+            limit = int(self.settings.get('logLines') or 800)
+            count = self.log_buf.get_line_count()
+            if count > limit + 200:
+                cut = self.log_buf.get_iter_at_line(count - limit)
+                self.log_buf.delete(self.log_buf.get_start_iter(), cut)
+        except Exception:
+            pass
+        self._push_recent_log(text)
 
     def _drain_log(self):
         for line in self.manager.take_log():
             self.append_log(line)
         return True
 
-    def _tick(self):
-        # 只刷新状态列（避免每次重建整张表）
-        if self.busy:
-            return True
-        instances = self.manager.list_instances()
-        for row in self.store:
-            for inst in instances:
-                if inst.prefix == row[1]:
-                    row[5] = status_markup(inst.status())
+    def set_buttons_sensitive(self, has_selection):
+        for key, btn in self.buttons.items():
+            if key in getattr(self, '_need_selection', set()):
+                btn.set_sensitive(bool(has_selection) and not self.busy)
+            else:
+                btn.set_sensitive(not self.busy)
         if self.selected is not None:
-            self._fill_details(self.selected)
-        return True
-
-    # ------------------------------------------------------------ 列表/详情
-    def refresh(self):
-        keep = self.selected.prefix if self.selected is not None else None
-        self.store.clear()
-        instances = self.manager.list_instances()
-        target = None
-        for inst in instances:
-            it = self.store.append([inst.label, inst.prefix, inst.dsh_version or '-',
-                                    inst.node_version or '-', str(inst.port),
-                                    status_markup(inst.status())])
-            if keep and inst.prefix == keep:
-                target = it
-        if target is not None:
-            # 刷新后保持选中（否则每次装/改完都要重新点一次）
-            path = self.store.get_path(target)
-            self.tree.get_selection().select_path(path)
-        if not instances:
-            self.lbl_prefix.set_text('还没有实例：点左上角「＋ 新建实例」。默认会装到 %s' % self.manager.root)
-            self.set_buttons_sensitive(False)
-        else:
-            self.lbl_prefix.set_text('实例根目录：%s' % self.manager.root)
-
-    def on_select(self, tree):
-        model, it = tree.get_selection().get_selected()
-        if it is None:
-            self.selected = None
-            self.set_buttons_sensitive(False)
-            return
-        prefix = model[it][1]
-        self.selected = self.manager.instance_at(prefix)
-        self._fill_details(self.selected)
-        self.set_buttons_sensitive(True)
-
-    def _fill_details(self, inst):
-        status = inst.status()
-        pid = inst.running_pid()
-        self.lbl_title.set_text(inst.label)
-
-        # 状态徽标
-        ctx = self.lbl_badge.get_style_context()
-        for cls in ('running', 'stopped', 'broken', 'external', 'starting'):
-            ctx.remove_class(cls)
-        ctx.add_class(status if status in STATUS_DOT else 'external')
-        self.lbl_badge.set_text(STATUS_TEXT.get(status, status))
-        self.lbl_badge.show()
-
-        esc = GLib.markup_escape_text
-        rows = [
-            ('安装位置', esc(inst.prefix)),
-            ('版本', 'dsh %s · Node %s · 端口 %d'
-             % (esc(inst.dsh_version or '?'), esc(inst.node_version or '?'), inst.port)),
-            ('数据目录', esc(inst.dsh_home)),
-        ]
-        if pid:
-            rows.append(('进程', 'PID %d' % pid))
-        info = '\n'.join('<span foreground="#7d838a">%s</span>  %s' % (k, v) for k, v in rows)
-        self.lbl_info.set_markup(info)
+            try:
+                self.buttons['start'].set_sensitive(
+                    not self.busy and self.selected.status() == 'stopped')
+                self.buttons['stop'].set_sensitive(
+                    not self.busy and bool(self.selected.running_pid()))
+            except Exception:
+                pass
 
     # ------------------------------------------------------------ 动作（线程里跑）
     def _busy_show(self, text):
@@ -837,125 +1523,9 @@ class ManagerWindow(Gtk.Window):
         }
 
     def on_settings(self, *_):
-        dlg = Gtk.Dialog(title='管理器设置', transient_for=self, modal=True)
-        dlg.add_buttons('关闭', Gtk.ResponseType.CLOSE)
-        dlg.set_default_size(760, 620)
-        area = dlg.get_content_area()
-        area.set_border_width(16)
-        area.set_spacing(12)
+        """「管理器设置」不再是弹窗，而是设计稿里的第二页。"""
+        self._show_page('settings')
 
-        # ---- 版本与路径 ----
-        info = self._section('管理器')
-        grid = Gtk.Grid(column_spacing=16, row_spacing=6)
-        gtk_ver = '%d.%d.%d' % (Gtk.get_major_version(), Gtk.get_minor_version(),
-                                Gtk.get_micro_version())
-        rows = (
-            ('版本', 'v%s' % MANAGER_VERSION),
-            ('程序目录', MANAGER_LIB),
-            ('配置目录', config_dir()),
-            ('管理器日志', manager_log_path()),
-            ('运行环境', 'Python %s · GTK %s' % (sys.version.split()[0], gtk_ver)),
-            ('实例根目录', self.manager.root),
-        )
-        for r, (key, value) in enumerate(rows):
-            k = Gtk.Label(label=key, xalign=0)
-            k.get_style_context().add_class('group-label')
-            v = Gtk.Label(label=value, xalign=0)
-            v.get_style_context().add_class('info-val')
-            v.set_selectable(True)
-            v.set_ellipsize(3)          # END
-            grid.attach(k, 0, r, 1, 1)
-            grid.attach(v, 1, r, 1, 1)
-        info.pack_start(grid, False, False, 0)
-        area.pack_start(info, False, False, 0)
-
-        # ---- 外观 ----
-        look = self._section('外观')
-        chk = Gtk.CheckButton(label='使用企业简洁风主题（重启管理器后生效）')
-        chk.set_active(bool(self.settings.get('theme', True)))
-        look.pack_start(chk, False, False, 0)
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        lbl = Gtk.Label(label='日志面板保留行数', xalign=0)
-        lbl.get_style_context().add_class('info-val')
-        spin = Gtk.SpinButton.new_with_range(200, 5000, 100)
-        spin.set_value(int(self.settings.get('logLines') or 800))
-        row.pack_start(lbl, False, False, 0)
-        row.pack_start(spin, False, False, 0)
-        look.pack_start(row, False, False, 0)
-
-        def apply_look(*_):
-            values = {'theme': bool(chk.get_active()), 'logLines': int(spin.get_value())}
-            ok = save_settings(values)
-            self.settings.update(values)
-            self.append_log(('✔ 设置已保存%s' % ('（主题改动重启后生效）' if True else ''))
-                            if ok else '✘ 保存设置失败（配置目录不可写？）')
-
-        btn_save = Gtk.Button(label='保存外观设置')
-        btn_save.get_style_context().add_class('primary')
-        btn_save.connect('clicked', apply_look)
-        look.pack_start(btn_save, False, False, 0)
-        area.pack_start(look, False, False, 0)
-
-        # ---- 维护 ----
-        maint = self._section('维护')
-        mrow = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-
-        def view_log(*_):
-            lines = read_manager_log(400)
-            head = ['—— 管理器日志 ——',
-                    '文件：%s' % manager_log_path(),
-                    '行数：%d（这里显示最后 400 行；主窗口下方是本次运行的实时日志）' % len(lines),
-                    '']
-            body = lines if lines else ['（文件里还没有日志）']
-            self._text_dialog('管理器日志', '\n'.join(head + body))
-
-        def copy_diag(*_):
-            parts = ['DeepSeek Harness 管理器 v%s' % MANAGER_VERSION,
-                     '程序目录: %s' % MANAGER_LIB,
-                     '配置目录: %s' % config_dir(),
-                     '运行环境: Python %s · GTK %s' % (sys.version.split()[0], gtk_ver),
-                     '主题: %s（style.css）' % ('已启用' if self.theme_loaded else '未启用'),
-                     '实例根目录: %s' % self.manager.root,
-                     '', '实例:']
-            try:
-                for inst in self.manager.list_instances():
-                    parts.append('  - %s  dsh %s  node %s  端口 %d  %s  %s'
-                                 % (inst.label, inst.dsh_version or '?',
-                                    inst.node_version or '?', inst.port,
-                                    STATUS_TEXT.get(inst.status(), inst.status()),
-                                    inst.prefix))
-            except Exception as exc:
-                parts.append('  （读取失败：%s）' % exc)
-            parts += ['', '最近日志:'] + ['  ' + ln for ln in read_manager_log(40)]
-            ok = self._copy('\n'.join(parts))
-            self.append_log('✔ 诊断信息已复制到剪贴板' if ok else '✘ 复制失败（没有剪贴板？）')
-
-        def show_cmd(kind):
-            def handler(*_):
-                title, cmd = self._commands()[kind]
-                self._text_dialog(title, cmd + '\n\n（在终端里执行；管理器运行中无法卸载自己）', 720, 320)
-            return handler
-
-        for label, handler in (('查看管理器日志', view_log),
-                               ('复制诊断信息', copy_diag),
-                               ('修复 / 重装…', show_cmd('repair')),
-                               ('卸载…', show_cmd('uninstall'))):
-            btn = Gtk.Button(label=label)
-            btn.connect('clicked', handler)
-            mrow.pack_start(btn, False, False, 0)
-        maint.pack_start(mrow, False, False, 0)
-        note = Gtk.Label(xalign=0, wrap=True)
-        note.set_text('管理器不会删除你的实例目录：卸载只移除 /usr 里的程序，'
-                      '每个实例仍在你创建时选定的目录里（数据目录是该实例的 dsh-home）。')
-        note.get_style_context().add_class('dim-label')
-        maint.pack_start(note, False, False, 0)
-        area.pack_start(maint, False, False, 0)
-
-        dlg.show_all()
-        dlg.run()
-        dlg.destroy()
-
-    # ---- 选择校验 ----
     def _need(self, what='实例'):
         if self.selected is None:
             self.append_log('请先在左侧选择一个实例')

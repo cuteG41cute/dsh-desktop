@@ -1,0 +1,480 @@
+/* 自动生成，请勿手改：来源 design/styles.css（静海 / 沉静深邃）
+ * 生成脚本：tools/build-gtk-theme.py    校验：tools/theme-token-check.py
+ */
+/* 调色板：设计稿的 25 个令牌，逐个写成 GTK 命名颜色（便于核对与复用） */
+@define-color dsh_bg #071e25;
+@define-color dsh_bg2 #0d2c32;
+@define-color dsh_app rgba(10,36,42,.74);
+@define-color dsh_sidebar rgba(8,30,36,.56);
+@define-color dsh_topbar rgba(25,25,43,.3);
+@define-color dsh_card rgba(18,52,58,.6);
+@define-color dsh_card_solid #123238;
+@define-color dsh_text #e3f2ef;
+@define-color dsh_muted #91afad;
+@define-color dsh_subtle #608381;
+@define-color dsh_border rgba(255,255,255,.76);
+@define-color dsh_inner_border rgba(42,94,96,.1);
+@define-color dsh_accent #69bdb6;
+@define-color dsh_accent2 #438f99;
+@define-color dsh_accent_rgb 105,189,182;
+@define-color dsh_accent_soft rgba(105,189,182,.16);
+@define-color dsh_on_accent #fff;
+@define-color dsh_hover rgba(255,255,255,.075);
+@define-color dsh_success #72c7a7;
+@define-color dsh_success_rgb 114,199,167;
+@define-color dsh_danger #ef8c9a;
+@define-color dsh_radius 18px;
+@define-color dsh_app_radius 24px;
+@define-color dsh_shadow 0 26px 75px rgba(36,82,83,.14);
+@define-color dsh_card_shadow 0 8px 24px rgba(0,0,0,.08);
+
+/* ============================================================================
+ * DeepSeek Harness 管理器 · GTK 主题模板
+ *
+ * 本文件不是直接用的：tools/build-gtk-theme.py 把下面这些占位符替换成
+ * design/styles.css 里抽出来的令牌，生成 dsh_manager/theme/<主题>-<日/夜>.css。
+ * 占位符：
+ *   #071e25 #0d2c32 rgba(10,36,42,.74) rgba(8,30,36,.56) rgba(25,25,43,.3) rgba(18,52,58,.6) #123238 #e3f2ef
+ *   #91afad #608381 rgba(255,255,255,.76) rgba(42,94,96,.1) #69bdb6 #438f99
+ *   105,189,182 rgba(105,189,182,.16) #fff rgba(255,255,255,.075) #72c7a7 #ef8c9a
+ *   18px 24px 0 26px 75px rgba(36,82,83,.14) 0 8px 24px rgba(0,0,0,.08) url("../backgrounds/sea-night.png")
+ *
+ * 与设计稿的对应关系写在每段的注释里，方便以后对照检查。
+ * GTK3 的 CSS 没有 backdrop-filter / CSS 变量 / flex：透明面板叠在
+ * 预先渲染好的背景图（url("../backgrounds/sea-night.png")）上，视觉上等价。
+ * ========================================================================== */
+
+/* ---------- 窗口：设计稿 body 的渐变 + .scene 背景 ---------- */
+window.dsh-window,
+.dsh-window {
+  background-image: url("../backgrounds/sea-night.png");
+  background-size: cover;
+  background-color: #071e25;
+  color: #e3f2ef;
+  font-family: "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei UI", sans-serif;
+  font-size: 11px;
+}
+
+/* 应用外壳：app-shell（圆角 + 外阴影 + 半透明） */
+.dsh-shell {
+  background-color: rgba(10,36,42,.74);
+  border: 1px solid rgba(255,255,255,.76);
+  border-radius: 24px;
+  box-shadow: 0 26px 75px rgba(36,82,83,.14);
+}
+
+/* ---------- 侧栏 ---------- */
+.sidebar {
+  background-color: rgba(8,30,36,.56);
+  border-right: 1px solid rgba(42,94,96,.1);
+  padding: 22px 14px 16px;
+  border-top-left-radius: 24px;
+  border-bottom-left-radius: 24px;
+}
+
+/* brand-mark: 38×38 渐变方块 + 内圈高光 */
+.brand-mark {
+  min-width: 38px;
+  min-height: 38px;
+  border-radius: 12px;
+  background-image: linear-gradient(140deg, #438f99, #69bdb6);
+  color: #fff;
+  font-size: 19px;
+  font-weight: bold;
+  box-shadow: 0 7px 18px alpha(#69bdb6, .25);
+}
+.brand-title { font-size: 13px; font-weight: bold; color: #e3f2ef; }
+.brand-sub { font-size: 11px; color: #91afad; }
+
+/* side-section-title / count */
+.side-section-title { color: #91afad; font-size: 11px; font-weight: bold; }
+.count-pill {
+  background-color: rgba(105,189,182,.16);
+  color: #69bdb6;
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+/* instance-item：61px 高、13px 圆角、选中态 hover + 内边框 */
+.instance-list { background: transparent; }
+.instance-item {
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  padding: 8px 10px;
+}
+.instance-item:hover { background-color: rgba(255,255,255,.075); }
+.instance-item.active {
+  background-color: rgba(255,255,255,.075);
+  border-color: rgba(42,94,96,.1);
+  box-shadow: 0 8px 24px rgba(0,0,0,.08);
+}
+.instance-avatar {
+  min-width: 34px;
+  min-height: 34px;
+  border-radius: 10px;
+  background-color: rgba(105,189,182,.16);
+  color: #69bdb6;
+  font-size: 10px;
+  font-weight: bold;
+}
+.instance-item.active .instance-avatar {
+  background-image: linear-gradient(140deg, #438f99, #69bdb6);
+  color: #fff;
+  box-shadow: 0 5px 12px alpha(#69bdb6, .18);
+}
+.instance-name { font-size: 12px; font-weight: bold; color: #e3f2ef; }
+.instance-sub { font-size: 10px; color: #91afad; }
+
+/* status-dot：7px 圆点（用 label 画） */
+.status-dot {
+  min-width: 7px;
+  min-height: 7px;
+  border-radius: 999px;
+  background-color: #72c7a7;
+}
+.status-dot.stopped { background-color: #608381; }
+
+/* new-instance：虚线框 */
+.new-instance {
+  border: 1px dashed rgba(42,94,96,.1);
+  border-radius: 11px;
+  background-color: transparent;
+  color: #91afad;
+  font-size: 11px;
+  min-height: 38px;
+}
+.new-instance:hover {
+  border-color: alpha(#69bdb6, .45);
+  background-color: rgba(105,189,182,.16);
+  color: #69bdb6;
+}
+
+/* side-caption / side-link / runtime 卡片 */
+.side-caption { color: #608381; font-size: 10px; font-weight: bold; }
+.side-link {
+  border-radius: 10px;
+  background-color: transparent;
+  color: #91afad;
+  font-size: 12px;
+  min-height: 40px;
+  padding: 0 11px;
+}
+.side-link:hover { background-color: rgba(255,255,255,.075); color: #e3f2ef; }
+.side-link.selected { background-color: rgba(255,255,255,.075); color: #69bdb6; font-weight: bold; }
+.runtime {
+  border: 1px solid rgba(42,94,96,.1);
+  border-radius: 12px;
+  background-color: rgba(18,52,58,.6);
+  padding: 12px 10px;
+}
+.runtime-icon {
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 8px;
+  background-color: rgba(105,189,182,.16);
+  color: #69bdb6;
+  font-size: 9px;
+  font-weight: bold;
+}
+.runtime-title { font-size: 10px; font-weight: bold; color: #e3f2ef; }
+.runtime-sub { font-size: 9px; color: #91afad; }
+
+/* ---------- 顶栏 ---------- */
+.topbar {
+  background-color: rgba(25,25,43,.3);
+  border-bottom: 1px solid rgba(42,94,96,.1);
+  padding: 0 26px;
+  min-height: 66px;
+  border-top-right-radius: 24px;
+}
+.breadcrumb { color: #91afad; font-size: 11px; }
+.breadcrumb-current { color: #e3f2ef; font-weight: bold; font-size: 11px; }
+
+/* theme-trigger（设计稿 .theme-trigger：34px、10px 圆角、卡片底） */
+.theme-trigger {
+  border: 1px solid rgba(42,94,96,.1);
+  border-radius: 10px;
+  background-color: rgba(18,52,58,.6);
+  color: #e3f2ef;
+  font-size: 11px;
+  font-weight: bold;
+  min-height: 34px;
+  padding: 0 10px;
+}
+.theme-swatch {
+  min-width: 14px;
+  min-height: 14px;
+  border-radius: 5px;
+  background-image: linear-gradient(135deg, #438f99, #69bdb6);
+}
+.mode-toggle {
+  border: 1px solid rgba(42,94,96,.1);
+  border-radius: 16px;
+  background-color: rgba(18,52,58,.6);
+  color: #91afad;
+  min-height: 30px;
+  min-width: 57px;
+  padding: 0 8px;
+}
+.mode-toggle:hover { color: #e3f2ef; }
+
+/* ---------- 页面标题 ---------- */
+.eyebrow { color: #69bdb6; font-size: 9px; font-weight: bold; }
+.page-title { font-size: 25px; font-weight: bold; color: #e3f2ef; }
+.page-desc { font-size: 11px; color: #91afad; }
+
+/* 状态徽标：圆角胶囊 + 半透明成功色 */
+.badge {
+  border-radius: 12px;
+  padding: 3px 9px;
+  font-size: 9px;
+  font-weight: bold;
+  border: 1px solid rgba(42,94,96,.1);
+  background-color: rgba(105,189,182,.16);
+  color: #91afad;
+}
+.badge.running {
+  color: #72c7a7;
+  background-color: alpha(#72c7a7, .09);
+  border-color: alpha(#72c7a7, .18);
+}
+.badge.needs-repair {
+  color: #ef8c9a;
+  background-color: alpha(#ef8c9a, .1);
+  border-color: alpha(#ef8c9a, .2);
+}
+
+/* ---------- 卡片 ---------- */
+.card {
+  background-color: rgba(18,52,58,.6);
+  border: 1px solid rgba(255,255,255,.76);
+  border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.08);
+  padding: 16px 18px;
+}
+.card-label { font-size: 11px; font-weight: bold; color: #e3f2ef; }
+.card-sub { font-size: 9px; color: #91afad; }
+.subtle-tag {
+  border-radius: 6px;
+  background-color: rgba(105,189,182,.16);
+  color: #91afad;
+  font-size: 9px;
+  padding: 2px 7px;
+}
+.large-avatar {
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 14px;
+  background-image: linear-gradient(145deg, #438f99, #69bdb6);
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  box-shadow: 0 7px 17px alpha(#69bdb6, .18);
+}
+.meta-name { font-size: 13px; font-weight: bold; color: #e3f2ef; }
+.meta-path {
+  font-family: Consolas, "DejaVu Sans Mono", monospace;
+  font-size: 9px;
+  color: #91afad;
+}
+.version-pill {
+  border: 1px solid rgba(42,94,96,.1);
+  border-radius: 6px;
+  color: #91afad;
+  font-size: 9px;
+  padding: 2px 7px;
+}
+.metric-label { font-size: 9px; color: #91afad; }
+.metric-value { font-size: 12px; font-weight: bold; color: #e3f2ef; }
+.metric-value.accent { color: #72c7a7; }
+.control-title { font-size: 11px; font-weight: bold; color: #e3f2ef; }
+.control-sub { font-size: 9px; color: #91afad; }
+.control-separator { border-top: 1px solid rgba(42,94,96,.1); }
+
+/* ---------- 按钮 ---------- */
+.btn {
+  border-radius: 11px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: bold;
+  min-height: 38px;
+  padding: 0 14px;
+}
+.btn-primary {
+  background-image: linear-gradient(135deg, #438f99, #69bdb6);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 7px 16px alpha(#69bdb6, .2);
+}
+.btn-primary:hover {
+  box-shadow: 0 9px 22px alpha(#69bdb6, .28);
+}
+.btn-secondary {
+  border-color: rgba(42,94,96,.1);
+  background-color: rgba(18,52,58,.6);
+  color: #e3f2ef;
+  box-shadow: 0 8px 24px rgba(0,0,0,.08);
+}
+.btn-secondary:hover { background-color: rgba(255,255,255,.075); }
+.btn-danger-soft {
+  border-color: alpha(#ef8c9a, .18);
+  background-color: alpha(#ef8c9a, .07);
+  color: #ef8c9a;
+}
+.btn-danger-soft:hover { background-color: alpha(#ef8c9a, .12); }
+.btn.compact { min-height: 31px; font-size: 9px; padding: 0 10px; border-radius: 9px; }
+.btn-icon { min-width: 38px; padding: 0; }
+.text-btn {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: #69bdb6;
+  font-size: 9px;
+  font-weight: normal;
+  padding: 0;
+  min-height: 22px;
+}
+.text-btn:hover { color: #438f99; }
+
+/* icon-btn：36×36 透明按钮 */
+.icon-btn {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 10px;
+  color: #91afad;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+}
+.icon-btn:hover { background-color: rgba(255,255,255,.075); color: #e3f2ef; }
+.icon-btn.small { min-width: 25px; min-height: 25px; border-radius: 8px; }
+
+/* ---------- 常用功能 ---------- */
+.quick-action {
+  background-color: rgba(18,52,58,.6);
+  border: 1px solid rgba(255,255,255,.76);
+  border-radius: 15px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.08);
+  padding: 12px;
+  min-height: 60px;
+}
+.quick-action:hover {
+  background-color: rgba(255,255,255,.075);
+  border-color: alpha(#69bdb6, .25);
+}
+.quick-icon {
+  min-width: 34px;
+  min-height: 34px;
+  border-radius: 10px;
+  background-color: rgba(105,189,182,.16);
+  color: #69bdb6;
+}
+.quick-title { font-size: 11px; font-weight: bold; color: #e3f2ef; }
+.quick-sub { font-size: 9px; color: #91afad; }
+.section-title { font-size: 12px; font-weight: bold; color: #e3f2ef; }
+.section-sub { font-size: 9px; color: #91afad; }
+
+/* ---------- 日志卡 ---------- */
+.log-header { border-bottom: 1px solid rgba(42,94,96,.1); padding-bottom: 10px; }
+.log-title { font-size: 12px; font-weight: bold; color: #e3f2ef; }
+.log-count {
+  border-radius: 8px;
+  background-color: rgba(105,189,182,.16);
+  color: #91afad;
+  font-size: 9px;
+  padding: 1px 6px;
+}
+.log-line {
+  font-family: Consolas, "DejaVu Sans Mono", monospace;
+  font-size: 9px;
+  color: #e3f2ef;
+}
+.log-time { color: #608381; }
+.log-level {
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: "Segoe UI", sans-serif;
+  font-size: 8px;
+  background-color: rgba(105,189,182,.16);
+  color: #91afad;
+}
+.log-level.success { color: #72c7a7; background-color: alpha(#72c7a7, .09); }
+.log-level.info { color: #69bdb6; }
+.log-view {
+  background-color: transparent;
+  color: #e3f2ef;
+  font-family: Consolas, "DejaVu Sans Mono", monospace;
+  font-size: 9px;
+}
+.log-view text { background-color: transparent; color: #e3f2ef; }
+.page-footer { color: #608381; font-size: 9px; }
+
+/* ---------- 输入控件 ---------- */
+entry, spinbutton, .entry {
+  background-color: rgba(18,52,58,.6);
+  border: 1px solid rgba(42,94,96,.1);
+  border-radius: 10px;
+  color: #e3f2ef;
+  min-height: 34px;
+  padding: 0 8px;
+}
+entry:focus, spinbutton:focus { border-color: alpha(#69bdb6, .5); }
+spinbutton button { min-height: 30px; min-width: 28px; }
+combobox button, menubutton button.combo {
+  background-color: rgba(18,52,58,.6);
+  border: 1px solid rgba(42,94,96,.1);
+  border-radius: 10px;
+  color: #e3f2ef;
+  min-height: 34px;
+  padding: 0 8px;
+}
+label.field-label { font-size: 10px; font-weight: bold; color: #e3f2ef; }
+label.field-hint { font-size: 9px; color: #91afad; }
+
+/* ---------- 弹层（主题菜单 / 更多菜单 / 设置页） ---------- */
+popover {
+  background-color: #123238;
+  border: 1px solid rgba(255,255,255,.76);
+  border-radius: 14px;
+  box-shadow: 0 18px 45px alpha(#e3f2ef, .18);
+}
+popover modelbutton, popover button.flat {
+  border-radius: 9px;
+  color: #e3f2ef;
+  font-size: 11px;
+  min-height: 34px;
+  padding: 0 10px;
+  background-color: transparent;
+}
+popover modelbutton:hover, popover button.flat:hover { background-color: rgba(105,189,182,.16); }
+popover label.menu-header { color: #91afad; font-size: 10px; padding: 6px 9px; }
+
+dialog {
+  background-color: #123238;
+  border: 1px solid rgba(255,255,255,.76);
+  border-radius: 16px;
+  color: #e3f2ef;
+}
+dialog .dialog-title { font-size: 14px; font-weight: bold; }
+
+/* 滚动区 / 滚动条：细、低对比 */
+scrolledwindow, viewport { background-color: transparent; }
+scrollbar { background-color: transparent; border: none; }
+scrollbar slider {
+  background-color: alpha(#e3f2ef, .16);
+  border-radius: 8px;
+  min-width: 6px;
+  min-height: 24px;
+}
+scrollbar slider:hover { background-color: alpha(#e3f2ef, .26); }
+separator { background-color: rgba(42,94,96,.1); min-width: 1px; min-height: 1px; }
+tooltip {
+  background-color: #123238;
+  color: #e3f2ef;
+  border: 1px solid rgba(255,255,255,.76);
+  border-radius: 8px;
+}

@@ -1,0 +1,450 @@
+/* ============================================================================
+ * DeepSeek Harness 管理器 · GTK 主题模板
+ *
+ * 本文件不是直接用的：tools/build-gtk-theme.py 把下面这些占位符替换成
+ * design/styles.css 里抽出来的令牌，生成 dsh_manager/theme/<主题>-<日/夜>.css。
+ * 占位符：
+ *   $(bg) $(bg2) $(app) $(sidebar) $(topbar) $(card) $(card-solid) $(text)
+ *   $(muted) $(subtle) $(border) $(inner-border) $(accent) $(accent2)
+ *   $(accent-rgb) $(accent-soft) $(on-accent) $(hover) $(success) $(danger)
+ *   $(radius) $(app-radius) $(shadow) $(card-shadow) $(bg-image)
+ *
+ * 与设计稿的对应关系写在每段的注释里，方便以后对照检查。
+ * GTK3 的 CSS 没有 backdrop-filter / CSS 变量 / flex：透明面板叠在
+ * 预先渲染好的背景图（$(bg-image)）上，视觉上等价。
+ * ========================================================================== */
+
+/* ---------- 窗口：设计稿 body 的渐变 + .scene 背景 ---------- */
+window.dsh-window,
+.dsh-window {
+  background-image: $(bg-image);
+  background-size: cover;
+  background-color: $(bg);
+  color: $(text);
+  font-family: "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei UI", sans-serif;
+  font-size: 11px;
+}
+
+/* 应用外壳：app-shell（圆角 + 外阴影 + 半透明） */
+.dsh-shell {
+  background-color: $(app);
+  border: 1px solid $(border);
+  border-radius: $(app-radius);
+  box-shadow: $(shadow);
+}
+
+/* ---------- 侧栏 ---------- */
+.sidebar {
+  background-color: $(sidebar);
+  border-right: 1px solid $(inner-border);
+  padding: 22px 14px 16px;
+  border-top-left-radius: $(app-radius);
+  border-bottom-left-radius: $(app-radius);
+}
+
+/* brand-mark: 38×38 渐变方块 + 内圈高光 */
+.brand-mark {
+  min-width: 38px;
+  min-height: 38px;
+  border-radius: 12px;
+  background-image: linear-gradient(140deg, $(accent2), $(accent));
+  color: $(on-accent);
+  font-size: 19px;
+  font-weight: 750;
+  box-shadow: 0 7px 18px alpha($(accent), .25);
+}
+.brand-title { font-size: 13px; font-weight: 750; color: $(text); }
+.brand-sub { font-size: 11px; color: $(muted); }
+
+/* side-section-title / count */
+.side-section-title { color: $(muted); font-size: 11px; font-weight: 600; }
+.count-pill {
+  background-color: $(accent-soft);
+  color: $(accent);
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* instance-item：61px 高、13px 圆角、选中态 hover + 内边框 */
+.instance-list { background: transparent; }
+.instance-item {
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  padding: 8px 10px;
+}
+.instance-item:hover { background-color: $(hover); }
+.instance-item.active {
+  background-color: $(hover);
+  border-color: $(inner-border);
+  box-shadow: $(card-shadow);
+}
+.instance-avatar {
+  min-width: 34px;
+  min-height: 34px;
+  border-radius: 10px;
+  background-color: $(accent-soft);
+  color: $(accent);
+  font-size: 10px;
+  font-weight: 750;
+}
+.instance-item.active .instance-avatar {
+  background-image: linear-gradient(140deg, $(accent2), $(accent));
+  color: $(on-accent);
+  box-shadow: 0 5px 12px alpha($(accent), .18);
+}
+.instance-name { font-size: 12px; font-weight: 600; color: $(text); }
+.instance-sub { font-size: 10px; color: $(muted); }
+
+/* status-dot：7px 圆点（用 label 画） */
+.status-dot {
+  min-width: 7px;
+  min-height: 7px;
+  border-radius: 999px;
+  background-color: $(success);
+}
+.status-dot.stopped { background-color: $(subtle); }
+
+/* new-instance：虚线框 */
+.new-instance {
+  border: 1px dashed $(inner-border);
+  border-radius: 11px;
+  background-color: transparent;
+  color: $(muted);
+  font-size: 11px;
+  min-height: 38px;
+}
+.new-instance:hover {
+  border-color: alpha($(accent), .45);
+  background-color: $(accent-soft);
+  color: $(accent);
+}
+
+/* side-caption / side-link / runtime 卡片 */
+.side-caption { color: $(subtle); font-size: 10px; font-weight: 600; }
+.side-link {
+  border-radius: 10px;
+  background-color: transparent;
+  color: $(muted);
+  font-size: 12px;
+  min-height: 40px;
+  padding: 0 11px;
+}
+.side-link:hover { background-color: $(hover); color: $(text); }
+.side-link.selected { background-color: $(hover); color: $(accent); font-weight: 600; }
+.runtime {
+  border: 1px solid $(inner-border);
+  border-radius: 12px;
+  background-color: $(card);
+  padding: 12px 10px;
+}
+.runtime-icon {
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 8px;
+  background-color: $(accent-soft);
+  color: $(accent);
+  font-size: 9px;
+  font-weight: 700;
+}
+.runtime-title { font-size: 10px; font-weight: 600; color: $(text); }
+.runtime-sub { font-size: 9px; color: $(muted); }
+
+/* ---------- 顶栏 ---------- */
+.topbar {
+  background-color: $(topbar);
+  border-bottom: 1px solid $(inner-border);
+  padding: 0 26px;
+  min-height: 66px;
+  border-top-right-radius: $(app-radius);
+}
+.breadcrumb { color: $(muted); font-size: 11px; }
+.breadcrumb-current { color: $(text); font-weight: 600; font-size: 11px; }
+
+/* theme-trigger（设计稿 .theme-trigger：34px、10px 圆角、卡片底） */
+.theme-trigger {
+  border: 1px solid $(inner-border);
+  border-radius: 10px;
+  background-color: $(card);
+  color: $(text);
+  font-size: 11px;
+  font-weight: 600;
+  min-height: 34px;
+  padding: 0 10px;
+}
+.theme-swatch {
+  min-width: 14px;
+  min-height: 14px;
+  border-radius: 5px;
+  background-image: linear-gradient(135deg, $(accent2), $(accent));
+}
+.mode-toggle {
+  border: 1px solid $(inner-border);
+  border-radius: 16px;
+  background-color: $(card);
+  color: $(muted);
+  min-height: 30px;
+  min-width: 57px;
+  padding: 0 8px;
+}
+.mode-toggle:hover { color: $(text); }
+
+/* ---------- 页面标题 ---------- */
+.eyebrow { color: $(accent); font-size: 9px; font-weight: 750; }
+.page-title { font-size: 25px; font-weight: 680; color: $(text); }
+.page-desc { font-size: 11px; color: $(muted); }
+
+/* 状态徽标：圆角胶囊 + 半透明成功色 */
+.badge {
+  border-radius: 12px;
+  padding: 3px 9px;
+  font-size: 9px;
+  font-weight: 600;
+  border: 1px solid $(inner-border);
+  background-color: $(accent-soft);
+  color: $(muted);
+}
+.badge.running {
+  color: $(success);
+  background-color: alpha($(success), .09);
+  border-color: alpha($(success), .18);
+}
+.badge.needs-repair {
+  color: $(danger);
+  background-color: alpha($(danger), .1);
+  border-color: alpha($(danger), .2);
+}
+
+/* ---------- 卡片 ---------- */
+.card {
+  background-color: $(card);
+  border: 1px solid $(border);
+  border-radius: $(radius);
+  box-shadow: $(card-shadow);
+  padding: 16px 18px;
+}
+.card-label { font-size: 11px; font-weight: 650; color: $(text); }
+.card-sub { font-size: 9px; color: $(muted); }
+.subtle-tag {
+  border-radius: 6px;
+  background-color: $(accent-soft);
+  color: $(muted);
+  font-size: 9px;
+  padding: 2px 7px;
+}
+.large-avatar {
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 14px;
+  background-image: linear-gradient(145deg, $(accent2), $(accent));
+  color: $(on-accent);
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 7px 17px alpha($(accent), .18);
+}
+.meta-name { font-size: 13px; font-weight: 650; color: $(text); }
+.meta-path {
+  font-family: Consolas, "DejaVu Sans Mono", monospace;
+  font-size: 9px;
+  color: $(muted);
+}
+.version-pill {
+  border: 1px solid $(inner-border);
+  border-radius: 6px;
+  color: $(muted);
+  font-size: 9px;
+  padding: 2px 7px;
+}
+.metric-label { font-size: 9px; color: $(muted); }
+.metric-value { font-size: 12px; font-weight: 650; color: $(text); }
+.metric-value.accent { color: $(success); }
+.control-title { font-size: 11px; font-weight: 600; color: $(text); }
+.control-sub { font-size: 9px; color: $(muted); }
+.control-separator { border-top: 1px solid $(inner-border); }
+
+/* ---------- 按钮 ---------- */
+.btn {
+  border-radius: 11px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 600;
+  min-height: 38px;
+  padding: 0 14px;
+}
+.btn-primary {
+  background-image: linear-gradient(135deg, $(accent2), $(accent));
+  color: $(on-accent);
+  border-color: transparent;
+  box-shadow: 0 7px 16px alpha($(accent), .2);
+}
+.btn-primary:hover {
+  box-shadow: 0 9px 22px alpha($(accent), .28);
+}
+.btn-secondary {
+  border-color: $(inner-border);
+  background-color: $(card);
+  color: $(text);
+  box-shadow: $(card-shadow);
+}
+.btn-secondary:hover { background-color: $(hover); }
+.btn-danger-soft {
+  border-color: alpha($(danger), .18);
+  background-color: alpha($(danger), .07);
+  color: $(danger);
+}
+.btn-danger-soft:hover { background-color: alpha($(danger), .12); }
+.btn.compact { min-height: 31px; font-size: 9px; padding: 0 10px; border-radius: 9px; }
+.btn-icon { min-width: 38px; padding: 0; }
+.text-btn {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: $(accent);
+  font-size: 9px;
+  font-weight: 550;
+  padding: 0;
+  min-height: 22px;
+}
+.text-btn:hover { color: $(accent2); }
+
+/* icon-btn：36×36 透明按钮 */
+.icon-btn {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 10px;
+  color: $(muted);
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+}
+.icon-btn:hover { background-color: $(hover); color: $(text); }
+.icon-btn.small { min-width: 25px; min-height: 25px; border-radius: 8px; }
+
+/* ---------- 常用功能 ---------- */
+.quick-action {
+  background-color: $(card);
+  border: 1px solid $(border);
+  border-radius: 15px;
+  box-shadow: $(card-shadow);
+  padding: 12px;
+  min-height: 60px;
+}
+.quick-action:hover {
+  background-color: $(hover);
+  border-color: alpha($(accent), .25);
+}
+.quick-icon {
+  min-width: 34px;
+  min-height: 34px;
+  border-radius: 10px;
+  background-color: $(accent-soft);
+  color: $(accent);
+}
+.quick-title { font-size: 11px; font-weight: 600; color: $(text); }
+.quick-sub { font-size: 9px; color: $(muted); }
+.section-title { font-size: 12px; font-weight: 650; color: $(text); }
+.section-sub { font-size: 9px; color: $(muted); }
+
+/* ---------- 日志卡 ---------- */
+.log-header { border-bottom: 1px solid $(inner-border); padding-bottom: 10px; }
+.log-title { font-size: 12px; font-weight: 650; color: $(text); }
+.log-count {
+  border-radius: 8px;
+  background-color: $(accent-soft);
+  color: $(muted);
+  font-size: 9px;
+  padding: 1px 6px;
+}
+.log-line {
+  font-family: Consolas, "DejaVu Sans Mono", monospace;
+  font-size: 9px;
+  color: $(text);
+}
+.log-time { color: $(subtle); }
+.log-level {
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: "Segoe UI", sans-serif;
+  font-size: 8px;
+  background-color: $(accent-soft);
+  color: $(muted);
+}
+.log-level.success { color: $(success); background-color: alpha($(success), .09); }
+.log-level.info { color: $(accent); }
+.log-view {
+  background-color: transparent;
+  color: $(text);
+  font-family: Consolas, "DejaVu Sans Mono", monospace;
+  font-size: 9px;
+}
+.log-view text { background-color: transparent; color: $(text); }
+.page-footer { color: $(subtle); font-size: 9px; }
+
+/* ---------- 输入控件 ---------- */
+entry, spinbutton, .entry {
+  background-color: $(card);
+  border: 1px solid $(inner-border);
+  border-radius: 10px;
+  color: $(text);
+  min-height: 34px;
+  padding: 0 8px;
+}
+entry:focus, spinbutton:focus { border-color: alpha($(accent), .5); }
+spinbutton button { min-height: 30px; min-width: 28px; }
+combobox button, menubutton button.combo {
+  background-color: $(card);
+  border: 1px solid $(inner-border);
+  border-radius: 10px;
+  color: $(text);
+  min-height: 34px;
+  padding: 0 8px;
+}
+label.field-label { font-size: 10px; font-weight: 600; color: $(text); }
+label.field-hint { font-size: 9px; color: $(muted); }
+
+/* ---------- 弹层（主题菜单 / 更多菜单 / 设置页） ---------- */
+popover {
+  background-color: $(card-solid);
+  border: 1px solid $(border);
+  border-radius: 14px;
+  box-shadow: 0 18px 45px alpha($(text), .18);
+}
+popover modelbutton, popover button.flat {
+  border-radius: 9px;
+  color: $(text);
+  font-size: 11px;
+  min-height: 34px;
+  padding: 0 10px;
+  background-color: transparent;
+}
+popover modelbutton:hover, popover button.flat:hover { background-color: $(accent-soft); }
+popover label.menu-header { color: $(muted); font-size: 10px; padding: 6px 9px; }
+
+dialog {
+  background-color: $(card-solid);
+  border: 1px solid $(border);
+  border-radius: 16px;
+  color: $(text);
+}
+dialog .dialog-title { font-size: 14px; font-weight: 650; }
+
+/* 滚动区 / 滚动条：细、低对比 */
+scrolledwindow, viewport { background-color: transparent; }
+scrollbar { background-color: transparent; border: none; }
+scrollbar slider {
+  background-color: alpha($(text), .16);
+  border-radius: 8px;
+  min-width: 6px;
+  min-height: 24px;
+}
+scrollbar slider:hover { background-color: alpha($(text), .26); }
+separator { background-color: $(inner-border); min-width: 1px; min-height: 1px; }
+tooltip {
+  background-color: $(card-solid);
+  color: $(text);
+  border: 1px solid $(border);
+  border-radius: 8px;
+}

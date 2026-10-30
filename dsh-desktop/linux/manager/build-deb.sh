@@ -10,7 +10,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # dsh-desktop/linux/manag
 MANAGER_DIR="$HERE"
 LINUX_DIR="$(cd "$HERE/.." && pwd)"                    # dsh-desktop/linux
 DESKTOP_DIR="$(cd "$LINUX_DIR/.." && pwd)"             # dsh-desktop
-VERSION="1.2.0"
+VERSION="1.3.0"
 OUT="$HERE"
 
 while [ $# -gt 0 ]; do
@@ -42,6 +42,12 @@ install -m 0644 "$MANAGER_DIR/dsh_manager/core.py"     "$STAGE/usr/lib/dsh-manag
 install -m 0644 "$MANAGER_DIR/dsh_manager/cli.py"      "$STAGE/usr/lib/dsh-manager/dsh_manager/"
 install -m 0644 "$MANAGER_DIR/dsh_manager/gui.py"      "$STAGE/usr/lib/dsh-manager/dsh_manager/"
 install -m 0644 "$MANAGER_DIR/dsh_manager/style.css"   "$STAGE/usr/lib/dsh-manager/dsh_manager/"
+# 设计稿主题（7 套 × 日/夜）与配套背景图：由 tools/build-gtk-theme.py 生成
+install -m 0644 "$MANAGER_DIR/dsh_manager/themes.json" "$STAGE/usr/lib/dsh-manager/dsh_manager/"
+mkdir -p "$STAGE/usr/lib/dsh-manager/dsh_manager/theme" "$STAGE/usr/lib/dsh-manager/dsh_manager/backgrounds"
+cp -f "$MANAGER_DIR"/dsh_manager/theme/*.css "$MANAGER_DIR"/dsh_manager/theme/index.json \
+      "$STAGE/usr/lib/dsh-manager/dsh_manager/theme/"
+cp -f "$MANAGER_DIR"/dsh_manager/backgrounds/*.png "$STAGE/usr/lib/dsh-manager/dsh_manager/backgrounds/"
 install -m 0644 "$MANAGER_DIR/dsh_manager/plugins.py"  "$STAGE/usr/lib/dsh-manager/dsh_manager/"
 install -m 0755 "$MANAGER_DIR/bin/dsh-manager"         "$STAGE/usr/bin/dsh-manager"
 

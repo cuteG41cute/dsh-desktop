@@ -32,7 +32,7 @@ DEFAULT_ROOT = os.path.expanduser('~/.local/opt')
 FALLBACK_DSH_VERSIONS = ['0.2.1-rc.5', '0.2.0-rc.2', '0.1.7-rc.2', '0.1.5-rc.3', '0.1.5-rc.1']
 FALLBACK_NODE_VERSIONS = ['26.13.0', '24.22.2', '22.23.4', '20.20.2']
 SYSTEM_SHARE = '/usr/lib/dsh-manager/share'      # deb 里随包带的窗口文件
-MANAGER_VERSION = '1.2.0'
+MANAGER_VERSION = '1.3.0'
 MANAGER_LIB = '/usr/lib/dsh-manager'             # 管理器自己的安装目录（deb）
 
 
@@ -51,7 +51,10 @@ def manager_log_path():
 
 
 DEFAULT_SETTINGS = {
-    'theme': True,          # 企业简洁风主题（关掉 = GTK 默认皮肤）
+    # 界面主题：Kimi 设计稿那 7 套（frost/liquid/crystal/flat/alpine/dawn/sea），
+    # 空字符串 = 不加载主题（退回 GTK 默认皮肤）。老配置里的 True/False 会在 GUI 里迁移。
+    'theme': 'frost',
+    'mode': 'day',          # day / night
     'logLines': 800,        # 日志面板保留行数
 }
 

@@ -91,17 +91,25 @@ imp_at = src.find('from gi.repository import Gdk')
 checks.append(('Gdk 版本声明在 import 之前', 0 <= req_at < imp_at))
 checks.append(('声明的是 Gdk 3.0', "require_version('Gdk', '3.0')" in src))
 
-# 结构锁：小屏上「看不到底」是因为右侧按钮组把日志挤出窗口、窗口本身又比屏幕高。
-# 修法分四段，任何一段被删掉都会复发，所以在这里钉住（和上面 Gdk 顺序同类的静态断言）。
+# 结构锁：1.3.0 起界面按 Kimi 的设计稿复刻（侧栏 + 顶栏 + 两页 + 卡片），
+# 哪一块被误删都会让界面退回"一堆按钮的旧样子"，所以在这里钉住。
 checks.append(('打开时按显示器工作区收尺寸（不超出屏幕）', 'get_workarea' in src))
 # 用户明确要求：别限制窗口最小高度，想缩就缩。所以窗口本身不许设硬性最小尺寸。
 checks.append(('窗口没有被写死最小尺寸', 'self.set_size_request(' not in src))
-checks.append(('右侧上部按钮区可滚动', 'top_scroll = Gtk.ScrolledWindow()' in src))
-checks.append(('日志卡有最低高度（≥120px）、且放进竖直分栏',
-               'log_card.set_size_request(-1, 120)' in src and 'vpaned.pack2(log_card' in src))
-checks.append(('竖直分栏真的存在', 'Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)' in src))
-# 日志高度要跟着窗口高度按比例走（用户明确要求），不是写死像素
-checks.append(('日志高度按窗口百分比分配', 'self._log_ratio' in src and 'configure-event' in src))
+checks.append(('设计稿外壳（圆角 + 半透明 + 阴影）', "add_class('dsh-shell')" in src))
+checks.append(('左侧实例栏', "add_class('sidebar')" in src and 'def _build_sidebar' in src))
+checks.append(('顶栏（面包屑 / 主题 / 日夜）', "add_class('topbar')" in src
+               and 'def _build_topbar' in src))
+checks.append(('两页切换用 Gtk.Stack', 'Gtk.Stack()' in src and 'def _show_page' in src))
+checks.append(('实例列表是 ListBox 自定义行', 'Gtk.ListBox()' in src
+               and 'def _instance_row' in src and "'row-selected'" in src))
+checks.append(('7 套主题菜单 + 日夜切换', 'theme_index()' in src
+               and 'def on_pick_theme' in src and 'def on_toggle_mode' in src))
+checks.append(('常用功能 4 个快捷入口', 'def _quick_action' in src
+               and "'plugins', '管理插件'" in src))
+checks.append(('最近日志卡（3 行滚动）', 'def _push_recent_log' in src and 'self.log_rows' in src))
+checks.append(('设置页不再是弹窗', 'def _build_settings_page' in src
+               and "self._show_page('settings')" in src))
 # 日志查看器：Gtk.Box.add() 不伸展 → 只显示两行；必须 pack_start(..., True, True)
 checks.append(('日志查看器会填满对话框', 'area.pack_start(sw, True, True, 0)' in src
                and 'area.add(sw)' not in src))

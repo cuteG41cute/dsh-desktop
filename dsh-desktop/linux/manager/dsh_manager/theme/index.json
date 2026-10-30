@@ -1,0 +1,85 @@
+{
+  "labels": {
+    "alpine-day": [
+      "雪山",
+      "纯净凛冽"
+    ],
+    "alpine-night": [
+      "雪山",
+      "纯净凛冽"
+    ],
+    "crystal-day": [
+      "水晶",
+      "清透棱角"
+    ],
+    "crystal-night": [
+      "水晶",
+      "清透棱角"
+    ],
+    "dawn-day": [
+      "晨光",
+      "温暖轻盈"
+    ],
+    "dawn-night": [
+      "晨光",
+      "温暖轻盈"
+    ],
+    "flat-day": [
+      "扁平化",
+      "简洁高效"
+    ],
+    "flat-night": [
+      "扁平化",
+      "简洁高效"
+    ],
+    "frost-day": [
+      "毛玻璃",
+      "柔和透明"
+    ],
+    "frost-night": [
+      "毛玻璃",
+      "柔和透明"
+    ],
+    "liquid-day": [
+      "液态玻璃",
+      "流动高光"
+    ],
+    "liquid-night": [
+      "液态玻璃",
+      "流动高光"
+    ],
+    "sea-day": [
+      "静海",
+      "沉静深邃"
+    ],
+    "sea-night": [
+      "静海",
+      "沉静深邃"
+    ]
+  },
+  "order": [
+    "frost",
+    "liquid",
+    "crystal",
+    "flat",
+    "alpine",
+    "dawn",
+    "sea"
+  ],
+  "variants": [
+    "alpine-day",
+    "alpine-night",
+    "crystal-day",
+    "crystal-night",
+    "dawn-day",
+    "dawn-night",
+    "flat-day",
+    "flat-night",
+    "frost-day",
+    "frost-night",
+    "liquid-day",
+    "liquid-night",
+    "sea-day",
+    "sea-night"
+  ]
+}

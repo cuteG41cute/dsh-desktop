@@ -90,6 +90,26 @@ bash build-deb.sh --version 1.0.0        # 产出 ./dsh-manager_1.0.0_all.deb
 一致性有 gate 钉着：`python dsh-desktop/linux/tools/socket-name-check.py`（13 项，含
 「两个实例的套接字不同」「两侧命名完全一致」「清锁认按端口的锁名」）。
 
+### 界面：按 Kimi 的设计稿复刻（1.3.0 起）
+
+设计稿在 `manager/design/`（`index.html` / `styles.css` / `app.js`，7 套主题 × 日/夜），
+界面按它重做：**左侧实例栏**（品牌 / 我的实例 / 新建实例 / 工作空间 / 运行环境）、
+**顶栏**（面包屑 / 主题选择 / 日夜切换）、**仪表盘**（标题+状态徽标 / 实例信息卡 /
+快捷控制卡 / 常用功能 4 格 / 最近日志 3 行 / 页脚）、**管理器设置页**（信息 / 维护 / 外观）。
+
+复刻不是"照着颜色抄一遍"，而是**从设计稿生成**：
+
+| 环节 | 做法 |
+| --- | --- |
+| 令牌 | `tools/extract-themes.py` 解析 `design/styles.css` 的级联（`:root` → 夜间基础 → 主题 → 主题+夜间），得到 14 组 × 25 个令牌 → `dsh_manager/themes.json` |
+| 主题 CSS | `tools/build-gtk-theme.py` 把令牌灌进 `tools/gtk-theme-template.css.in`，生成 `dsh_manager/theme/<主题>-<日/夜>.css`（含调色板 + 全部控件样式） |
+| 背景 | `tools/render-backgrounds.mjs` 用无头 Chromium 渲染设计稿的 `.scene`（光斑 / 雪山 / 海浪 / 晨光 / 水晶），输出 14 张 PNG 到 `dsh_manager/backgrounds/` |
+| 切换 | 顶栏「主题」菜单选 7 套之一、日/夜按钮切换；设置页也能换。选择存 `settings.json`（`theme` / `mode`），立即生效不用重启 |
+| 保真核对 | `tools/theme-token-check.py`：设计稿 ↔ themes.json ↔ 14 份 CSS ↔ 背景图，逐项比对（色值、圆角、阴影、背景引用），5 项全过才算"复刻" |
+
+GTK3 没有 `backdrop-filter` / CSS 变量 / flex：透明面板叠在**预渲染背景图**上，
+布局用 GTK 容器表达，观感与设计稿一致而实现走 GTK 自己的路。
+
 ### 原生截屏桥（1.2.0 起，修 Linux Wayland 下截图必失败）
 
 Linux 桌面壳（WebKitGTK）里点截图按钮只会转圈然后报错。根因不在插件与 DSH：

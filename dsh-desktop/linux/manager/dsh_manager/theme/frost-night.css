@@ -1,0 +1,480 @@
+/* 自动生成，请勿手改：来源 design/styles.css（毛玻璃 / 柔和透明）
+ * 生成脚本：tools/build-gtk-theme.py    校验：tools/theme-token-check.py
+ */
+/* 调色板：设计稿的 25 个令牌，逐个写成 GTK 命名颜色（便于核对与复用） */
+@define-color dsh_bg #11121e;
+@define-color dsh_bg2 #201b32;
+@define-color dsh_app rgba(22,22,38,.68);
+@define-color dsh_sidebar rgba(20,20,36,.48);
+@define-color dsh_topbar rgba(25,25,43,.3);
+@define-color dsh_card rgba(38,37,58,.58);
+@define-color dsh_card_solid #252437;
+@define-color dsh_text #efedf8;
+@define-color dsh_muted #aaa6bb;
+@define-color dsh_subtle #777388;
+@define-color dsh_border rgba(255,255,255,.09);
+@define-color dsh_inner_border rgba(255,255,255,.075);
+@define-color dsh_accent #a393ff;
+@define-color dsh_accent2 #776bd9;
+@define-color dsh_accent_rgb 163,147,255;
+@define-color dsh_accent_soft rgba(163,147,255,.16);
+@define-color dsh_on_accent #fff;
+@define-color dsh_hover rgba(255,255,255,.075);
+@define-color dsh_success #62c9a5;
+@define-color dsh_success_rgb 43,155,120;
+@define-color dsh_danger #ef8c9a;
+@define-color dsh_radius 20px;
+@define-color dsh_app_radius 26px;
+@define-color dsh_shadow 0 25px 80px rgba(0,0,0,.35);
+@define-color dsh_card_shadow 0 8px 24px rgba(0,0,0,.08);
+
+/* ============================================================================
+ * DeepSeek Harness 管理器 · GTK 主题模板
+ *
+ * 本文件不是直接用的：tools/build-gtk-theme.py 把下面这些占位符替换成
+ * design/styles.css 里抽出来的令牌，生成 dsh_manager/theme/<主题>-<日/夜>.css。
+ * 占位符：
+ *   #11121e #201b32 rgba(22,22,38,.68) rgba(20,20,36,.48) rgba(25,25,43,.3) rgba(38,37,58,.58) #252437 #efedf8
+ *   #aaa6bb #777388 rgba(255,255,255,.09) rgba(255,255,255,.075) #a393ff #776bd9
+ *   163,147,255 rgba(163,147,255,.16) #fff rgba(255,255,255,.075) #62c9a5 #ef8c9a
+ *   20px 26px 0 25px 80px rgba(0,0,0,.35) 0 8px 24px rgba(0,0,0,.08) url("../backgrounds/frost-night.png")
+ *
+ * 与设计稿的对应关系写在每段的注释里，方便以后对照检查。
+ * GTK3 的 CSS 没有 backdrop-filter / CSS 变量 / flex：透明面板叠在
+ * 预先渲染好的背景图（url("../backgrounds/frost-night.png")）上，视觉上等价。
+ * ========================================================================== */
+
+/* ---------- 窗口：设计稿 body 的渐变 + .scene 背景 ---------- */
+window.dsh-window,
+.dsh-window {
+  background-image: url("../backgrounds/frost-night.png");
+  background-size: cover;
+  background-color: #11121e;
+  color: #efedf8;
+  font-family: "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei UI", sans-serif;
+  font-size: 11px;
+}
+
+/* 应用外壳：app-shell（圆角 + 外阴影 + 半透明） */
+.dsh-shell {
+  background-color: rgba(22,22,38,.68);
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 26px;
+  box-shadow: 0 25px 80px rgba(0,0,0,.35);
+}
+
+/* ---------- 侧栏 ---------- */
+.sidebar {
+  background-color: rgba(20,20,36,.48);
+  border-right: 1px solid rgba(255,255,255,.075);
+  padding: 22px 14px 16px;
+  border-top-left-radius: 26px;
+  border-bottom-left-radius: 26px;
+}
+
+/* brand-mark: 38×38 渐变方块 + 内圈高光 */
+.brand-mark {
+  min-width: 38px;
+  min-height: 38px;
+  border-radius: 12px;
+  background-image: linear-gradient(140deg, #776bd9, #a393ff);
+  color: #fff;
+  font-size: 19px;
+  font-weight: bold;
+  box-shadow: 0 7px 18px alpha(#a393ff, .25);
+}
+.brand-title { font-size: 13px; font-weight: bold; color: #efedf8; }
+.brand-sub { font-size: 11px; color: #aaa6bb; }
+
+/* side-section-title / count */
+.side-section-title { color: #aaa6bb; font-size: 11px; font-weight: bold; }
+.count-pill {
+  background-color: rgba(163,147,255,.16);
+  color: #a393ff;
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+/* instance-item：61px 高、13px 圆角、选中态 hover + 内边框 */
+.instance-list { background: transparent; }
+.instance-item {
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  padding: 8px 10px;
+}
+.instance-item:hover { background-color: rgba(255,255,255,.075); }
+.instance-item.active {
+  background-color: rgba(255,255,255,.075);
+  border-color: rgba(255,255,255,.075);
+  box-shadow: 0 8px 24px rgba(0,0,0,.08);
+}
+.instance-avatar {
+  min-width: 34px;
+  min-height: 34px;
+  border-radius: 10px;
+  background-color: rgba(163,147,255,.16);
+  color: #a393ff;
+  font-size: 10px;
+  font-weight: bold;
+}
+.instance-item.active .instance-avatar {
+  background-image: linear-gradient(140deg, #776bd9, #a393ff);
+  color: #fff;
+  box-shadow: 0 5px 12px alpha(#a393ff, .18);
+}
+.instance-name { font-size: 12px; font-weight: bold; color: #efedf8; }
+.instance-sub { font-size: 10px; color: #aaa6bb; }
+
+/* status-dot：7px 圆点（用 label 画） */
+.status-dot {
+  min-width: 7px;
+  min-height: 7px;
+  border-radius: 999px;
+  background-color: #62c9a5;
+}
+.status-dot.stopped { background-color: #777388; }
+
+/* new-instance：虚线框 */
+.new-instance {
+  border: 1px dashed rgba(255,255,255,.075);
+  border-radius: 11px;
+  background-color: transparent;
+  color: #aaa6bb;
+  font-size: 11px;
+  min-height: 38px;
+}
+.new-instance:hover {
+  border-color: alpha(#a393ff, .45);
+  background-color: rgba(163,147,255,.16);
+  color: #a393ff;
+}
+
+/* side-caption / side-link / runtime 卡片 */
+.side-caption { color: #777388; font-size: 10px; font-weight: bold; }
+.side-link {
+  border-radius: 10px;
+  background-color: transparent;
+  color: #aaa6bb;
+  font-size: 12px;
+  min-height: 40px;
+  padding: 0 11px;
+}
+.side-link:hover { background-color: rgba(255,255,255,.075); color: #efedf8; }
+.side-link.selected { background-color: rgba(255,255,255,.075); color: #a393ff; font-weight: bold; }
+.runtime {
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 12px;
+  background-color: rgba(38,37,58,.58);
+  padding: 12px 10px;
+}
+.runtime-icon {
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 8px;
+  background-color: rgba(163,147,255,.16);
+  color: #a393ff;
+  font-size: 9px;
+  font-weight: bold;
+}
+.runtime-title { font-size: 10px; font-weight: bold; color: #efedf8; }
+.runtime-sub { font-size: 9px; color: #aaa6bb; }
+
+/* ---------- 顶栏 ---------- */
+.topbar {
+  background-color: rgba(25,25,43,.3);
+  border-bottom: 1px solid rgba(255,255,255,.075);
+  padding: 0 26px;
+  min-height: 66px;
+  border-top-right-radius: 26px;
+}
+.breadcrumb { color: #aaa6bb; font-size: 11px; }
+.breadcrumb-current { color: #efedf8; font-weight: bold; font-size: 11px; }
+
+/* theme-trigger（设计稿 .theme-trigger：34px、10px 圆角、卡片底） */
+.theme-trigger {
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 10px;
+  background-color: rgba(38,37,58,.58);
+  color: #efedf8;
+  font-size: 11px;
+  font-weight: bold;
+  min-height: 34px;
+  padding: 0 10px;
+}
+.theme-swatch {
+  min-width: 14px;
+  min-height: 14px;
+  border-radius: 5px;
+  background-image: linear-gradient(135deg, #776bd9, #a393ff);
+}
+.mode-toggle {
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 16px;
+  background-color: rgba(38,37,58,.58);
+  color: #aaa6bb;
+  min-height: 30px;
+  min-width: 57px;
+  padding: 0 8px;
+}
+.mode-toggle:hover { color: #efedf8; }
+
+/* ---------- 页面标题 ---------- */
+.eyebrow { color: #a393ff; font-size: 9px; font-weight: bold; }
+.page-title { font-size: 25px; font-weight: bold; color: #efedf8; }
+.page-desc { font-size: 11px; color: #aaa6bb; }
+
+/* 状态徽标：圆角胶囊 + 半透明成功色 */
+.badge {
+  border-radius: 12px;
+  padding: 3px 9px;
+  font-size: 9px;
+  font-weight: bold;
+  border: 1px solid rgba(255,255,255,.075);
+  background-color: rgba(163,147,255,.16);
+  color: #aaa6bb;
+}
+.badge.running {
+  color: #62c9a5;
+  background-color: alpha(#62c9a5, .09);
+  border-color: alpha(#62c9a5, .18);
+}
+.badge.needs-repair {
+  color: #ef8c9a;
+  background-color: alpha(#ef8c9a, .1);
+  border-color: alpha(#ef8c9a, .2);
+}
+
+/* ---------- 卡片 ---------- */
+.card {
+  background-color: rgba(38,37,58,.58);
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 20px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.08);
+  padding: 16px 18px;
+}
+.card-label { font-size: 11px; font-weight: bold; color: #efedf8; }
+.card-sub { font-size: 9px; color: #aaa6bb; }
+.subtle-tag {
+  border-radius: 6px;
+  background-color: rgba(163,147,255,.16);
+  color: #aaa6bb;
+  font-size: 9px;
+  padding: 2px 7px;
+}
+.large-avatar {
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 14px;
+  background-image: linear-gradient(145deg, #776bd9, #a393ff);
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  box-shadow: 0 7px 17px alpha(#a393ff, .18);
+}
+.meta-name { font-size: 13px; font-weight: bold; color: #efedf8; }
+.meta-path {
+  font-family: Consolas, "DejaVu Sans Mono", monospace;
+  font-size: 9px;
+  color: #aaa6bb;
+}
+.version-pill {
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 6px;
+  color: #aaa6bb;
+  font-size: 9px;
+  padding: 2px 7px;
+}
+.metric-label { font-size: 9px; color: #aaa6bb; }
+.metric-value { font-size: 12px; font-weight: bold; color: #efedf8; }
+.metric-value.accent { color: #62c9a5; }
+.control-title { font-size: 11px; font-weight: bold; color: #efedf8; }
+.control-sub { font-size: 9px; color: #aaa6bb; }
+.control-separator { border-top: 1px solid rgba(255,255,255,.075); }
+
+/* ---------- 按钮 ---------- */
+.btn {
+  border-radius: 11px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: bold;
+  min-height: 38px;
+  padding: 0 14px;
+}
+.btn-primary {
+  background-image: linear-gradient(135deg, #776bd9, #a393ff);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 7px 16px alpha(#a393ff, .2);
+}
+.btn-primary:hover {
+  box-shadow: 0 9px 22px alpha(#a393ff, .28);
+}
+.btn-secondary {
+  border-color: rgba(255,255,255,.075);
+  background-color: rgba(38,37,58,.58);
+  color: #efedf8;
+  box-shadow: 0 8px 24px rgba(0,0,0,.08);
+}
+.btn-secondary:hover { background-color: rgba(255,255,255,.075); }
+.btn-danger-soft {
+  border-color: alpha(#ef8c9a, .18);
+  background-color: alpha(#ef8c9a, .07);
+  color: #ef8c9a;
+}
+.btn-danger-soft:hover { background-color: alpha(#ef8c9a, .12); }
+.btn.compact { min-height: 31px; font-size: 9px; padding: 0 10px; border-radius: 9px; }
+.btn-icon { min-width: 38px; padding: 0; }
+.text-btn {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: #a393ff;
+  font-size: 9px;
+  font-weight: normal;
+  padding: 0;
+  min-height: 22px;
+}
+.text-btn:hover { color: #776bd9; }
+
+/* icon-btn：36×36 透明按钮 */
+.icon-btn {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 10px;
+  color: #aaa6bb;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+}
+.icon-btn:hover { background-color: rgba(255,255,255,.075); color: #efedf8; }
+.icon-btn.small { min-width: 25px; min-height: 25px; border-radius: 8px; }
+
+/* ---------- 常用功能 ---------- */
+.quick-action {
+  background-color: rgba(38,37,58,.58);
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 15px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.08);
+  padding: 12px;
+  min-height: 60px;
+}
+.quick-action:hover {
+  background-color: rgba(255,255,255,.075);
+  border-color: alpha(#a393ff, .25);
+}
+.quick-icon {
+  min-width: 34px;
+  min-height: 34px;
+  border-radius: 10px;
+  background-color: rgba(163,147,255,.16);
+  color: #a393ff;
+}
+.quick-title { font-size: 11px; font-weight: bold; color: #efedf8; }
+.quick-sub { font-size: 9px; color: #aaa6bb; }
+.section-title { font-size: 12px; font-weight: bold; color: #efedf8; }
+.section-sub { font-size: 9px; color: #aaa6bb; }
+
+/* ---------- 日志卡 ---------- */
+.log-header { border-bottom: 1px solid rgba(255,255,255,.075); padding-bottom: 10px; }
+.log-title { font-size: 12px; font-weight: bold; color: #efedf8; }
+.log-count {
+  border-radius: 8px;
+  background-color: rgba(163,147,255,.16);
+  color: #aaa6bb;
+  font-size: 9px;
+  padding: 1px 6px;
+}
+.log-line {
+  font-family: Consolas, "DejaVu Sans Mono", monospace;
+  font-size: 9px;
+  color: #efedf8;
+}
+.log-time { color: #777388; }
+.log-level {
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: "Segoe UI", sans-serif;
+  font-size: 8px;
+  background-color: rgba(163,147,255,.16);
+  color: #aaa6bb;
+}
+.log-level.success { color: #62c9a5; background-color: alpha(#62c9a5, .09); }
+.log-level.info { color: #a393ff; }
+.log-view {
+  background-color: transparent;
+  color: #efedf8;
+  font-family: Consolas, "DejaVu Sans Mono", monospace;
+  font-size: 9px;
+}
+.log-view text { background-color: transparent; color: #efedf8; }
+.page-footer { color: #777388; font-size: 9px; }
+
+/* ---------- 输入控件 ---------- */
+entry, spinbutton, .entry {
+  background-color: rgba(38,37,58,.58);
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 10px;
+  color: #efedf8;
+  min-height: 34px;
+  padding: 0 8px;
+}
+entry:focus, spinbutton:focus { border-color: alpha(#a393ff, .5); }
+spinbutton button { min-height: 30px; min-width: 28px; }
+combobox button, menubutton button.combo {
+  background-color: rgba(38,37,58,.58);
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 10px;
+  color: #efedf8;
+  min-height: 34px;
+  padding: 0 8px;
+}
+label.field-label { font-size: 10px; font-weight: bold; color: #efedf8; }
+label.field-hint { font-size: 9px; color: #aaa6bb; }
+
+/* ---------- 弹层（主题菜单 / 更多菜单 / 设置页） ---------- */
+popover {
+  background-color: #252437;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 14px;
+  box-shadow: 0 18px 45px alpha(#efedf8, .18);
+}
+popover modelbutton, popover button.flat {
+  border-radius: 9px;
+  color: #efedf8;
+  font-size: 11px;
+  min-height: 34px;
+  padding: 0 10px;
+  background-color: transparent;
+}
+popover modelbutton:hover, popover button.flat:hover { background-color: rgba(163,147,255,.16); }
+popover label.menu-header { color: #aaa6bb; font-size: 10px; padding: 6px 9px; }
+
+dialog {
+  background-color: #252437;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 16px;
+  color: #efedf8;
+}
+dialog .dialog-title { font-size: 14px; font-weight: bold; }
+
+/* 滚动区 / 滚动条：细、低对比 */
+scrolledwindow, viewport { background-color: transparent; }
+scrollbar { background-color: transparent; border: none; }
+scrollbar slider {
+  background-color: alpha(#efedf8, .16);
+  border-radius: 8px;
+  min-width: 6px;
+  min-height: 24px;
+}
+scrollbar slider:hover { background-color: alpha(#efedf8, .26); }
+separator { background-color: rgba(255,255,255,.075); min-width: 1px; min-height: 1px; }
+tooltip {
+  background-color: #252437;
+  color: #efedf8;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 8px;
+}

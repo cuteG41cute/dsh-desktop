@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeepSeek Harness 管理器 · 界面重设计</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-theme="frost" data-mode="day">
+  <svg class="svg-defs" aria-hidden="true">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.09A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.09A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.09A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.15.38.37.72.6 1 .3.3.7.4 1.1.4H21v4h-.09A1.7 1.7 0 0 0 19.4 15Z"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 1 1 3.4 2.33c-.7.28-1 .8-1 1.67M12 17h.01"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.7 14.2A8.5 8.5 0 0 1 9.8 3.3 8.5 8.5 0 1 0 20.7 14.2Z"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m8 10 4 4 4-4"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M19 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h6"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+    <symbol id="i-restart" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 8a7 7 0 0 1 11.5-1L20 12M4 12l2.4 5a7 7 0 0 0 11.5-1"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 0 0 6 6.5L4 11M20 13l-2 4.5A7 7 0 0 1 5.5 15"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M15 8l3 3M17 6l3 3"/></symbol>
+    <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M19 13h-2a2 2 0 1 0 0 4h2v4h-4v-2a2 2 0 1 0-4 0v2H7v-4H5a2 2 0 1 1 0-4h2V9H3V5h4V3a2 2 0 1 1 4 0v2h4v4h2a2 2 0 1 1 0 4Z"/></symbol>
+    <symbol id="i-update" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></symbol>
+    <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5-5L12 3.6 9.6 6 7.3 3.7a4 4 0 0 0 5 5L4 17a2.1 2.1 0 0 0 3 3l8.3-8.3a4 4 0 0 0 5-5L18 9l-2.4-2.4L18 4.3a4 4 0 0 0-3.3 2Z"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M14 7l5 5-5 5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0 0 18h1.5a1.5 1.5 0 0 0 0-3H13a2 2 0 0 1 0-4h3a5 5 0 0 0 5-5c0-3.3-4-6-9-6Z"/><circle cx="7.5" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="10" cy="6.8" r=".8" fill="currentColor" stroke="none"/><circle cx="15" cy="7.5" r=".8" fill="currentColor" stroke="none"/></symbol>
+  </svg>
+
+  <div class="scene" aria-hidden="true">
+    <div class="orb orb-a"></div><div class="orb orb-b"></div><div class="orb orb-c"></div>
+    <svg class="landscape mountains" viewBox="0 0 1600 500" preserveAspectRatio="none"><path d="M0 410 240 180l100 105 180-210 260 280 160-160 190 160 160-220 310 300v65H0Z"/><path class="snow" d="m240 180 100 105 45-52-46 19-24-34-33 29-42-67Zm280-105 260 280-87-66-49 18-38-72-50 31-36-101Zm770 60 310 300-122-74-56 21-48-89-52 35-32-103Z"/></svg>
+    <svg class="landscape waves" viewBox="0 0 1600 400" preserveAspectRatio="none"><path d="M0 180c280-140 410 130 720 10s520-80 880 60v150H0Z"/><path d="M0 260c320-100 520 110 850 0s520-40 750 30v110H0Z"/></svg>
+    <div class="sunrise"></div>
+    <div class="crystal-shapes"><i></i><i></i><i></i></div>
+  </div>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><span>D</span><i></i></div>
+        <div><strong>DeepSeek Harness</strong><span>管理器 <b>v1.2.0</b></span></div>
+      </div>
+      <div class="side-section-title"><span>我的实例</span><span class="count">3</span><button class="icon-btn small" id="addInstance" aria-label="新建实例"><svg><use href="#i-plus"/></svg></button></div>
+      <nav class="instance-list" aria-label="实例列表">
+        <button class="instance-item" data-instance="dsh"><span class="instance-avatar">DS</span><span class="instance-copy"><strong>dsh</strong><small>v0.2.1-rc.5</small></span><i class="status-dot stopped"></i></button>
+        <button class="instance-item active" data-instance="deepseek-harness-1"><span class="instance-avatar">D1</span><span class="instance-copy"><strong>deepseek-harness-1</strong><small>v0.2.1-rc.5</small></span><i class="status-dot"></i></button>
+        <button class="instance-item" data-instance="deepseek-harness-2"><span class="instance-avatar">D2</span><span class="instance-copy"><strong>deepseek-harness-2</strong><small>v0.2.1-rc.5</small></span><i class="status-dot stopped"></i></button>
+      </nav>
+      <button class="new-instance" id="newInstance"><svg><use href="#i-plus"/></svg><span>新建实例</span></button>
+      <div class="sidebar-bottom">
+        <div class="side-caption">工作空间</div>
+        <button class="side-link selected" id="overviewNav"><svg><use href="#i-grid"/></svg><span>实例概览</span></button>
+        <button class="side-link" id="settingsNav"><svg><use href="#i-settings"/></svg><span>管理器设置</span></button>
+        <button class="side-link" id="helpBtn"><svg><use href="#i-help"/></svg><span>使用帮助</span><svg class="end-icon"><use href="#i-external"/></svg></button>
+        <div class="runtime"><span class="runtime-icon">Py</span><div><strong>运行环境正常</strong><small>Python 3.14.4 · GTK 3</small></div><i class="status-dot"></i></div>
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <div class="breadcrumb"><span>工作空间</span><b>/</b><strong id="breadcrumbCurrent">实例概览</strong></div>
+        <div class="top-actions">
+          <div class="theme-select-wrap">
+            <button class="theme-trigger" id="themeTrigger" aria-expanded="false"><span class="theme-swatch"></span><span id="themeName">毛玻璃</span><svg><use href="#i-chevron"/></svg></button>
+            <div class="theme-menu" id="themeMenu" hidden>
+              <div class="menu-label">选择界面主题</div>
+              <button data-set-theme="frost" class="selected"><i style="--swatch:#8b7cf6"></i>毛玻璃<span>柔和透明</span><svg><use href="#i-check"/></svg></button>
+              <button data-set-theme="liquid"><i style="--swatch:#4f8dff"></i>液态玻璃<span>流动高光</span><svg><use href="#i-check"/></svg></button>
+              <button data-set-theme="crystal"><i style="--swatch:#38bdd1"></i>水晶<span>清透棱角</span><svg><use href="#i-check"/></svg></button>
+              <button data-set-theme="flat"><i style="--swatch:#4f46e5"></i>扁平化<span>简洁高效</span><svg><use href="#i-check"/></svg></button>
+              <button data-set-theme="alpine"><i style="--swatch:#5a8fc4"></i>雪山<span>纯净凛冽</span><svg><use href="#i-check"/></svg></button>
+              <button data-set-theme="dawn"><i style="--swatch:#ef956f"></i>晨光<span>温暖轻盈</span><svg><use href="#i-check"/></svg></button>
+              <button data-set-theme="sea"><i style="--swatch:#258e92"></i>静海<span>沉静深邃</span><svg><use href="#i-check"/></svg></button>
+            </div>
+          </div>
+          <button class="mode-toggle" id="modeToggle" aria-label="切换夜间模式"><svg class="sun-icon"><use href="#i-sun"/></svg><svg class="moon-icon"><use href="#i-moon"/></svg><span class="mode-thumb"></span></button>
+          <span class="top-divider"></span>
+          <button class="icon-btn" id="notificationBtn" aria-label="通知"><svg><use href="#i-info"/></svg><i class="notification-dot"></i></button>
+        </div>
+      </header>
+
+      <div class="content" id="dashboardPage">
+        <section class="page-heading">
+          <div><div class="eyebrow">INSTANCE OVERVIEW</div><div class="title-line"><h1 id="instanceTitle">deepseek-harness-1</h1><span class="status-badge" id="statusBadge"><i></i>运行中</span></div><p>管理服务、窗口与扩展，让实例始终保持最佳状态。</p></div>
+          <div class="heading-actions"><button class="btn btn-primary" id="openWindow"><svg><use href="#i-external"/></svg>打开窗口</button><div class="more-wrap"><button class="btn btn-icon btn-secondary" id="moreTrigger" aria-label="更多操作"><svg><use href="#i-more"/></svg></button><div class="more-menu" id="moreMenu" hidden><button data-action="查看 Token"><svg><use href="#i-key"/></svg>查看 Token</button><button data-action="重建窗口"><svg><use href="#i-restart"/></svg>重建窗口</button><button data-action="在文件管理器中显示"><svg><use href="#i-folder"/></svg>在文件管理器中显示</button><hr><button class="danger-text" data-action="卸载实例"><svg><use href="#i-trash"/></svg>卸载实例</button></div></div></div>
+        </section>
+
+        <section class="overview-grid">
+          <article class="card instance-card">
+            <div class="card-top"><div class="card-label">实例信息</div><span class="subtle-tag">本地实例</span></div>
+            <div class="instance-meta">
+              <div class="large-avatar">D1<span></span></div>
+              <div class="meta-main"><strong>DeepSeek Harness</strong><span id="installPath">/home/twinblade/Program/deepseek-harness-1</span><div class="version-pills"><span>dsh <b>0.2.1-rc.5</b></span><span>Node <b>26.13.0</b></span></div></div>
+            </div>
+            <div class="metric-row"><div><span>进程 PID</span><strong id="pidValue">90837</strong></div><div><span>服务端口</span><strong>3080</strong></div><div><span>运行状态</span><strong class="accent-text" id="metricStatus">运行中</strong></div></div>
+          </article>
+
+          <article class="card control-card">
+            <div class="card-top"><div class="card-label">快捷控制</div><span class="live-indicator"><i></i>服务正常</span></div>
+            <div class="control-group"><div class="control-title"><span>服务</span><small>后台进程与连接</small></div><div class="control-buttons"><button class="btn btn-secondary compact" data-action="重启服务"><svg><use href="#i-restart"/></svg>重启</button><button class="btn btn-danger-soft compact" id="stopService"><svg><use href="#i-stop"/></svg>停止</button></div></div>
+            <div class="control-separator"></div>
+            <div class="control-group"><div class="control-title"><span>窗口</span><small>界面与页面状态</small></div><div class="control-buttons"><button class="btn btn-secondary compact" data-action="重载页面"><svg><use href="#i-refresh"/></svg>重载</button><button class="btn btn-secondary compact" data-action="重建窗口"><svg><use href="#i-restart"/></svg>重建</button></div></div>
+          </article>
+        </section>
+
+        <section class="quick-section">
+          <div class="section-heading"><div><h2>常用功能</h2><span>管理实例的扩展与文件</span></div></div>
+          <div class="quick-grid">
+            <button class="quick-action" data-action="查看 Token"><span class="quick-icon"><svg><use href="#i-key"/></svg></span><span><strong>查看 Token</strong><small>访问凭证与连接信息</small></span><svg class="quick-arrow"><use href="#i-arrow"/></svg></button>
+            <button class="quick-action" data-action="管理插件"><span class="quick-icon"><svg><use href="#i-puzzle"/></svg></span><span><strong>管理插件</strong><small>安装、启用与配置扩展</small></span><svg class="quick-arrow"><use href="#i-arrow"/></svg></button>
+            <button class="quick-action" data-action="检查更新"><span class="quick-icon"><svg><use href="#i-update"/></svg></span><span><strong>检查更新</strong><small>当前已是最新版本</small></span><svg class="quick-arrow"><use href="#i-arrow"/></svg></button>
+            <button class="quick-action" data-action="打开数据目录"><span class="quick-icon"><svg><use href="#i-folder"/></svg></span><span><strong>数据目录</strong><small>浏览配置与本地数据</small></span><svg class="quick-arrow"><use href="#i-arrow"/></svg></button>
+          </div>
+        </section>
+
+        <section class="card log-card">
+          <div class="log-header"><div class="log-title"><svg><use href="#i-terminal"/></svg><h2>最近日志</h2><span class="log-count">3</span></div><button class="text-btn" id="viewLogs">查看完整日志<svg><use href="#i-arrow"/></svg></button></div>
+          <div class="log-body">
+            <div class="log-line"><time>14:32:08</time><span class="log-level success">成功</span><p>已把现有窗口提到前台 <span>(PID 87972)</span></p></div>
+            <div class="log-line"><time>14:31:56</time><span class="log-level info">信息</span><p>窗口程序已更新，重建窗口后新功能即可生效</p></div>
+            <div class="log-line"><time>14:31:42</time><span class="log-level muted">系统</span><p>实例服务运行正常，监听端口 <span>3080</span></p></div>
+          </div>
+        </section>
+        <footer class="page-footer"><span><i class="status-dot"></i>所有更改已自动保存</span><span>实例根目录 · /home/twinblade/.local/opt</span></footer>
+      </div>
+
+      <div class="content settings-page" id="settingsPage" hidden>
+        <section class="page-heading"><div><div class="eyebrow">MANAGER PREFERENCES</div><div class="title-line"><h1>管理器设置</h1></div><p>查看运行环境，管理外观与维护选项。</p></div><button class="btn btn-primary" id="saveSettings"><svg><use href="#i-check"/></svg>保存设置</button></section>
+        <div class="settings-layout">
+          <div>
+            <section class="card settings-card"><div class="settings-card-title"><span class="quick-icon"><svg><use href="#i-info"/></svg></span><div><h2>管理器信息</h2><p>当前安装与运行环境</p></div></div><dl class="info-list"><div><dt>管理器版本</dt><dd>v1.2.0</dd></div><div><dt>程序目录</dt><dd>/usr/lib/dsh-manager</dd></div><div><dt>配置目录</dt><dd>/home/twinblade/.config/dsh-manager</dd></div><div><dt>运行环境</dt><dd>Python 3.14.4 · GTK 3.24.52</dd></div><div><dt>实例根目录</dt><dd>/home/twinblade/.local/opt</dd></div></dl></section>
+            <section class="card settings-card maintenance-card"><div class="settings-card-title"><span class="quick-icon"><svg><use href="#i-wrench"/></svg></span><div><h2>维护与诊断</h2><p>排查问题或重新安装管理器</p></div></div><div class="maintenance-actions"><button class="btn btn-secondary" data-action="查看管理器日志"><svg><use href="#i-terminal"/></svg>查看管理器日志</button><button class="btn btn-secondary" data-action="复制诊断信息"><svg><use href="#i-copy"/></svg>复制诊断信息</button><button class="btn btn-secondary" data-action="修复 / 重装"><svg><use href="#i-wrench"/></svg>修复 / 重装</button></div></section>
+          </div>
+          <section class="card settings-card appearance-card"><div class="settings-card-title"><span class="quick-icon"><svg><use href="#i-palette"/></svg></span><div><h2>外观与日志</h2><p>个性化你的工作空间</p></div></div><label class="field-label">界面主题</label><div class="appearance-preview"><span class="theme-swatch"></span><div><strong id="settingsThemeName">毛玻璃</strong><small id="settingsModeName">日间模式</small></div><button class="text-btn" id="settingsThemeButton">更换主题</button></div><label class="field-label" for="logLines">日志面板保留行数</label><div class="input-with-unit"><input id="logLines" type="number" value="800" min="100" max="5000"><span>行</span></div><p class="field-hint">建议保留 500–1500 行，过多可能影响性能。</p><div class="setting-note"><svg><use href="#i-info"/></svg><p>主题切换会立即预览，无需重启管理器。</p></div></section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status"><span><svg><use href="#i-check"/></svg></span><p id="toastText">操作已完成</p></div>
+  <div class="modal-backdrop" id="modalBackdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><button class="icon-btn modal-close" id="modalClose" aria-label="关闭"><svg><use href="#i-x"/></svg></button><span class="modal-icon"><svg><use href="#i-plus"/></svg></span><h2 id="modalTitle">新建实例</h2><p>创建独立的 Harness 实例，配置与数据将分开保存。</p><form id="newInstanceForm"><label class="field-label" for="newInstanceName">实例名称</label><input class="modal-input" id="newInstanceName" value="deepseek-harness-3" required><div class="modal-actions"><button type="button" class="btn btn-secondary" id="modalCancel">取消</button><button type="submit" class="btn btn-primary">创建实例</button></div></form></div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

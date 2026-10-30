@@ -1,0 +1,91 @@
+"""把 themes.json（从设计稿抽出的令牌）灌进 GTK 主题模板，生成 14 份主题 CSS。
+
+生成的产物是 `dsh_manager/theme/<主题>-<日/夜>.css`，管理器按设置加载其中一份。
+为什么不手写 14 份：手抄必错色值，而"复刻"最怕"看着差不多"。
+再配 tools/theme-token-check.py 反向校验：生成结果里的每个色值都要能在设计稿里找到。
+
+跑法：python dsh-desktop/linux/manager/tools/build-gtk-theme.py
+"""
+import json
+import os
+import re
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+MANAGER = os.path.dirname(HERE)
+THEMES_JSON = os.path.join(MANAGER, 'dsh_manager', 'themes.json')
+TEMPLATE = os.path.join(HERE, 'gtk-theme-template.css.in')
+OUT_DIR = os.path.join(MANAGER, 'dsh_manager', 'theme')
+
+# 模板里 $(name) → 令牌名；两处特殊：$(bg-image) 指向渲染好的背景 PNG、$(radius)/(app-radius)
+PLACEHOLDERS = [
+    'bg', 'bg2', 'app', 'sidebar', 'topbar', 'card', 'card-solid', 'text',
+    'muted', 'subtle', 'border', 'inner-border', 'accent', 'accent2',
+    'accent-rgb', 'accent-soft', 'on-accent', 'hover', 'success', 'success-rgb', 'danger',
+    'radius', 'app-radius', 'shadow', 'card-shadow',
+]
+
+HEADER = """/* 自动生成，请勿手改：来源 design/styles.css（{theme} / {mode}）
+ * 生成脚本：tools/build-gtk-theme.py    校验：tools/theme-token-check.py
+ */
+"""
+
+
+def load_themes():
+    with open(THEMES_JSON, encoding='utf-8') as fh:
+        return json.load(fh)
+
+
+def render(template, key, values):
+    css = HEADER.format(theme=values.get('label', key), mode=values.get('hint', key))
+    body = template.replace('$(bg-image)', 'url("../backgrounds/%s.png")' % key)
+    for name in PLACEHOLDERS:
+        if name not in values:
+            raise SystemExit('FAIL: %s 缺少令牌 %s' % (key, name))
+        body = body.replace('$(%s)' % name, values[name])
+    leftover = [piece for piece in body.split('$(') if piece[:1].isalpha() and ')' in piece[:40]]
+    if leftover:
+        raise SystemExit('FAIL: %s 模板里还有没替换的占位符：%s'
+                         % (key, ['$(' + piece.split(')')[0] + ')' for piece in leftover[:5]]))
+    # GTK3 的 font-weight 只有 normal/bold 两档（数值权重取决于字体家族，Pango 会自己取整）；
+    # 设计稿里的 550/600/650/680/750 统一归到 bold / normal，避免解析器对数值形态挑剔。
+    def _weight(match):
+        return 'font-weight: bold' if int(match.group(1)) >= 600 else 'font-weight: normal'
+
+    body = re.sub(r'font-weight: (\d{3})', _weight, body)
+    palette = ['/* 调色板：设计稿的 25 个令牌，逐个写成 GTK 命名颜色（便于核对与复用） */']
+    for name in PLACEHOLDERS:
+        palette.append('@define-color dsh_%s %s;' % (name.replace('-', '_'), values[name]))
+    return css + '\n'.join(palette) + '\n\n' + body
+
+
+def main():
+    payload = load_themes()
+    with open(TEMPLATE, encoding='utf-8') as fh:
+        template = fh.read()
+    os.makedirs(OUT_DIR, exist_ok=True)
+    written = []
+    for key, values in sorted(payload['values'].items()):
+        css = render(template, key, values)
+        path = os.path.join(OUT_DIR, '%s.css' % key)
+        with open(path, 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write(css)
+        written.append((key, len(css)))
+    # 附带一份索引，管理器用它列出可选主题（顺序 = 设计稿顺序）
+    index = {
+        'order': payload['order'],
+        'variants': sorted(payload['values'].keys()),
+        'labels': {key: [payload['values'][key]['label'], payload['values'][key]['hint']]
+                   for key in payload['values']},
+    }
+    with open(os.path.join(OUT_DIR, 'index.json'), 'w', encoding='utf-8') as fh:
+        json.dump(index, fh, ensure_ascii=False, indent=2, sort_keys=True)
+        fh.write('\n')
+    print('generated %d theme files in %s' % (len(written), os.path.relpath(OUT_DIR, MANAGER)))
+    for key, size in written[:3] + written[-2:]:
+        print('  %-14s %6d bytes' % (key, size))
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
