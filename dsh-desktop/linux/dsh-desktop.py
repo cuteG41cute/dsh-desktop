@@ -397,10 +397,12 @@ def selftest():
         pass
     popup_marks = (
         ('弹窗按请求的地址打开（不是又开一个应用窗口）', 'req.get_uri()'),
-        ('站外弹窗不注入 DSH 脚本', 'inject=False'),
+        ('内置浏览器用独立 WebView（不注入 DSH 脚本）', 'WebKit2.WebView(web_context=context)'),
         ('主窗口拒绝页面发起的 window.close()', '_on_view_close'),
         ('窗口可被跨进程唤起（控制套接字）', 'start_control_server'),
         ('无 GPU 时自动软件渲染', 'software_render_if_no_gpu'),
+        ('内置浏览器（登录 / 外部页面）', 'class BrowserWindow'),
+        ('空白弹窗也返回真实窗口（window.open 不为 null）', 'about:blank'),
     )
     for label, mark in popup_marks:
         if mark in src:
@@ -708,11 +710,16 @@ def run_gui():
         def _on_create(self, view, action):
             """页面要开新窗口时（window.open / target=_blank）。
 
-            - **站内**链接：在应用内新开一个窗口（保留会话分离/多窗口体验）；
-            - **站外**链接（登录页、文档、外部站点）：交给系统浏览器。
+            关键点：**必须返回一个真实的 WebView**，否则 WebKit 视作"弹窗被拦"，
+            `window.open()` 返回 null —— DSH 的登录就靠它弹授权页，一旦返回 null
+            就只会显示「没有自动打开新页面？复制登录链接…」的兜底提示（实测就是这样）。
 
-            旧实现无脑把新窗口指向 WEB_URL，于是「登录账号」开出来的弹窗其实是又一个
-            应用窗口，登录页从没被打开，弹窗还会被页面自己 window.close() 关掉。
+            因此这里分成三条：
+              - `about:blank` / 空地址：照样开一个**内置浏览器**空窗口并返回它，
+                页面随后会把地址写进去（OAuth 流程常见：先 open('') 再给 location 赋值）；
+              - 站内地址：开应用窗口（保留会话分离体验）；
+              - 站外地址（登录页、外部站点）：开**内置浏览器**窗口，不注入 DSH 脚本。
+            非 http(s) 协议（mailto: 等）仍交给系统处理。
             """
             uri = ''
             try:
@@ -720,22 +727,27 @@ def run_gui():
                 uri = req.get_uri() if req is not None else ''
             except Exception:
                 uri = ''
-            if not uri:
-                return None
-            if not uri.lower().startswith(('http://', 'https://')):
+            uri = (uri or '').strip()
+            low = uri.lower()
+
+            if uri and not low.startswith(('http://', 'https://', 'about:blank', 'data:')):
                 # mailto: / 自定义协议 之类，交给系统处理
+                sys.stderr.write('[dsh-desktop] 新窗口请求交给系统（%s）\n' % uri)
                 open_external(uri)
                 return None
-            if same_origin(uri, WEB_URL):
-                win = DshWindow(uri, primary=False)
-            else:
-                # 站外（登录页等）：真的开一个弹窗去加载它。
-                # window.opener / postMessage 仍然有效，登录完成后页面自己 window.close()
-                # 只关掉这个弹窗，不会带走主窗口。
-                win = DshWindow(uri, primary=False, inject=False)
-                sys.stderr.write('[dsh-desktop] 弹窗打开外部页面：%s\n' % uri)
-            win.show_all()
-            return win.web
+
+            try:
+                if uri and same_origin(uri, WEB_URL):
+                    win = DshWindow(uri, primary=False)
+                else:
+                    win = BrowserWindow(uri or 'about:blank', parent=self.window)
+                win.show_all()
+                win.present()
+                sys.stderr.write('[dsh-desktop] 新窗口已开：%s\n' % (uri or '(空白页)'))
+                return win.web
+            except Exception as exc:
+                sys.stderr.write('[dsh-desktop] 开新窗口失败（%s）：%s\n' % (uri, exc))
+                return None
 
     # ---------------- 窗口 ----------------
     class DshWindow(Gtk.Window):
@@ -1000,6 +1012,99 @@ def run_gui():
             except Exception as exc:
                 self._reply(web, {'type': 'dsh-read-file-result', 'ok': False,
                                   'message': str(exc)})
+
+    # ---------------- 内置浏览器（给"需要弹出一个网页"的工况） ----------------
+    class BrowserWindow(Gtk.Window):
+        """内置浏览器窗口：登录页、外部链接、OAuth 授权页都走它。
+
+        与主窗口的区别：**不注入 DSH 的任何脚本、不签认证 cookie**，
+        只带一个极简工具栏（返回 / 刷新 / 用系统浏览器打开）和当前地址。
+
+        之所以要"内置"而不是丢给系统浏览器：登录流程往往依赖 `window.open()`
+        返回的那个窗口对象（`opener`、`w.closed`、`postMessage`），交给系统浏览器
+        这条链就断了；而返回 null 会让 DSH 直接显示「没有自动打开新页面」。
+        """
+
+        def __init__(self, uri, parent=None):
+            Gtk.Window.__init__(self, title='DeepSeek Harness · 内置浏览器')
+            self.uri = uri or 'about:blank'
+            self.set_default_size(1000, 780)
+            self.set_position(Gtk.WindowPosition.CENTER)
+            if ICON_PATH:
+                try:
+                    self.set_icon_from_file(ICON_PATH)
+                except Exception:
+                    pass
+
+            hb = Gtk.HeaderBar()
+            hb.set_show_close_button(True)
+            hb.props.title = '内置浏览器'
+            hb.props.subtitle = '登录 / 外部页面'
+            btn_back = Gtk.Button.new_from_icon_name('go-previous-symbolic', Gtk.IconSize.BUTTON)
+            btn_back.set_tooltip_text('后退')
+            btn_back.connect('clicked', lambda *a: _safe(self.web.go_back))
+            btn_reload = Gtk.Button.new_from_icon_name('view-refresh-symbolic', Gtk.IconSize.BUTTON)
+            btn_reload.set_tooltip_text('刷新')
+            btn_reload.connect('clicked', lambda *a: _safe(self.web.reload))
+            btn_ext = Gtk.Button.new_from_icon_name('web-browser-symbolic', Gtk.IconSize.BUTTON)
+            btn_ext.set_tooltip_text('改用系统浏览器打开这个地址')
+            btn_ext.connect('clicked', lambda *a: open_external(self.web.get_uri() or self.uri))
+            hb.pack_start(btn_back)
+            hb.pack_start(btn_reload)
+            hb.pack_end(btn_ext)
+            self.set_titlebar(hb)
+
+            self.web = WebKit2.WebView(web_context=context)
+            try:
+                settings = self.web.get_settings()
+                settings.set_property('enable-developer-extras', True)
+                self.web.set_property('settings', settings)
+            except Exception:
+                pass
+
+            self.lbl_url = Gtk.Label(xalign=0)
+            self.lbl_url.set_ellipsize(3)          # END
+            self.lbl_url.set_margin_top(3)
+            self.lbl_url.set_margin_bottom(3)
+            self.lbl_url.set_margin_start(8)
+            self.lbl_url.set_margin_end(8)
+            self.lbl_url.get_style_context().add_class('dim-label')
+            self.lbl_url.set_text(self.uri)
+
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+            box.pack_start(self.lbl_url, False, False, 0)
+            box.pack_start(self.web, True, True, 0)
+            self.add(box)
+
+            self.web.connect('notify::uri', self._on_uri)
+            self.web.connect('notify::title', self._on_title)
+            self.web.connect('load-changed', self._on_load)
+            self.connect('destroy', self._on_destroy)
+            _WINDOWS.append(self)
+            _safe(lambda: self.web.load_uri(self.uri))
+
+        def _on_uri(self, view, _pspec=None):
+            self.lbl_url.set_text(view.get_uri() or '')
+
+        def _on_title(self, view, _pspec=None):
+            title = view.get_title() or view.get_uri() or ''
+            self.set_title(('%s · 内置浏览器' % title)[:80] if title else '内置浏览器')
+
+        def _on_load(self, view, event):
+            if event == WebKit2.LoadEvent.FINISHED:
+                self._on_uri(view)
+                self._on_title(view)
+
+        def _on_destroy(self, _w):
+            if self in _WINDOWS:
+                _WINDOWS.remove(self)
+
+    def _safe(fn, *args):
+        """调用可能失败的 WebKit 操作（历史为空时 go_back 会报错）。"""
+        try:
+            return fn(*args)
+        except Exception:
+            return None
 
     # ---------------- 单实例 / 托盘 / 主循环 ----------------
     def make_tray(show_window, quit_app):
