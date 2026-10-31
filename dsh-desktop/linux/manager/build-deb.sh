@@ -10,7 +10,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # dsh-desktop/linux/manag
 MANAGER_DIR="$HERE"
 LINUX_DIR="$(cd "$HERE/.." && pwd)"                    # dsh-desktop/linux
 DESKTOP_DIR="$(cd "$LINUX_DIR/.." && pwd)"             # dsh-desktop
-VERSION="1.3.3"
+VERSION="1.4.0"
 OUT="$HERE"
 
 while [ $# -gt 0 ]; do
@@ -48,6 +48,8 @@ mkdir -p "$STAGE/usr/lib/dsh-manager/dsh_manager/theme" "$STAGE/usr/lib/dsh-mana
 cp -f "$MANAGER_DIR"/dsh_manager/theme/*.css "$MANAGER_DIR"/dsh_manager/theme/index.json \
       "$STAGE/usr/lib/dsh-manager/dsh_manager/theme/"
 cp -f "$MANAGER_DIR"/dsh_manager/backgrounds/*.png "$STAGE/usr/lib/dsh-manager/dsh_manager/backgrounds/"
+mkdir -p "$STAGE/usr/lib/dsh-manager/dsh_manager/icons"
+cp -f "$MANAGER_DIR"/dsh_manager/icons/*.svg "$STAGE/usr/lib/dsh-manager/dsh_manager/icons/"
 install -m 0644 "$MANAGER_DIR/dsh_manager/plugins.py"  "$STAGE/usr/lib/dsh-manager/dsh_manager/"
 install -m 0755 "$MANAGER_DIR/bin/dsh-manager"         "$STAGE/usr/bin/dsh-manager"
 
