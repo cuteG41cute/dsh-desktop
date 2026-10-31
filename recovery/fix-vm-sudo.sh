@@ -21,8 +21,9 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq || echo "（apt update 有警告，继续）"
 apt-get install -y --no-install-recommends \
     samba spectacle imagemagick python3-numpy \
-    librsvg2-common fonts-inter fonts-noto-cjk >/dev/null
-echo "  已装：$(command -v spectacle || echo 'spectacle 缺')  $(command -v convert || echo 'imagemagick 缺')  $(command -v smbd || echo 'smbd 缺')"
+    librsvg2-common fonts-inter fonts-noto-cjk \
+    xdotool python3-gi-cairo python3-pil >/dev/null
+echo "  已装：$(command -v spectacle || echo 'spectacle 缺')  $(command -v convert || echo 'imagemagick 缺')  $(command -v smbd || echo 'smbd 缺')  $(command -v xdotool || echo 'xdotool 缺')"
 
 echo "== 2. 共享目录（~$USER_NAME/share） =="
 cat >/etc/samba/smb.conf <<EOF
