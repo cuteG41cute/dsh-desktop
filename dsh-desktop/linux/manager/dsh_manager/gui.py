@@ -1323,7 +1323,7 @@ class ManagerWindow(Gtk.Window):
         self.settings_sw.add(page)
 
         heading = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
-        heading.set_margin_bottom(16)
+        heading.set_margin_bottom(22)
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
         text.pack_start(self._label('MANAGER PREFERENCES', 'eyebrow'), False, False, 0)
         text.pack_start(self._label('管理器设置', 'page-title'), False, False, 0)
@@ -1334,13 +1334,17 @@ class ManagerWindow(Gtk.Window):
                                         handler=self.on_save_settings), False, False, 0)
         page.pack_start(heading, False, False, 0)
 
-        grid = Gtk.Grid(column_spacing=16, row_spacing=16)
-        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        # 设计稿 .settings-layout：两列 1.5fr/1fr，间距 17（1082 = 639 + 17 + 426）
+        grid = Gtk.Grid(column_spacing=17, row_spacing=17)
+        grid.get_style_context().add_class('settings-layout')
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=17)
+        left.set_hexpand(True)
+        left.set_size_request(639, -1)   # 设计稿左列 639、右列 426
         left.pack_start(self._info_card(), False, False, 0)
         left.pack_start(self._maintenance_card(), False, False, 0)
-        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=17)
         right.pack_start(self._appearance_card(), False, False, 0)
-        right.set_size_request(330, -1)
+        right.set_size_request(426, -1)
         grid.attach(left, 0, 0, 1, 1)
         grid.attach(right, 1, 0, 1, 1)
         page.pack_start(grid, False, False, 0)
@@ -1349,6 +1353,7 @@ class ManagerWindow(Gtk.Window):
     def _settings_card(self, glyph, title, sub):
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         card.get_style_context().add_class('card')
+        card.get_style_context().add_class('settings-card')
         head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         head.pack_start(self._chip(glyph, 'quick-icon', width=34, height=34), False, False, 0)
         titles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
@@ -1369,6 +1374,7 @@ class ManagerWindow(Gtk.Window):
                 ('运行环境', 'Python %s · GTK %s' % (sys.version.split()[0], gtk_ver)),
                 ('实例根目录', self.manager.root)):
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            row.get_style_context().add_class('info-row')
             name = self._label(key, 'metric-label')
             name.set_width_chars(12)
             row.pack_start(name, False, False, 0)

@@ -32,6 +32,12 @@ def load_extractor():
     return module
 
 
+def strip_css_comments(text):
+    """检查 GTK 不认的属性前，先把 /* */ 注释剥掉（否则注释里的
+    `gap:` 之类会被误报成属性）。"""
+    return re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+
+
 def main():
     checks = []
     with open(THEMES_JSON, encoding='utf-8') as fh:

@@ -687,3 +687,9 @@ scrollbar.vertical { margin: 2px 0; }
 .runtime { min-height: 28px; padding: 13px 10px; }
 .log-card { padding: 0; }
 .side-section-title { padding: 0 8px; }
+
+/* 设置页（设计稿 .settings-card padding 21px；两列之间留 17px） */
+.settings-card { padding: 21px; }
+
+/* 设置页信息行（设计稿 .info-list>div：min-height 40、底部 1px 内边框） */
+.info-row { min-height: 38px; border-bottom: 1px solid rgba(42,94,96,.1); }

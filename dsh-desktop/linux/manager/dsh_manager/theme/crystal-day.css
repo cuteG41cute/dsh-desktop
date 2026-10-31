@@ -688,6 +688,12 @@ scrollbar.vertical { margin: 2px 0; }
 .log-card { padding: 0; }
 .side-section-title { padding: 0 8px; }
 
+/* 设置页（设计稿 .settings-card padding 21px；两列之间留 17px） */
+.settings-card { padding: 21px; }
+
+/* 设置页信息行（设计稿 .info-list>div：min-height 40、底部 1px 内边框） */
+.info-row { min-height: 38px; border-bottom: 1px solid rgba(41,111,125,.11); }
+
 /* 主题专属皮肤：对应 design/styles.css 里 body[data-theme="crystal"] 的规则 */
 .card, .quick-action {
   background-color: transparent;
