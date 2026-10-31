@@ -25,6 +25,7 @@ share/
 
 # ç‹¬ç«‹å­é¡¹ç›®ï¼ˆå„è‡ªæ˜¯ç‹¬ç«‹ git ä»“åº“ï¼‰
 dsh-time-stamp/
+dsh-screenshot/
 
 # Python cache
 __pycache__/
@@ -42,3 +43,7 @@ dsh-desktop/linux/build/.stage/
 
 # harness è¿è¡Œæ•°æ®
 .dsh/
+
+# Éè¼Æ¸å²Î¿¼Í¼Óë±È¶Ô²úÎï£¨¿ÉÓÃ tools ÖØĞÂÉú³É£©
+dsh-desktop/linux/manager/design/references/*.png
+vm-shots/

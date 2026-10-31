@@ -45,6 +45,25 @@ STATUS_DOT = {
 }
 
 CSS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'style.css')
+
+
+def _initials(label):
+    """设计稿的头像文字：dsh→DS，deepseek-harness-1→D1，deepseek-harness-2→D2。
+
+    规则：取第一段的首字母；末段是纯数字就用它，否则用第二段首字母。
+    """
+    text = (label or 'DS').strip()
+    parts = [p for p in text.replace('_', '-').replace(' ', '-').split('-') if p]
+    if not parts:
+        return 'DS'
+    head = parts[0][:1]
+    if len(parts) > 1:
+        if parts[-1].isdigit():
+            return (head + parts[-1][:2]).upper()
+        return (head + parts[1][:1]).upper()
+    return text[:2].upper()
+
+
 def _gtk_version():
     """GTK 版本字符串；桩 GTK / 老版本取不到时退化成 0.0.0，绝不让它抛错。"""
     parts = []
@@ -908,7 +927,7 @@ class ManagerWindow(Gtk.Window):
         row.inst = inst
         row.get_style_context().add_class('instance-item')
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        initials = (inst.label or 'DS')[:2].upper()
+        initials = _initials(inst.label)
         box.pack_start(self._chip(initials, 'instance-avatar', width=34, height=34),
                        False, False, 0)
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
@@ -963,7 +982,7 @@ class ManagerWindow(Gtk.Window):
             ctx.add_class('needs-repair')
         self.chip_badge.label.set_text(STATUS_TEXT.get(status, status or '—'))
 
-        self.chip_avatar.label.set_text((inst.label or 'DS')[:2].upper())
+        self.chip_avatar.label.set_text(_initials(inst.label))
         self.lbl_meta_name.set_text(inst.label or 'DeepSeek Harness')
         self.lbl_meta_path.set_text(inst.prefix)
         self.chip_pill_dsh.label.set_text('dsh %s' % (inst.dsh_version or '?'))
