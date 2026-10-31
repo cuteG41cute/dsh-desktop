@@ -607,7 +607,7 @@ class ManagerWindow(Gtk.Window):
         self.toast_revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
         self.toast_revealer.set_halign(Gtk.Align.CENTER)
         self.toast_revealer.set_valign(Gtk.Align.END)
-        self.toast_revealer.set_margin_bottom(26)
+        self.toast_revealer.set_margin_bottom(35)   # 设计稿 .toast{bottom:35px}
         self.toast_revealer.add(toast)
         self.toast_revealer.set_reveal_child(False)
 
@@ -624,6 +624,7 @@ class ManagerWindow(Gtk.Window):
         overlay.add_overlay(self.toast_revealer)
         self.add(overlay)
 
+        self.shell_box = shell        # 断点判定与 CSS 类都挂在这里
         shell.pack_start(self._build_sidebar(), False, False, 0)
         shell.pack_start(self._build_main(), True, True, 0)
 
@@ -639,6 +640,9 @@ class ManagerWindow(Gtk.Window):
         self.busy_box.hide()
         self._busy_pulse_id = None
 
+        self.shell_box.connect('size-allocate', self._on_size_allocate)
+        self.connect('size-allocate', self._on_size_allocate)
+        GLib.timeout_add(300, lambda: (self._apply_breakpoints(force=True), False)[1])
         self.set_buttons_sensitive(False)
 
     # ---- 侧栏 ----
@@ -646,6 +650,7 @@ class ManagerWindow(Gtk.Window):
         side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         side.get_style_context().add_class('sidebar')
         side.set_size_request(248, -1)
+        self.sidebar_box = side        # 断点里会切成 220
 
         brand = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=11)
         # 设计稿 .brand{padding:0 8px 28px}
@@ -741,6 +746,73 @@ class ManagerWindow(Gtk.Window):
         self.main_box.pack_start(self.stack, True, True, 0)
         return self.main_box
 
+
+    # ------------------------------------------------------------ 断点（DESIGN_SPEC §2.5）
+    def _rebuild_quick_grid(self, cols):
+        """快捷功能区：宽屏 4 列、窄屏 2 列（Gtk.Grid 没法自动回流，只能重建）。"""
+        grid = getattr(self, 'quick_grid', None)
+        if grid is None or getattr(self, '_quick_cols', None) == cols:
+            return
+        for child in grid.get_children():
+            grid.remove(child)
+        for idx, (key, title, sub, icon) in enumerate(getattr(self, '_quick_specs', ())):
+            grid.attach(self._quick_action(key, title, sub, icon),
+                        idx % cols, idx // cols, 1, 1)
+        self._quick_cols = cols
+        grid.show_all()
+
+    def _apply_breakpoints(self, force=False):
+        """窗口尺寸 → narrow / short 两个类，并处理 CSS 做不到的三件事。"""
+        shell = getattr(self, 'shell_box', None)
+        width = shell.get_allocated_width() if shell is not None else 0
+        height = shell.get_allocated_height() if shell is not None else 0
+        if width <= 1 or height <= 1:            # 还没完成布局，用窗口尺寸兜底
+            width = self.get_allocated_width()
+            height = self.get_allocated_height()
+        if width <= 1 or height <= 1:
+            return
+        narrow = width <= 1280
+        short = height <= 850
+        if not force and (narrow, short) == getattr(self, '_bp', None):
+            return
+        self._bp = (narrow, short)
+
+        ctx = (shell or self).get_style_context()
+        for cls, on in (('narrow', narrow), ('short', short)):
+            if on:
+                ctx.add_class(cls)
+            else:
+                ctx.remove_class(cls)
+
+        # ① 侧栏 220 / 248
+        side = getattr(self, 'sidebar_box', None)
+        if side is not None:
+            side.set_size_request(220 if narrow else 248, -1)
+
+        # ② 快捷功能 2 列 / 4 列
+        self._rebuild_quick_grid(2 if narrow else 4)
+
+        # ③ 概览右列：宽屏 402；窄屏按 1.35:1 折算，下界 330
+        control = getattr(self, 'control_card', None)
+        if control is not None:
+            if narrow:
+                content_w = max(0, width - (220 if narrow else 248) - 44)
+                control.set_size_request(max(330, int(round(content_w / 2.35))), -1)
+            else:
+                control.set_size_request(402, -1)
+
+        # ④ 隐藏页面说明 / 页脚（DESIGN_SPEC §2.5：高度 ≤850 时）
+        for attr in ('lbl_page_desc', 'lbl_settings_desc'):
+            lbl = getattr(self, attr, None)
+            if lbl is not None:
+                lbl.set_visible(not short)
+        footer = getattr(self, 'dash_footer', None)
+        if footer is not None:
+            footer.set_visible(not short)
+
+    def _on_size_allocate(self, _widget, alloc):
+        self._apply_breakpoints()
+
     def _build_topbar(self):
         bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         bar.get_style_context().add_class('topbar')
@@ -767,6 +839,7 @@ class ManagerWindow(Gtk.Window):
         popover = Gtk.Popover()
         popover.get_style_context().add_class('theme-menu')
         menu = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        menu.set_size_request(215, -1)   # 设计稿 .more-menu 宽 215
         menu.set_border_width(7)
         menu.pack_start(self._label('选择界面主题', 'menu-header'), False, False, 0)
         index = theme_index()
@@ -879,8 +952,9 @@ class ManagerWindow(Gtk.Window):
         self.chip_badge = self._chip('—', 'badge', valign=Gtk.Align.CENTER)
         title_line.pack_start(self.chip_badge, False, False, 0)
         text.pack_start(title_line, False, False, 0)
-        text.pack_start(self._label('管理服务、窗口与扩展，让实例始终保持最佳状态。',
-                                    'page-desc'), False, False, 0)
+        self.lbl_page_desc = self._label('管理服务、窗口与扩展，让实例始终保持最佳状态。',
+                                        'page-desc')
+        text.pack_start(self.lbl_page_desc, False, False, 0)
         heading.pack_start(text, True, True, 0)
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -963,6 +1037,7 @@ class ManagerWindow(Gtk.Window):
         control.get_style_context().add_class('card')
         control.get_style_context().add_class('control-card')
         control.set_size_request(402, -1)   # 高度交给 CSS（205 含 padding）
+        self.control_card = control
         ctop = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         ctop.pack_start(self._label('快捷控制', 'card-label'), False, False, 0)
         self.chip_live = self._chip('● 服务正常', 'live-indicator', valign=Gtk.Align.CENTER)
@@ -989,15 +1064,17 @@ class ManagerWindow(Gtk.Window):
         head.pack_start(self._label('常用功能', 'section-title'), False, False, 0)
         head.pack_start(self._label('管理实例的扩展与文件', 'section-sub'), False, False, 0)
         section.pack_start(head, False, False, 0)
-        quick = Gtk.Grid(column_spacing=11, row_spacing=11)
-        quick.set_column_homogeneous(True)
-        for idx, (key, title, sub, icon) in enumerate((
-                ('token', '查看 Token', '访问凭证与连接信息', 'key'),
-                ('plugins', '管理插件', '安装、启用与配置扩展', 'puzzle'),
-                ('update', '检查更新', '获取最新的 dsh 与 Node', 'update'),
-                ('folder', '数据目录', '浏览配置与本地数据', 'folder'))):
-            quick.attach(self._quick_action(key, title, sub, icon), idx, 0, 1, 1)
-        section.pack_start(quick, False, False, 0)
+        self._quick_specs = (
+            ('token', '查看 Token', '访问凭证与连接信息', 'key'),
+            ('plugins', '管理插件', '安装、启用与配置扩展', 'puzzle'),
+            ('update', '检查更新', '获取最新的 dsh 与 Node', 'update'),
+            ('folder', '数据目录', '浏览配置与本地数据', 'folder'))
+        self.quick_grid = Gtk.Grid(column_spacing=11, row_spacing=11)
+        self.quick_grid.set_column_homogeneous(True)
+        self._quick_cols = 0
+        self._rebuild_quick_grid(4)
+        section.pack_start(self.quick_grid, False, False, 0)
+        self.quick_section = section
         page.pack_start(section, False, False, 0)
 
         log_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -1027,7 +1104,7 @@ class ManagerWindow(Gtk.Window):
         self.log_body.pack_start(self.lbl_log_empty, False, False, 0)
         self.lbl_log_empty.show()      # no_show_all 之后要自己显一次（首屏就是空态）
         for _ in range(3):
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=11)
             t = self._label('', 'log-time')
             lvl = self._chip('', 'log-level')
             msg = self._label('', 'log-line')
@@ -1049,6 +1126,7 @@ class ManagerWindow(Gtk.Window):
         self.lbl_footer_root = self._label('实例根目录 · %s' % self.manager.root, 'footer-text')
         footer.pack_end(self.lbl_footer_root, False, False, 0)
         footer.set_hexpand(True)
+        self.dash_footer = footer
         page.pack_start(footer, False, False, 0)
         return self.dash_sw
 
@@ -1171,7 +1249,7 @@ class ManagerWindow(Gtk.Window):
         sub = self._label('v%s' % (inst.dsh_version or '?'), 'instance-sub')
         text.pack_start(sub, False, False, 0)
         box.pack_start(text, True, True, 0)
-        dot = self._chip('', 'status-dot', width=7, height=7, valign=Gtk.Align.CENTER)
+        dot = self._chip('', 'status-dot', width=6, height=6, valign=Gtk.Align.CENTER)
         box.pack_end(dot, False, False, 0)
         row.add(box)
         row.dot = dot
@@ -1335,8 +1413,8 @@ class ManagerWindow(Gtk.Window):
         _eyebrow2.set_halign(Gtk.Align.START)
         text.pack_start(_eyebrow2, False, False, 0)
         text.pack_start(self._label('管理器设置', 'page-title'), False, False, 0)
-        text.pack_start(self._label('查看运行环境，管理外观与维护选项。', 'page-desc'),
-                        False, False, 0)
+        self.lbl_settings_desc = self._label('查看运行环境，管理外观与维护选项。', 'page-desc')
+        text.pack_start(self.lbl_settings_desc, False, False, 0)
         heading.pack_start(text, True, True, 0)
         heading.pack_start(self._button('saveSettings', '✓  保存设置', 'btn', 'btn-primary',
                                         handler=self.on_save_settings), False, False, 0)

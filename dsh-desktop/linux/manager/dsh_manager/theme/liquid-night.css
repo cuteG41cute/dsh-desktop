@@ -700,3 +700,47 @@ scrollbar.vertical { margin: 2px 0; }
 
 /* 日志正文区（设计稿 .log-body：padding 7px 18px 9px） */
 .log-body { padding: 7px 18px 9px; }
+
+/* ==========================================================================
+ * 响应式断点（DESIGN_SPEC.md §2.5；设计稿是媒体查询，GTK 用窗口类 + 后代选择器）
+ * ========================================================================== */
+
+/* ≤1280px：侧栏 220 / 内容与顶栏 padding 22 / 快捷卡 70 高 / 卡片 padding 16 */
+.narrow .content { padding: 22px; }
+.narrow .topbar { padding: 0 22px; }
+.narrow .quick-action { min-height: 42px; }      /* 70 - padding 26 - border 2 */
+.narrow .quick-title { font-size: 10px; }
+.narrow .instance-card, .narrow .control-card { padding: 16px; }
+.narrow .control-sub { color: transparent; font-size: 1px; }  /* 设计稿 display:none 的等价处理 */
+.narrow .log-card { margin-top: 16px; }
+.narrow .brand-title { font-size: 11px; }
+
+/* ≤850px：标题区收紧 / 卡片 190 / 区块间距收紧 / 页脚隐藏（代码里 set_visible） */
+.short .content { padding-top: 18px; }
+.short .page-heading { margin-bottom: 15px; }
+.short .instance-card, .short .control-card { min-height: 152px; }   /* 190 - padding 36 - border 2 */
+.short .quick-section { margin-top: 16px; }
+.short .log-card { margin-top: 15px; }
+.short .brand { margin-bottom: 18px; }
+.short .runtime { margin-top: 10px; }
+
+/* 焦点环（DESIGN_SPEC §8.3 / §10：3px 主色 25% + 2px 外偏移，不能被 outline:none 吃掉） */
+button:focus, .btn:focus, .side-link:focus, .instance-item:focus,
+.quick-action:focus, .icon-btn:focus {
+  /* box-shadow 不参与布局；GTK3 的 outline 会计入尺寸（实测整页位移、
+     宽屏 MAE 3.81→5.24），所以焦点环用阴影画。 */
+  box-shadow: 0 0 0 3px alpha(#72b6ff, .25);
+}
+entry:focus, spinbutton:focus {
+  box-shadow: 0 0 0 3px alpha(#72b6ff, .25);
+  border-color: alpha(#72b6ff, .5);
+}
+
+/* 禁用态（DESIGN_SPEC §7.1：透明度 45~55%，无阴影、无位移） */
+button:disabled, .btn:disabled, .side-link:disabled, .quick-action:disabled {
+  opacity: .48;
+  box-shadow: none;
+}
+
+/* 窄屏侧栏内边距（DESIGN_SPEC §2.5：≤1280px 时左右 12px） */
+.narrow .sidebar { padding-left: 12px; padding-right: 12px; }

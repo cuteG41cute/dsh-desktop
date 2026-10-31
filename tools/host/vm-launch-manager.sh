@@ -14,6 +14,10 @@ XA=$(ls /run/user/1000/xauth_* 2>/dev/null | head -1)
 [ -n "${XA:-}" ] && export XAUTHORITY="$XA"
 export HOME=/home/twinblade
 
+# 虚拟机的屏幕空闲后会被 DPMS 关掉，这时 portal/kwin 截图全是纯黑（实测整幅 mean=0）。
+# 每次启动/截图前先强制点亮。
+command -v kscreen-doctor >/dev/null && kscreen-doctor --dpms on >/dev/null 2>&1
+
 case "$MODE" in
   x11) export GDK_BACKEND=x11 ;;
   *)   export GDK_BACKEND=wayland ;;
