@@ -154,7 +154,7 @@ bash install-deb.sh
 | 实例 2 | `~/.local/opt/deepseek-harness-2`，同版本 / 3081 / 已装（未启动） |
 | 桌面壳 | 两个实例的 `share/dsh-desktop.py` 都含原生截屏桥（`_native_screenshot` ×3） |
 | 截图插件 | dsh-screenshot **1.3.1** 已导入实例 1，boot 图谱里能查到 |
-| 管理器 | 装的是 1.3.2；**1.3.3 已放到 `~/share`**（修了下面两个 bug），需 sudo 安装 |
+| 管理器 | 已装 **1.3.3**（`dpkg-query -W dsh-manager` → `1.3.3`），修了下面两个 bug |
 
 重建过程中的两个坑（已在 1.3.3 修掉，并加了 gate `tools/plugin-import-check.py`）：
 
@@ -165,10 +165,47 @@ bash install-deb.sh
 2. **平铺 tar.gz**：包里直接是 `package.json + lib/` 时，安装器把 `lib/` 当包根，
    报"没找到带 name 的 package.json"。1.3.3 起两种打包方式都支持。
 
-**还需要你跑一次 sudo**（工具链 + Samba + 管理器 1.3.3 一起搞定）：
+**还需要你跑一次 sudo**（工具链 + Samba 一起搞定；管理器 1.3.3 已经装好了）：
 
 ```bash
 sudo bash ~/share/fix-vm-sudo.sh
 ```
 
 跑完 Windows 上 `cmd /c dir \\172.22.148.197\share` 就能用了。
+
+---
+
+## 7. 防再被回滚吃掉：`tools/host/pull-vm-backup.ps1`
+
+只存在于 VM 里的东西（`~/share` 的 deb、实例的 `share/` 与 `dsh-home/profiles/`
+含 `cordis.patch.yml`、管理器 `instances.json`、`~/.npmrc`）现在一条命令拉回主机：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\host\pull-vm-backup.ps1
+```
+
+产物：`vm-backup/vm-<时间戳>/vm-backup.tgz` + `README.txt`（带 sha256、清单说明）。
+默认**不**带模型会话正文，需要时加 `-IncludeSessions`。这就是 dsh-manager 1.4.0
+丢失之后加上的补丁：以后 VM 里做完东西，先在主机跑一次这个，再关机/回滚。
+
+## 8. dsh-manager 1.4.0 的下落（2026-10-31 排查结论）
+
+VM 内 1.4.0 的痕迹已彻底不存在：`find / -iname '*1.4.0*'` 只命中系统文件；
+全盘 `dsh-manager*.deb` 只剩 1.3.2/1.3.3；没有 `MANAGER_VERSION = '1.4.0'` 的源码；
+`/var/log/dpkg.log` 只有 14:48:07 装的 1.3.2；两个实例的 `dsh-home` 里没有 `1.4.0` 字样。
+主机侧也没有：`recovery/` 只有 1.1.2/1.1.5/1.2.0/1.3.2/1.3.3，git 只有 `main`
+（tag 到 v1.2.2），会话记录里没有 "dsh-manager 1.4.0"。
+
+唯一可能的残骸是 **10/30 晚上的 Hyper-V 检查点**。取回办法（**导出，不要应用**）：
+
+```powershell
+# 管理员 PowerShell
+powershell -ExecutionPolicy Bypass -File tools\host\list-hyperv-checkpoints.ps1
+# 看到 10/30 那晚的检查点后：
+powershell -ExecutionPolicy Bypass -File tools\host\list-hyperv-checkpoints.ps1 `
+  -VMName '<虚拟机名>' -ExportSnapshot '<检查点名>' -Dest 'D:\vmsnap'
+```
+
+然后在 Hyper-V 里以「复制」方式导入该导出，开机，把 `~/share/*.deb` 和 1.4.0 源码树
+拷出来（现在 SSH 通了，`scp` 直接拉）。没有检查点就按 1.3.3 为基线重做，
+并且**每做完一步就 push 到 git**——仓库里有的东西回滚拿不走。
