@@ -18,7 +18,7 @@ gi.require_version('Gtk', '3.0')
 # 随后 Gtk 3.0 就失败：Requiring namespace 'Gtk' version '3.0',
 # but '4.0' is already loaded（实测踩过：1.0.5 起管理器因此启动即退出）。
 gi.require_version('Gdk', '3.0')
-from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, GdkPixbuf, GLib, Gtk  # noqa: E402
 
 from . import plugins as plug  # noqa: E402
 from .core import (DEFAULT_DSH, DEFAULT_NODE, MANAGER_LIB, MANAGER_VERSION,  # noqa: E402
@@ -45,6 +45,74 @@ STATUS_DOT = {
 }
 
 CSS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'style.css')
+
+# ---------------------------------------------------------------- 图标
+# 设计稿的 27 个图标是 <symbol id="i-*"> 里的 24×24 描边路径，
+# tools/extract-icons.mjs 已经把每个抽成 dsh_manager/icons/<name>.svg，
+# 运行时只要把 currentColor 换成主题色，再让 GdkPixbuf 的 svg loader 画出来。
+ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
+_ICON_CACHE = {}
+_ICON_NAMES = set()
+try:
+    _ICON_NAMES = {f[:-4] for f in os.listdir(ICON_DIR) if f.endswith('.svg')}
+except OSError:
+    pass
+
+# 旧代码里用的 Unicode 字形 → 设计稿图标名
+GLYPH_ICON = {
+    '＋': 'plus', '+': 'plus',
+    '↗': 'external', 'ⓘ': 'info', '▶': 'arrow', '▣': 'copy', '⚒': 'wrench',
+    '■': 'stop', '↺': 'refresh', '↻': 'restart', '▦': 'grid', '⚙': 'settings',
+    '？': 'help', '⌄': 'chevron', '✓': 'check', '🗑': 'trash', '▤': 'terminal',
+    '⟳': 'refresh', '○': 'info', '●': 'info',
+}
+
+
+def icon_pixbuf(name, color, px=16):
+    """把 icons/<name>.svg 以指定颜色渲染成 px×px 的 pixbuf（带缓存）。"""
+    key = (name, color, px)
+    if key in _ICON_CACHE:
+        return _ICON_CACHE[key]
+    path = os.path.join(ICON_DIR, '%s.svg' % name)
+    if not os.path.exists(path):
+        _ICON_CACHE[key] = None
+        return None
+    with open(path, 'r', encoding='utf-8') as fh:
+        svg = fh.read()
+    svg = svg.replace('currentColor', color)
+    # 先按 4 倍尺寸栅格化再缩，边缘更接近浏览器的抗锯齿效果
+    big = max(px * 4, 32)
+    svg = svg.replace('width="24"', 'width="%d"' % big, 1)
+    svg = svg.replace('height="24"', 'height="%d"' % big, 1)
+    try:
+        loader = GdkPixbuf.PixbufLoader.new_with_type('svg')
+        loader.write(svg.encode('utf-8'))
+        loader.close()
+        pb = loader.get_pixbuf()
+    except Exception as exc:                     # 没有 svg loader / 文件坏了
+        sys.stderr.write('[dsh-manager] 图标 %s 渲染失败：%s\n' % (name, exc))
+        pb = None
+    if pb is not None and (pb.get_width() != px or pb.get_height() != px):
+        pb = pb.scale_simple(px, px, GdkPixbuf.InterpType.BILINEAR)
+    _ICON_CACHE[key] = pb
+    return pb
+
+
+def theme_tokens():
+    """themes.json 的结构：{order, labels, values:{'frost-day': {accent: '#..', ...}}}。"""
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'themes.json'),
+                  'r', encoding='utf-8') as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def token_color(theme, mode, token):
+    data = theme_tokens()
+    combo = data.get('values', {}).get('%s-%s' % (theme, mode), {})
+    return combo.get(token) or '#747288'
+
 
 
 def _initials(label):
@@ -351,6 +419,10 @@ class ManagerWindow(Gtk.Window):
         if persist and ok:
             save_settings({'theme': theme, 'mode': mode})
         self._sync_theme_labels(theme, mode)
+        try:
+            self._recolor_icons()
+        except Exception:
+            pass
         return ok
 
     def _sync_theme_labels(self, theme, mode):
@@ -405,6 +477,37 @@ class ManagerWindow(Gtk.Window):
             lbl.get_style_context().add_class(cls)
         return lbl
 
+
+    # ------------------------------------------------------------ 图标
+    def _icon_for(self, glyph, role='muted', px=16):
+        """字形 → 图标控件；没有对应图标时返回 None（调用方退回字形）。"""
+        name = GLYPH_ICON.get(glyph) or (glyph if glyph in _ICON_NAMES else None)
+        if not name:
+            return None
+        return self._icon(name, role, px)
+
+    def _icon(self, name, role='muted', px=16):
+        theme, mode = self._theme_state()
+        color = token_color(theme, mode, role)
+        pb = icon_pixbuf(name, color, px)
+        if pb is None:
+            lbl = Gtk.Label(label='·')
+            return lbl
+        img = Gtk.Image.new_from_pixbuf(pb)
+        self._icons.append((img, name, role, px))
+        return img
+
+    def _recolor_icons(self):
+        """换主题后按新配色重画所有图标。"""
+        theme, mode = self._theme_state()
+        for img, name, role, px in list(getattr(self, '_icons', [])):
+            pb = icon_pixbuf(name, token_color(theme, mode, role), px)
+            if pb is not None:
+                try:
+                    img.set_from_pixbuf(pb)
+                except Exception:
+                    pass
+
     def _chip(self, text='', *classes, **kwargs):
         """带背景的小方块 / 圆点 / 徽标。
 
@@ -416,8 +519,19 @@ class ManagerWindow(Gtk.Window):
         box.set_visible_window(True)
         for cls in classes:
             box.get_style_context().add_class(cls)
-        lbl = Gtk.Label(label=text, xalign=0.5, yalign=0.5)
-        box.add(lbl)
+        if kwargs.get('icon'):
+            img = self._icon(kwargs['icon'], kwargs.get('role', 'accent'),
+                             kwargs.get('icon_size', 17))
+            box.add(img)
+            # EventBox 只能有一个子控件：图标块不再塞隐藏 label，
+            # 但保留 .label 属性给外部代码（它们只会对文字 chip 调 set_text）。
+            lbl = Gtk.Label(label='')
+            lbl.set_visible(False)
+        else:
+            img = None
+            lbl = Gtk.Label(label=text, xalign=0.5, yalign=0.5)
+            box.add(lbl)
+        box.image = img
         box.label = lbl
         width = kwargs.get('width')
         height = kwargs.get('height')
@@ -434,7 +548,13 @@ class ManagerWindow(Gtk.Window):
         btn = Gtk.Button()
         if kwargs.get('icon'):
             box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=7)
-            box.pack_start(Gtk.Label(label=kwargs['icon']), False, False, 0)
+            role = kwargs.get('icon_role') or ('on-accent' if 'btn-primary' in classes
+                                               else 'muted')
+            widget = self._icon_for(kwargs['icon'], role, kwargs.get('icon_size', 16))
+            if widget is not None:
+                box.pack_start(widget, False, False, 0)
+            else:
+                box.pack_start(Gtk.Label(label=kwargs['icon']), False, False, 0)
             box.pack_start(Gtk.Label(label=label), False, False, 0)
             btn.add(box)
         else:
@@ -472,6 +592,7 @@ class ManagerWindow(Gtk.Window):
         self._need_selection = {'start', 'stop', 'open', 'reload', 'rebuild', 'token',
                                 'folder', 'uninstall', 'plugins', 'update', 'repair'}
         self._theme_buttons = {}
+        self._icons = []
         self._recent = []
         # 完整日志只存缓冲区（界面上的「最近日志」只显示 3 行；完整内容走对话框）
         self.log_buf = Gtk.TextBuffer()
@@ -494,10 +615,12 @@ class ManagerWindow(Gtk.Window):
         overlay = Gtk.Overlay()
         shell = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         shell.get_style_context().add_class('dsh-shell')
-        shell.set_margin_top(18)
-        shell.set_margin_bottom(18)
-        shell.set_margin_start(18)
-        shell.set_margin_end(18)
+        # 设计稿里 .app-shell 就是"窗口"本身：参考图裁的就是它，所以不能留外边距，
+        # 否则整体会内缩 18px，和设计稿错位（实测 MAE 就是被这 18px 抬上去的）。
+        shell.set_margin_top(0)
+        shell.set_margin_bottom(0)
+        shell.set_margin_start(0)
+        shell.set_margin_end(0)
         overlay.add(shell)
         overlay.add_overlay(self.toast_revealer)
         self.add(overlay)
@@ -526,7 +649,10 @@ class ManagerWindow(Gtk.Window):
         side.set_size_request(248, -1)
 
         brand = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=11)
-        brand.set_margin_bottom(22)
+        # 设计稿 .brand{padding:0 8px 28px}
+        brand.set_margin_bottom(28)
+        brand.set_margin_start(8)
+        brand.set_margin_end(8)
         brand.pack_start(self._chip('D', 'brand-mark', width=38, height=38), False, False, 0)
         brand_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
         brand_text.pack_start(self._label('DeepSeek Harness', 'brand-title'), False, False, 0)
@@ -541,6 +667,9 @@ class ManagerWindow(Gtk.Window):
         self.chip_count = self._chip('0', 'count-pill')
         head.pack_start(self.chip_count, False, False, 0)
         head.set_size_request(-1, 32)
+        head.set_margin_start(8)
+        head.set_margin_end(8)
+        head.set_margin_bottom(7)
         btn_add = self._button('new', '', 'icon-btn', 'small', icon='＋')
         btn_add.set_tooltip_text('新建实例')
         head.pack_end(btn_add, False, False, 0)
@@ -553,28 +682,42 @@ class ManagerWindow(Gtk.Window):
         self.side_sw = Gtk.ScrolledWindow()
         self.side_sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.side_sw.add(self.instance_list)
-        side.pack_start(self.side_sw, True, True, 0)
+        # 设计稿里实例列表是**按内容高**（3×61 + 2×5 = 193），下面紧接「新建实例」，
+        # 剩下的空白留给侧栏底部；所以这里不 vexpand，改用一个弹簧撑住底部块。
+        side.pack_start(self.side_sw, False, False, 0)
 
         btn_new = self._button('new', '＋  新建实例', 'new-instance')
-        btn_new.set_margin_top(10)
+        btn_new.set_size_request(-1, 38)
+        btn_new.set_margin_top(13)
         btn_new.set_margin_start(4)
         btn_new.set_margin_end(4)
         side.pack_start(btn_new, False, False, 0)
 
-        bottom = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
-        bottom.set_margin_top(16)
+        spacer = Gtk.Box()
+        spacer.set_vexpand(True)
+        side.pack_start(spacer, True, True, 0)
+
+        bottom = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        bottom.set_margin_top(24)
         bottom.pack_start(self._label('工作空间', 'side-caption'), False, False, 0)
-        self.btn_overview = self._button('', '▦   实例概览', 'side-link', 'selected',
-                                         handler=lambda *a: self._show_page('dashboard'))
+        self.btn_overview = self._button('', '实例概览', 'side-link', 'selected',
+                                         handler=lambda *a: self._show_page('dashboard'),
+                                         icon='grid', icon_role='accent', icon_size=17)
         bottom.pack_start(self.btn_overview, False, False, 0)
-        self.btn_settings = self._button('settings', '⚙   管理器设置', 'side-link')
+        self.btn_settings = self._button('settings', '管理器设置', 'side-link',
+                                         icon='settings', icon_role='muted', icon_size=17)
         bottom.pack_start(self.btn_settings, False, False, 0)
-        self.btn_help = self._button('', '？   使用帮助', 'side-link', handler=self.on_help)
+        self.btn_help = self._button('', '使用帮助', 'side-link', handler=self.on_help,
+                                    icon='help', icon_role='muted', icon_size=17)
         bottom.pack_start(self.btn_help, False, False, 0)
 
         runtime = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
         runtime.get_style_context().add_class('runtime')
-        runtime.set_margin_top(14)
+        runtime.set_margin_top(17)
+        runtime.set_margin_start(4)
+        runtime.set_margin_end(4)
+        runtime.set_size_request(-1, 56)
+        runtime.set_valign(Gtk.Align.CENTER)
         runtime.pack_start(self._chip('Py', 'runtime-icon', width=28, height=28), False, False, 0)
         rt_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         rt_text.pack_start(self._label('运行环境正常', 'runtime-title'), False, False, 0)
@@ -614,12 +757,14 @@ class ManagerWindow(Gtk.Window):
 
         trigger = Gtk.MenuButton()
         trigger.get_style_context().add_class('theme-trigger')
+        trigger.set_valign(Gtk.Align.CENTER)
+        trigger.set_size_request(-1, 34)   # 设计稿 .theme-trigger 高 34
         inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         inner.pack_start(self._chip('', 'theme-swatch', 'swatch-frost', width=14, height=14,
                                     valign=Gtk.Align.CENTER), False, False, 0)
         self.lbl_theme_name = self._label('毛玻璃')
         inner.pack_start(self.lbl_theme_name, False, False, 0)
-        inner.pack_start(self._label('⌄', 'glyph'), False, False, 0)
+        inner.pack_start(self._icon('chevron', 'muted', 14), False, False, 0)
         trigger.add(inner)
 
         popover = Gtk.Popover()
@@ -650,6 +795,7 @@ class ManagerWindow(Gtk.Window):
 
         self.btn_mode = self._button('', '☀  日间', 'mode-toggle',
                                      handler=self.on_toggle_mode)
+        self.btn_mode.set_valign(Gtk.Align.CENTER)
         info = self._button('', 'ⓘ', 'icon-btn', handler=self.on_about)
         info.set_tooltip_text('关于 / 版本信息')
         bar.pack_end(self.btn_mode, False, False, 0)
@@ -662,10 +808,11 @@ class ManagerWindow(Gtk.Window):
         self.dash_sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         page.get_style_context().add_class('content')
-        page.set_margin_top(20)
-        page.set_margin_bottom(12)
-        page.set_margin_start(24)
-        page.set_margin_end(24)
+        # 设计稿 .content{padding:25px 30px 15px}
+        page.set_margin_top(25)
+        page.set_margin_bottom(15)
+        page.set_margin_start(30)
+        page.set_margin_end(30)
         self.dash_sw.add(page)
 
         heading = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
@@ -717,15 +864,18 @@ class ManagerWindow(Gtk.Window):
         grid = Gtk.Grid(column_spacing=16, row_spacing=16)
         info_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         info_card.get_style_context().add_class('card')
+        info_card.get_style_context().add_class('instance-card')
         info_card.set_hexpand(True)
+        info_card.set_size_request(-1, 205)   # 设计稿 .instance-card 205
         top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         top.pack_start(self._label('实例信息', 'card-label'), False, False, 0)
         top.pack_end(self._chip('本地实例', 'subtle-tag', valign=Gtk.Align.CENTER),
                      False, False, 0)
         info_card.pack_start(top, False, False, 0)
         meta = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=13)
-        meta.set_margin_top(16)
-        self.chip_avatar = self._chip('--', 'large-avatar', width=48, height=48)
+        meta.set_margin_top(17)
+        self.chip_avatar = self._chip('--', 'large-avatar', width=48, height=48,
+                                      valign=Gtk.Align.CENTER)
         meta.pack_start(self.chip_avatar, False, False, 0)
         meta_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.lbl_meta_name = self._label('—', 'meta-name')
@@ -743,10 +893,10 @@ class ManagerWindow(Gtk.Window):
         meta.pack_start(meta_text, True, True, 0)
         info_card.pack_start(meta, False, False, 0)
         sep = Gtk.Separator()
-        sep.set_margin_top(14)
+        sep.set_margin_top(18)
         info_card.pack_start(sep, False, False, 0)
         metrics = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        metrics.set_margin_top(12)
+        metrics.set_margin_top(13)
         self.lbl_metric_pid = self._metric(metrics, '进程 PID', '—', first=True)
         metrics.pack_start(self._vsep(), False, False, 0)
         self.lbl_metric_port = self._metric(metrics, '服务端口', '—')
@@ -756,7 +906,8 @@ class ManagerWindow(Gtk.Window):
 
         control = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         control.get_style_context().add_class('card')
-        control.set_size_request(310, -1)
+        control.get_style_context().add_class('control-card')
+        control.set_size_request(402, 205)   # 设计稿 .control-card 402.25 x 205
         ctop = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         ctop.pack_start(self._label('快捷控制', 'card-label'), False, False, 0)
         self.chip_live = self._chip('● 服务正常', 'live-indicator', valign=Gtk.Align.CENTER)
@@ -785,12 +936,12 @@ class ManagerWindow(Gtk.Window):
         section.pack_start(head, False, False, 0)
         quick = Gtk.Grid(column_spacing=11, row_spacing=11)
         quick.set_column_homogeneous(True)
-        for idx, (key, title, sub, glyph) in enumerate((
-                ('token', '查看 Token', '访问凭证与连接信息', '⚿'),
-                ('plugins', '管理插件', '安装、启用与配置扩展', '⊞'),
-                ('update', '检查更新', '获取最新的 dsh 与 Node', '↓'),
-                ('folder', '数据目录', '浏览配置与本地数据', '▤'))):
-            quick.attach(self._quick_action(key, title, sub, glyph), idx, 0, 1, 1)
+        for idx, (key, title, sub, icon) in enumerate((
+                ('token', '查看 Token', '访问凭证与连接信息', 'key'),
+                ('plugins', '管理插件', '安装、启用与配置扩展', 'puzzle'),
+                ('update', '检查更新', '获取最新的 dsh 与 Node', 'update'),
+                ('folder', '数据目录', '浏览配置与本地数据', 'folder'))):
+            quick.attach(self._quick_action(key, title, sub, icon), idx, 0, 1, 1)
         section.pack_start(quick, False, False, 0)
         page.pack_start(section, False, False, 0)
 
@@ -799,11 +950,12 @@ class ManagerWindow(Gtk.Window):
         log_card.set_margin_top(18)
         lhead = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         lhead.get_style_context().add_class('log-header')
-        lhead.pack_start(self._label('▶', 'log-icon'), False, False, 0)
+        lhead.pack_start(self._icon('terminal', 'accent', 15), False, False, 0)
         lhead.pack_start(self._label('最近日志', 'log-title'), False, False, 0)
         self.chip_log_count = self._chip('0', 'log-count')
         lhead.pack_start(self.chip_log_count, False, False, 0)
-        view_btn = self._button('', '查看完整日志  →', 'text-btn', handler=self.on_view_log)
+        view_btn = self._button('', '查看完整日志', 'text-btn', handler=self.on_view_log,
+                                icon='arrow', icon_role='accent', icon_size=12)
         lhead.pack_end(view_btn, False, False, 0)
         log_card.pack_start(lhead, False, False, 0)
         self.log_body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -865,10 +1017,13 @@ class ManagerWindow(Gtk.Window):
         return row
 
     def _quick_action(self, key, title, sub, glyph):
+        icon_name = glyph if glyph in _ICON_NAMES else GLYPH_ICON.get(glyph)
         btn = Gtk.Button()
         btn.get_style_context().add_class('quick-action')
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        box.pack_start(self._chip(glyph, 'quick-icon', width=34, height=34), False, False, 0)
+        box.pack_start(self._chip('', 'quick-icon', width=34, height=34,
+                                  valign=Gtk.Align.CENTER, icon=icon_name,
+                                  role='accent', icon_size=17), False, False, 0)
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         text.pack_start(self._label(title, 'quick-title'), False, False, 0)
         sub_lbl = self._label(sub, 'quick-sub')
@@ -904,6 +1059,12 @@ class ManagerWindow(Gtk.Window):
             if keep and inst.prefix == keep:
                 target = row
         self.instance_list.show_all()
+        # ScrolledWindow 不给最小内容高就只分到 41px，列表被裁掉只剩第一行
+        try:
+            rows = max(1, len(instances))
+            self.side_sw.set_min_content_height(min(rows, 6) * 66 - 5)
+        except Exception:
+            pass
         if target is not None:
             self.instance_list.select_row(target)
         elif instances:
@@ -926,9 +1087,13 @@ class ManagerWindow(Gtk.Window):
         row = Gtk.ListBoxRow()
         row.inst = inst
         row.get_style_context().add_class('instance-item')
+        # 设计稿：.instance-item{height:61px; gap:5px}
+        row.set_size_request(-1, 61)
+        row.set_margin_bottom(5)
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         initials = _initials(inst.label)
-        box.pack_start(self._chip(initials, 'instance-avatar', width=34, height=34),
+        box.pack_start(self._chip(initials, 'instance-avatar', width=34, height=34,
+                                  valign=Gtk.Align.CENTER),
                        False, False, 0)
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
         name = self._label(inst.label or inst.prefix, 'instance-name')
@@ -1091,10 +1256,11 @@ class ManagerWindow(Gtk.Window):
         self.settings_sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         page.get_style_context().add_class('content')
-        page.set_margin_top(20)
-        page.set_margin_bottom(12)
-        page.set_margin_start(24)
-        page.set_margin_end(24)
+        # 设计稿 .content{padding:25px 30px 15px}
+        page.set_margin_top(25)
+        page.set_margin_bottom(15)
+        page.set_margin_start(30)
+        page.set_margin_end(30)
         self.settings_sw.add(page)
 
         heading = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)

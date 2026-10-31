@@ -18,6 +18,7 @@ param(
     [int]$TimeoutSec = 300,
     [string[]]$Fetch = @(),
     [string]$FetchDir = '',
+    [switch]$Fixture,
     [string]$SshKey = ''
 )
 
@@ -35,6 +36,14 @@ $runsAs = switch ($ext) {
 }
 $stamp = [guid]::NewGuid().ToString('N').Substring(0, 8)
 $remote = "/tmp/vmrun-$stamp$ext"
+
+if ($Fixture) {
+    $fix = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'vm_fixture.py'
+    if (Test-Path $fix) {
+        ssh @sshBase $target 'mkdir -p /tmp/dsh-vm' | Out-Null
+        scp -o BatchMode=yes -P $Port $fix "$($target):/tmp/dsh-vm/vm_fixture.py" 2>$null
+    }
+}
 
 scp -o BatchMode=yes -P $Port $src "$($target):$remote" 2>$null
 if ($LASTEXITCODE -ne 0) { throw "upload failed for $src" }

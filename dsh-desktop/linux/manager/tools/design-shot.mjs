@@ -114,6 +114,21 @@ async function main() {
       { width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: false });
     await cdp.send('Page.navigate', { url: pathToFileURL(DESIGN).href });
     await sleep(1500);
+    // 设计稿的字体栈是 Windows 专有的（Segoe UI / Microsoft YaHei UI），Linux 上没有。
+    // 比对时把设计稿也换成 GTK 实际用的字体，diff 才只反映布局/配色误差。
+    //   DSH_DESIGN_FONT='Noto Sans'    node design-shot.mjs
+    if (process.env.DSH_DESIGN_FONT) {
+      const font = process.env.DSH_DESIGN_FONT;
+      const mono = process.env.DSH_DESIGN_MONO || '"DejaVu Sans Mono", monospace';
+      await cdp.eval(`(() => {
+        const st = document.createElement('style');
+        st.textContent = 'body{--font:${font.replace(/'/g, "\\'")} !important}' +
+          '.meta-main>span,.log-line,.info-list dd,.runtime small{font-family:${mono.replace(/'/g, "\\'")} !important}';
+        document.head.appendChild(st);
+        return 1;
+      })()`);
+      await sleep(300);
+    }
     // 等字体就绪，否则第一张会和后面几张字重不一致
     await cdp.eval('document.fonts && document.fonts.ready ? document.fonts.ready.then(() => 1) : 1');
 

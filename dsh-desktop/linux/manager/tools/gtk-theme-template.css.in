@@ -167,6 +167,7 @@ window.dsh-window,
 
 /* ---------- 顶栏 ---------- */
 .topbar {
+  min-height: 65px;   /* 设计稿 66px 含 1px 下边框 */
   background-color: $(topbar);
   border-bottom: 1px solid $(inner-border);
   padding: 0 26px;
@@ -236,7 +237,7 @@ window.dsh-window,
   border: 1px solid $(border);
   border-radius: $(radius);
   box-shadow: $(card-shadow);
-  padding: 16px 18px;
+  padding: 18px 20px;   /* 设计稿 .card: 18px 20px */
 }
 .card-label { font-size: 11px; font-weight: 650; color: $(text); }
 .card-sub { font-size: 9px; color: $(muted); }
@@ -244,8 +245,8 @@ window.dsh-window,
   border-radius: 6px;
   background-color: $(accent-soft);
   color: $(muted);
-  font-size: 9px;
-  padding: 2px 7px;
+  font-size: 8px;   /* 设计稿 .subtle-tag */
+  padding: 3px 7px;
 }
 .large-avatar {
   min-width: 48px;
@@ -267,14 +268,14 @@ window.dsh-window,
   border: 1px solid $(inner-border);
   border-radius: 6px;
   color: $(muted);
-  font-size: 9px;
-  padding: 2px 7px;
+  font-size: 8px;   /* 设计稿 .version-pills span */
+  padding: 3px 7px;
 }
-.metric-label { font-size: 9px; color: $(muted); }
+.metric-label { font-size: 8.5px; color: $(muted); }
 .metric-value { font-size: 12px; font-weight: 650; color: $(text); }
 .metric-value.accent { color: $(success); }
 .control-title { font-size: 11px; font-weight: 600; color: $(text); }
-.control-sub { font-size: 9px; color: $(muted); }
+.control-sub { font-size: 8.5px; color: $(muted); }
 .control-separator { border-top: 1px solid $(inner-border); }
 
 /* ---------- 按钮 ---------- */
@@ -283,8 +284,8 @@ window.dsh-window,
   border: 1px solid transparent;
   font-size: 11px;
   font-weight: 600;
-  min-height: 38px;
-  padding: 0 14px;
+  min-height: 36px;
+  padding: 0 15px;   /* 设计稿 .btn: 38px border-box */
 }
 .btn-primary {
   background-image: linear-gradient(135deg, $(accent2), $(accent));
@@ -342,8 +343,8 @@ window.dsh-window,
   border: 1px solid $(border);
   border-radius: 15px;
   box-shadow: $(card-shadow);
-  padding: 12px;
-  min-height: 60px;
+  padding: 13px;
+  min-height: 54px;   /* 设计稿 82px(border-box) */
 }
 .quick-action:hover {
   background-color: $(hover);
@@ -356,13 +357,13 @@ window.dsh-window,
   background-color: $(accent-soft);
   color: $(accent);
 }
-.quick-title { font-size: 11px; font-weight: 600; color: $(text); }
-.quick-sub { font-size: 9px; color: $(muted); }
+.quick-title { font-size: 10.5px; font-weight: 600; color: $(text); }
+.quick-sub { font-size: 8px; color: $(muted); }
 .section-title { font-size: 12px; font-weight: 650; color: $(text); }
 .section-sub { font-size: 9px; color: $(muted); }
 
 /* ---------- 日志卡 ---------- */
-.log-header { border-bottom: 1px solid $(inner-border); padding-bottom: 10px; }
+.log-header { min-height: 45px; padding: 0 18px; border-bottom: 1px solid $(inner-border); }
 .log-title { font-size: 12px; font-weight: 650; color: $(text); }
 .log-count {
   border-radius: 8px;
@@ -373,7 +374,8 @@ window.dsh-window,
 }
 .log-line {
   font-family: Consolas, "DejaVu Sans Mono", monospace;
-  font-size: 9px;
+  font-size: 8.5px;
+  min-height: 27px;
   color: $(text);
 }
 .log-time { color: $(subtle); }
@@ -394,7 +396,7 @@ window.dsh-window,
   font-size: 9px;
 }
 .log-view text { background-color: transparent; color: $(text); }
-.page-footer { color: $(subtle); font-size: 9px; }
+.page-footer { color: $(subtle); font-size: 8px; padding-top: 12px; }
 
 /* ---------- 输入控件 ---------- */
 entry, spinbutton, .entry {
@@ -490,7 +492,7 @@ tooltip {
   box-shadow: none;
   outline: none;
 }
-.instance-item { min-height: 57px; }
+.instance-item { min-height: 43px; padding: 8px 10px; }   /* 设计稿 61px(border-box) */
 .instance-item:selected,
 .instance-item:selected:hover,
 .instance-item.active {
@@ -528,7 +530,7 @@ scrollbar.vertical { margin: 2px 0; }
 /* 卡片内边距对齐设计稿（18px 20px） */
 .card { padding: 18px 20px; }
 /* 侧栏内边距对齐设计稿（26px 16px 18px） */
-.sidebar { padding: 24px 16px 18px; }
+.sidebar { padding: 26px 16px 18px; }   /* 设计稿 .sidebar */
 /* 主按钮：渐变之上再给一层纯色兜底（万一某些 GTK 不认角度渐变） */
 .btn-primary { background-color: $(accent); }
 /* 小图标/箭头 */
@@ -537,3 +539,80 @@ scrollbar.vertical { margin: 2px 0; }
 .log-icon { color: $(accent); }
 .log-empty { color: $(muted); font-size: 9px; }
 .metric-sep { min-width: 1px; background-color: $(inner-border); }
+
+/* ==========================================================================
+ * 尺寸校正（1.4.0 像素复刻）
+ * GTK3 的 min-height 是内容盒：设计稿 height 含 padding/border，
+ * 所以这里把每个控件的 min-height 补成 height - padding - border。
+ * ========================================================================== */
+.instance-item { min-height: 43px; padding: 8px 10px; }
+.quick-action { min-height: 54px; padding: 13px; }
+.side-link { min-height: 38px; padding: 0 11px; font-size: 11.5px; }
+.new-instance {
+  min-height: 34px;
+  padding: 1px 6px;
+  font-size: 11px;
+  border: 1px dashed $(inner-border);
+  border-radius: 11px;
+}
+.btn { min-height: 36px; padding: 0 15px; }
+.btn.compact { min-height: 29px; padding: 0 10px; font-size: 9px; }
+.btn.compact image { margin-right: 4px; }
+.btn-icon { min-width: 36px; padding: 0; }
+.icon-btn { min-width: 36px; min-height: 36px; padding: 0; }
+.icon-btn.small { min-width: 25px; min-height: 25px; padding: 0; }
+.large-avatar { min-width: 48px; min-height: 48px; padding: 0; }
+.runtime-icon { padding: 0; }
+.quick-icon { padding: 0; }
+.instance-avatar { padding: 0; }
+.theme-trigger {
+  min-height: 32px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid $(inner-border);
+  border-radius: 10px;
+  background-color: $(card);
+  font-size: 10.5px;
+  font-weight: 550;
+}
+.mode-toggle {
+  min-width: 55px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid $(inner-border);
+  border-radius: 16px;
+  background-color: $(card);
+  font-size: 10px;
+}
+.side-caption { padding: 0 11px 8px; font-size: 10px; font-weight: 600; /* GTK3 不支持 letter-spacing */ }
+.runtime { min-height: 54px; padding: 13px 10px; border-radius: 12px; }
+.runtime-title { font-size: 10px; font-weight: 600; }
+.runtime-sub { font-size: 8.5px; }
+.page-footer { padding-top: 10px; font-size: 8px; }
+.instance-name { font-size: 11.5px; font-weight: 600; }
+.instance-sub { font-size: 10px; color: $(muted); }
+.side-section-title { font-size: 11px; font-weight: 600; }
+
+/* 日志表头 / 标题区 / 指标行：字号按设计稿收口 */
+.log-header { min-height: 44px; padding: 0 18px; border-bottom: 1px solid $(inner-border); }
+.log-title { font-size: 12px; font-weight: 650; }
+.log-count { font-size: 8px; }
+.eyebrow { font-size: 8px; font-weight: 750;  color: $(accent); }
+.page-title { font-size: 25px; font-weight: 680;  }
+.page-sub { font-size: 11px; }
+.breadcrumb { font-size: 11px; }
+.status-badge { font-size: 9px; font-weight: 600; }
+.metric-label { font-size: 8.5px; }
+.metric-value { font-size: 12px; font-weight: 650; }
+.card-label { font-size: 11px; font-weight: 650; }
+.instance-item:selected, .instance-item.active { border-radius: 13px; }
+.log-line { min-height: 27px; font-size: 8.5px; }
+.log-level { font-size: 7.5px; padding: 2px 4px; }
+
+/* 卡片与分区节奏：数值取自 design/styles.css */
+.instance-card, .control-card { min-height: 203px; }
+.quick-section { margin-top: 21px; }
+.section-heading { margin-bottom: 11px; }
+.log-card { margin-top: 20px; }
+/* 网格间距在 gui.py 里用 Gtk.Grid(column_spacing=16, row_spacing=16) 设，GTK CSS 不认这两个属性 */
+.page-heading { margin-bottom: 22px; }
