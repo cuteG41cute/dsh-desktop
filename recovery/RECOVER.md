@@ -138,3 +138,37 @@ bash install-deb.sh
 ```
 
 如果 Windows 防火墙拦了入站 8000，会看到 `curl: (7) Failed to connect`——那就还是走 §1 修 Samba。
+---
+
+## 附：2026-10-31 实际恢复结果（SSH 可用后亲自操作）
+
+**回滚把 VM 的 $HOME 退回到了 10/19-20 的全新状态**：没有 `~/Program/*`、没有 `~/.dsh`、
+没有 node/npm、没有 `~/.config/dsh-manager`、没有 Samba 配置、没有截图/比对工具。
+唯一还在的是今天新装的 dsh-manager（`~/share` 里那两个文件）。
+
+已通过 SSH 重建（**不需要 Samba**）：
+
+| 项 | 结果 |
+| --- | --- |
+| 实例 1 | `/home/twinblade/Program/deepseek-harness-1`，dsh 0.2.1-rc.5 / node 26.13.0 / 3080 / **运行中** |
+| 实例 2 | `~/.local/opt/deepseek-harness-2`，同版本 / 3081 / 已装（未启动） |
+| 桌面壳 | 两个实例的 `share/dsh-desktop.py` 都含原生截屏桥（`_native_screenshot` ×3） |
+| 截图插件 | dsh-screenshot **1.3.1** 已导入实例 1，boot 图谱里能查到 |
+| 管理器 | 装的是 1.3.2；**1.3.3 已放到 `~/share`**（修了下面两个 bug），需 sudo 安装 |
+
+重建过程中的两个坑（已在 1.3.3 修掉，并加了 gate `tools/plugin-import-check.py`）：
+
+1. **空数组占位符**：新 profile 的 `cordis.patch.yml` 里是裸 `[]`，插件安装器往后面追加
+   `- insert:` → YAML 变成两个文档 → `dsh web` 启动即失败
+   （`end of the stream or a document separator is expected`）。
+   现场已手工修好（原文件备份在 `cordis.patch.yml.bak-empty-array`），1.3.3 起自动处理。
+2. **平铺 tar.gz**：包里直接是 `package.json + lib/` 时，安装器把 `lib/` 当包根，
+   报"没找到带 name 的 package.json"。1.3.3 起两种打包方式都支持。
+
+**还需要你跑一次 sudo**（工具链 + Samba + 管理器 1.3.3 一起搞定）：
+
+```bash
+sudo bash ~/share/fix-vm-sudo.sh
+```
+
+跑完 Windows 上 `cmd /c dir \\172.22.148.197\share` 就能用了。

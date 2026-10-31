@@ -20,6 +20,7 @@
 """
 import json
 import os
+import re
 import shutil
 import tarfile
 import tempfile
@@ -259,6 +260,11 @@ def append_block(inst, entry):
     text = _read(path)
     if (MARKER % entry['id']) in text:
         return False
+    # 新建 profile 的 patch 文件里有一个空的顶层数组占位符 `[]`。往它后面追加
+    # `- insert:` 会让整份 YAML 变成两个互相冲突的文档，dsh 启动时报
+    # "end of the stream or a document separator is expected"（实测踩过）。
+    # 所以见到裸 `[]` 先删掉它，再追加我们自己的数组元素。
+    text = re.sub(r'(?m)^[ \t]*\[\][ \t]*$', '', text, count=1)
     if text and not text.endswith('\n'):
         text += '\n'
     _write(path, text + '\n' + render_block(entry))
@@ -388,7 +394,12 @@ def install(inst, entry, log=print):
         with tarfile.open(tarball, 'r:*') as tar:
             tar.extractall(work)
         roots = [d for d in os.listdir(work) if os.path.isdir(os.path.join(work, d))]
-        root = os.path.join(work, roots[0]) if roots else work
+        # 顶层目录里本身带 package.json 才算"包根"；平铺打包（包里直接是
+        # package.json + lib/）时 roots 里只有 lib 这类子目录，不能拿它当根，
+        # 否则会报"包里没找到包 package.json"（实测踩过）。
+        pkg_roots = [d for d in roots
+                     if os.path.isfile(os.path.join(work, d, 'package.json'))]
+        root = os.path.join(work, pkg_roots[0]) if pkg_roots else work
         picked = pick_package(root, entry['id'], entry.get('subdir') or '')
         if not picked:
             return False, '包里没找到 package.json（仓库结构变了？）'
@@ -424,7 +435,11 @@ def install_from_tarball(inst, tarball, log=print, inject=None):
         with tarfile.open(tarball, 'r:*') as tar:
             tar.extractall(work)
         roots = [d for d in os.listdir(work) if os.path.isdir(os.path.join(work, d))]
-        root = os.path.join(work, roots[0]) if roots else work
+        # 同上：只有自带 package.json 的顶层目录才算包根，
+        # 平铺包（package.json + lib/ 直接在根）要直接以解包根为根。
+        pkg_roots = [d for d in roots
+                     if os.path.isfile(os.path.join(work, d, 'package.json'))]
+        root = os.path.join(work, pkg_roots[0]) if pkg_roots else work
         picked = pick_package(root, '')
         if not picked or not picked['name']:
             return False, '这个包里没找到带 name 的 package.json'
