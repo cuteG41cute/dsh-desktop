@@ -667,3 +667,6 @@ scrollbar.vertical { margin: 2px 0; }
 
 /* 设置页信息行（设计稿 .info-list>div：min-height 40、底部 1px 内边框） */
 .info-row { min-height: 38px; border-bottom: 1px solid $(inner-border); }
+
+/* 指标行：设计稿 .metric-row 高 45（padding-top 13 + 内容 32） */
+.metric-row { min-height: 44px; }
