@@ -860,7 +860,8 @@ class ManagerWindow(Gtk.Window):
 
     def _build_dashboard(self):
         self.dash_sw = Gtk.ScrolledWindow()
-        self.dash_sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        # 布局是按设计稿 1392 宽钉死的；窗口更窄时给横向滚动条，别把右半边裁掉。
+        self.dash_sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         page.get_style_context().add_class('content')
         # 设计稿 .content{padding:25px 30px 15px} —— 用 CSS padding，盒子本身仍是满宽
@@ -1321,7 +1322,7 @@ class ManagerWindow(Gtk.Window):
     # ---- 设置页（设计稿的第二页） ----
     def _build_settings_page(self):
         self.settings_sw = Gtk.ScrolledWindow()
-        self.settings_sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.settings_sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         page.get_style_context().add_class('content')
         # 设计稿 .content{padding:25px 30px 15px} —— 用 CSS padding，盒子本身仍是满宽
