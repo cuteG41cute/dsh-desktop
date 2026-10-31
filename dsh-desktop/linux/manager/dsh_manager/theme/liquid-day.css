@@ -744,3 +744,24 @@ button:disabled, .btn:disabled, .side-link:disabled, .quick-action:disabled {
 
 /* 窄屏侧栏内边距（DESIGN_SPEC §2.5：≤1280px 时左右 12px） */
 .narrow .sidebar { padding-left: 12px; padding-right: 12px; }
+
+/* 图标按钮：设计稿 .icon-btn{background:transparent;border:0}——
+   GTK 默认主题会给按钮画底色/边框，必须显式清掉 */
+.icon-btn, .icon-btn.small {
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.icon-btn:hover { background-color: rgba(255,255,255,.7); }
+
+/* 运行指示：5px 成功色圆点 + 成功色文字（设计稿 .live-indicator） */
+.live-indicator { color: #188d78; }
+.live-dot { background-color: #188d78; border-radius: 3px; }
+.live-text { color: #188d78; font-size: 8.5px; }
+.live-text.live-stopped, .live-indicator.live-stopped { color: #637b92; }
+.live-dot.live-stopped { background-color: #637b92; }
+
+/* 计数胶囊：设计稿 .count-pill{padding:1px 6px;border-radius:10px} */
+.count-pill { padding: 1px 6px; border-radius: 10px; min-height: 12px; font-size: 10px; }

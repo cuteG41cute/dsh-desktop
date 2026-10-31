@@ -518,6 +518,19 @@ class ManagerWindow(Gtk.Window):
         box.set_visible_window(True)
         for cls in classes:
             box.get_style_context().add_class(cls)
+        width = kwargs.get('width')
+        height = kwargs.get('height')
+        if not text and width and height and not kwargs.get('icon'):
+            # 纯色块（状态点/圆点）：不能塞空 label —— 它的自然高度会把盒子撑成竖条
+            lbl = Gtk.Label(label='')
+            lbl.set_visible(False)
+            box.label = lbl
+            box.image = None
+            box.set_size_request(width, height)
+            box.set_valign(kwargs.get('valign') or Gtk.Align.CENTER)
+            if kwargs.get('hexpand'):
+                box.set_hexpand(True)
+            return box
         if kwargs.get('icon'):
             img = self._icon(kwargs['icon'], kwargs.get('role', 'accent'),
                              kwargs.get('icon_size', 17))
@@ -532,12 +545,10 @@ class ManagerWindow(Gtk.Window):
             box.add(lbl)
         box.image = img
         box.label = lbl
-        width = kwargs.get('width')
-        height = kwargs.get('height')
         if width and height:
             box.set_size_request(width, height)
-        if kwargs.get('valign') is not None:
-            box.set_valign(kwargs['valign'])
+        # 不指定时默认居中：否则 EventBox 会填满父容器高度（计数胶囊被拉成竖条）
+        box.set_valign(kwargs.get('valign') or Gtk.Align.CENTER)
         if kwargs.get('hexpand'):
             box.set_hexpand(True)
         return box
@@ -962,10 +973,11 @@ class ManagerWindow(Gtk.Window):
         self.btn_open = self._button('open', '打开窗口', 'btn', 'btn-primary', icon='↗')
         actions.pack_start(self.btn_open, False, False, 0)
         more = Gtk.MenuButton()
+        more.set_valign(Gtk.Align.CENTER)
         more.get_style_context().add_class('btn')
         more.get_style_context().add_class('btn-secondary')
         more.get_style_context().add_class('btn-icon')
-        more.add(self._label('⋯', 'glyph'))
+        more.add(self._icon('more', 'muted', 16))   # 设计稿 i-more（三个实心圆点）
         more.set_tooltip_text('更多操作')
         menu = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         menu.set_border_width(6)
@@ -1040,7 +1052,13 @@ class ManagerWindow(Gtk.Window):
         self.control_card = control
         ctop = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         ctop.pack_start(self._label('快捷控制', 'card-label'), False, False, 0)
-        self.chip_live = self._chip('● 服务正常', 'live-indicator', valign=Gtk.Align.CENTER)
+        live = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+        live.get_style_context().add_class('live-indicator')
+        live.pack_start(self._chip('', 'live-dot', width=5, height=5,
+                                   valign=Gtk.Align.CENTER), False, False, 0)
+        self.lbl_live = self._label('服务正常', 'live-text')
+        live.pack_start(self.lbl_live, False, False, 0)
+        self.chip_live = live
         ctop.pack_end(self.chip_live, False, False, 0)
         control.pack_start(ctop, False, False, 0)
         control.pack_start(self._control_row('服务', '后台进程与连接',
@@ -1303,7 +1321,12 @@ class ManagerWindow(Gtk.Window):
         self.lbl_metric_port.set_text(str(inst.port))
         self.lbl_metric_status.set_text(STATUS_TEXT.get(status, status or '—'))
         running = bool(pid)
-        self.chip_live.label.set_text('● 服务正常' if running else '● 未运行')
+        self.lbl_live.set_text('服务正常' if running else '未运行')
+        ctx = self.lbl_live.get_style_context()
+        if running:
+            ctx.remove_class('live-stopped')
+        else:
+            ctx.add_class('live-stopped')
 
     def _tick(self):
         if self.busy:
