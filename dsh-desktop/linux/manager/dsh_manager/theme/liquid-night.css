@@ -599,7 +599,7 @@ scrollbar.vertical { margin: 2px 0; }
  * ========================================================================== */
 .instance-item { min-height: 43px; padding: 8px 10px; }
 .quick-action { min-height: 54px; padding: 13px; }
-.side-link { min-height: 38px; padding: 0 11px; font-size: 11.5px; }
+.side-link { min-height: 40px; padding: 0 11px; font-size: 11.5px; }
 .new-instance {
   min-height: 34px;
   padding: 1px 6px;
@@ -765,3 +765,15 @@ button:disabled, .btn:disabled, .side-link:disabled, .quick-action:disabled {
 
 /* 计数胶囊：设计稿 .count-pill{padding:1px 6px;border-radius:10px} */
 .count-pill { padding: 1px 6px; border-radius: 10px; min-height: 12px; font-size: 10px; }
+
+/* 侧栏链接：设计稿 .side-link 是无边框的透明按钮（GTK 默认按钮会画 1px 边框） */
+.side-link { border: 0; border-image: none; box-shadow: none; background-image: none; }
+.side-link.selected, .side-link:selected { border: 0; }
+
+/* 状态徽标里的圆点：颜色随徽标状态（设计稿 .status-badge i{background:currentColor}） */
+.badge-dot { background-color: #91aac2; border-radius: 3px; }
+.badge.running .badge-dot { background-color: #62d7bd; }
+.badge.needs-repair .badge-dot { background-color: #ef8c9a; }
+.badge-text { font-size: 9px; font-weight: bold; }
+.badge.running .badge-text { color: #62d7bd; }
+.badge.needs-repair .badge-text { color: #ef8c9a; }

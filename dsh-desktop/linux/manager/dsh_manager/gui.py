@@ -507,6 +507,13 @@ class ManagerWindow(Gtk.Window):
                 except Exception:
                     pass
 
+    # GTK3 的 EventBox 不把 CSS padding 算进尺寸（实测 allocation 完全一样），
+    # 所以药丸的内边距必须做成内部 label 的 margin。数值取自 DESIGN_SPEC。
+    CHIP_PAD = {
+        'badge': (4, 9), 'subtle-tag': (3, 7), 'count-pill': (0, 6),
+        'log-count': (1, 6), 'version-pill': (3, 7), 'live-text': (0, 0),
+    }
+
     def _chip(self, text='', *classes, **kwargs):
         """带背景的小方块 / 圆点 / 徽标。
 
@@ -545,6 +552,16 @@ class ManagerWindow(Gtk.Window):
             box.add(lbl)
         box.image = img
         box.label = lbl
+        pad = None
+        for cls in classes:
+            if cls in self.CHIP_PAD:
+                pad = self.CHIP_PAD[cls]
+                break
+        if pad and not kwargs.get('width'):
+            lbl.set_margin_top(pad[0])
+            lbl.set_margin_bottom(pad[0])
+            lbl.set_margin_start(pad[1])
+            lbl.set_margin_end(pad[1])
         if width and height:
             box.set_size_request(width, height)
         # 不指定时默认居中：否则 EventBox 会填满父容器高度（计数胶囊被拉成竖条）
@@ -800,8 +817,8 @@ class ManagerWindow(Gtk.Window):
         if side is not None:
             side.set_size_request(220 if narrow else 248, -1)
 
-        # ② 快捷功能 2 列 / 4 列
-        self._rebuild_quick_grid(2 if narrow else 4)
+        # ② 快捷功能固定四列（用户要求一排四个；设计稿 §2.5 的窄屏两列不再采用）
+        self._rebuild_quick_grid(4)
 
         # ③ 概览右列：宽屏 402；窄屏按 1.35:1 折算，下界 330
         control = getattr(self, 'control_card', None)
@@ -960,7 +977,24 @@ class ManagerWindow(Gtk.Window):
         title_line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self.lbl_title = self._label('选择左侧的实例', 'page-title')
         title_line.pack_start(self.lbl_title, False, False, 0)
-        self.chip_badge = self._chip('—', 'badge', valign=Gtk.Align.CENTER)
+        # 设计稿 .status-badge = 5px 圆点 + 5px 间距 + 文字；圆点颜色随 running/stopped
+        badge = Gtk.EventBox()
+        badge.set_visible_window(True)
+        badge.get_style_context().add_class('badge')
+        badge.set_valign(Gtk.Align.CENTER)
+        badge_inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+        # EventBox 的 CSS padding 不算尺寸，内边距只能落在子控件的 margin 上
+        badge_inner.set_margin_top(4)
+        badge_inner.set_margin_bottom(4)
+        badge_inner.set_margin_start(9)
+        badge_inner.set_margin_end(9)
+        badge_inner.pack_start(self._chip('', 'badge-dot', width=5, height=5,
+                                          valign=Gtk.Align.CENTER), False, False, 0)
+        self.lbl_badge = self._label('—', 'badge-text')
+        badge_inner.pack_start(self.lbl_badge, False, False, 0)
+        badge.add(badge_inner)
+        badge.label = self.lbl_badge
+        self.chip_badge = badge
         title_line.pack_start(self.chip_badge, False, False, 0)
         text.pack_start(title_line, False, False, 0)
         self.lbl_page_desc = self._label('管理服务、窗口与扩展，让实例始终保持最佳状态。',
