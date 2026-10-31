@@ -129,6 +129,28 @@ async function main() {
       })()`);
       await sleep(300);
     }
+    // GTK3 没有 backdrop-filter，Chromium 在无头模式下对它的实现也不稳
+    // （实测 crystal-night 会出现一整块发白的"磨砂"面板，把卡片全冲掉）。
+    // 比对基准要关掉它，两边才是同一个光照模型。
+    if (process.env.DSH_DESIGN_NO_BACKDROP !== '0') {
+      await cdp.eval(`(() => {
+        const st = document.createElement('style');
+        st.textContent = '*{backdrop-filter:none !important;-webkit-backdrop-filter:none !important}';
+        document.head.appendChild(st);
+        return 1;
+      })()`);
+      await sleep(200);
+    }
+    // 设计稿 body 上有 `transition: background .35s`：切主题后立刻截图会拍到
+    // **过渡中间态**（backgroundImage 被浏览器表示成两个颜色之间的渐变，
+    // 于是卡片变成"上白下深"的一整块），必须先把 transition 全部关掉。
+    await cdp.eval(`(() => {
+      const st = document.createElement('style');
+      st.textContent = '*{transition:none !important;animation:none !important}';
+      document.head.appendChild(st);
+      return 1;
+    })()`);
+    await sleep(200);
     // 等字体就绪，否则第一张会和后面几张字重不一致
     await cdp.eval('document.fonts && document.fonts.ready ? document.fonts.ready.then(() => 1) : 1');
 

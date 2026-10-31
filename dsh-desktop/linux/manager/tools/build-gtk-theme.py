@@ -43,6 +43,24 @@ COLOR_TOKENS = ['bg', 'bg2', 'app', 'sidebar', 'topbar', 'card', 'card-solid',
                 'text', 'muted', 'subtle', 'border', 'inner-border', 'accent',
                 'accent2', 'accent-soft', 'on-accent', 'hover', 'success', 'danger']
 
+# ---------------------------------------------------------------------------
+# 主题专属"皮肤"：设计稿里除了色板，还有几条按主题写死的装饰规则。
+# 原来 GTK 侧一律纯色，于是 crystal（水晶）主题差得最远 —— 它的卡片是
+# `linear-gradient(135deg, rgba(255,255,255,.62), var(--card))` 加内嵌高光。
+# 这里按主题追加到生成文件末尾（后写覆盖前面），色值仍走令牌替换。
+THEME_SKINS = {
+    'crystal': [
+        ('.card, .quick-action', [
+            # 设计稿用的是 background 简写（渐变直接盖掉底色）；GTK 里两者同时存在时
+            # 渐变会**叠在** background-color 上，半透明色被算两次 → 卡片明显偏亮。
+            # 所以必须先把底色清掉。
+            'background-color: transparent;',
+            'background-image: linear-gradient(135deg, rgba(255, 255, 255, .62), $(card));',
+            'box-shadow: inset 2px 2px 0 rgba(255, 255, 255, .35), $(card-shadow);',
+        ]),
+    ],
+}
+
 
 def render(template, key, values, all_values=None):
     css = HEADER.format(theme=values.get('label', key), mode=values.get('hint', key))
@@ -79,6 +97,18 @@ def render(template, key, values, all_values=None):
             continue
         swatches.append('.swatch-%s { background-color: %s; }'
                         % (name[:-4], values_day.get('accent', '#888888')))
+    # 主题专属皮肤（最后追加，覆盖前面的纯色规则）
+    skin = THEME_SKINS.get(key.split('-')[0])
+    if skin:
+        extra = ['', '/* 主题专属皮肤：对应 design/styles.css 里 body[data-theme="%s"] 的规则 */'
+                 % key.split('-')[0]]
+        for sel, decls in skin:
+            extra.append('%s {' % sel)
+            for decl in decls:
+                extra.append('  ' + decl.replace('$(card)', values['card'])
+                                        .replace('$(card-shadow)', values['card-shadow']))
+            extra.append('}')
+        body = body.rstrip('\n') + '\n' + '\n'.join(extra) + '\n'
     return css + '\n'.join(palette) + '\n\n' + '\n'.join(swatches) + '\n\n' + body
 
 

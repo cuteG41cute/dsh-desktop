@@ -70,10 +70,14 @@ def walk(widget, out, root, depth=0):
             "depth": depth,
         }
         try:
-            font = widget.get_style_context().get_property("font")
-            if font is not None and font.get_size() > 0:
-                rec["font_px"] = round(font.get_size() / 1024.0 * 96.0 / 72.0, 2)
-                rec["weight"] = int(font.get_weight())
+            # style_context.get_property('font') 在 GTK3 里经常取不到，
+            # 改用 Pango 上下文：字号单位是 1/PANGO_SCALE pt，换算成 px 才能和设计稿比。
+            ctx = widget.create_pango_context()
+            desc = ctx.get_font_description()
+            pt = desc.get_size() / 1024.0
+            rec["font_px"] = round(pt * 96.0 / 72.0, 2)
+            rec["weight"] = int(desc.get_weight() or 0)
+            rec["family"] = desc.get_family() or ""
         except Exception:
             pass
         if isinstance(widget, Gtk.Label):

@@ -18,8 +18,12 @@ const MANAGER = join(HERE, '..');
 const DESIGN = join(MANAGER, 'design', 'index.html');
 const OUT = join(MANAGER, 'dsh_manager', 'backgrounds');
 const THEMES = ['frost', 'liquid', 'crystal', 'flat', 'alpine', 'dawn', 'sea'];
-const WIDTH = 1600;
-const HEIGHT = 1000;
+// 背景图尺寸 = 设计稿画布对应的窗口内容尺寸（1440×900 画布 − 四周 24 留白 = 1392×852）。
+// 和窗口一样大时 background-size:cover 就是 1:1，光斑/水晶的位置才和设计稿对得上；
+// 之前用 1600×1000，缩放后 crystal 主题的亮块会错位到卡片外面去。
+const SIZE = (process.env.DSH_BG_SIZE || '1392x852').split('x').map(Number);
+const WIDTH = SIZE[0];
+const HEIGHT = SIZE[1];
 
 const CANDIDATES = [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
@@ -66,6 +70,12 @@ class Cdp {
     const r = await this.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
     writeFileSync(path, Buffer.from(r.data, 'base64'));
   }
+  async shotClip(path, clip) {
+    const r = await this.send('Page.captureScreenshot', {
+      format: 'png', captureBeyondViewport: false, clip: { ...clip, scale: 1 },
+    });
+    writeFileSync(path, Buffer.from(r.data, 'base64'));
+  }
 }
 
 async function freePort() {
@@ -101,7 +111,7 @@ async function main() {
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');
     await cdp.send('Emulation.setDeviceMetricsOverride',
-      { width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: false });
+      { width: WIDTH + 48, height: HEIGHT + 48, deviceScaleFactor: 1, mobile: false });
     await cdp.send('Page.navigate', { url: pathToFileURL(DESIGN).href });
     await sleep(1200);
     for (const theme of THEMES) {
@@ -111,13 +121,15 @@ async function main() {
           document.body.dataset.mode = ${JSON.stringify(mode)};
           const shell = document.querySelector('.app-shell');
           if (shell) shell.style.display = 'none';
-          document.body.style.padding = '0';
+          // 故意保留 body 的 24px 内边距：.scene 是 position:fixed（相对视口），
+          // 设计稿里它铺满 1440×900，窗口内容只看到其中 (24,24)-(1416,876) 那块。
+          // 这里按同样的视口渲染再裁同样的窗格，光斑/水晶的位置才和设计稿一致。
           document.documentElement.style.overflow = 'hidden';
           return 1;
         })()`);
         await sleep(320);
         const file = join(OUT, `${theme}-${mode}.png`);
-        await cdp.shot(file);
+        await cdp.shotClip(file, { x: 24, y: 24, width: WIDTH, height: HEIGHT });
         done += 1;
         console.log('  ' + theme + ' / ' + mode + ' → ' + file);
       }
