@@ -78,6 +78,11 @@ def render(template, key, values, all_values=None):
     if leftover:
         raise SystemExit('FAIL: %s 模板里还有没替换的占位符：%s'
                          % (key, ['$(' + piece.split(')')[0] + ')' for piece in leftover[:5]]))
+    # 空值检查：`color: ;` 这种会让 GTK 丢弃整份样式表（界面直接变裸奔），
+    # 而且看不出错在哪。宁可构建期就失败。
+    empty = re.findall(r'[\w-]+\s*:\s*;', body)
+    if empty:
+        raise SystemExit('FAIL: %s 生成结果里有空值声明 %s（检查模板或替换）' % (key, empty[:5]))
     # GTK3 的 font-weight 只有 normal/bold 两档（数值权重取决于字体家族，Pango 会自己取整）；
     # 设计稿里的 550/600/650/680/750 统一归到 bold / normal，避免解析器对数值形态挑剔。
     def _weight(match):

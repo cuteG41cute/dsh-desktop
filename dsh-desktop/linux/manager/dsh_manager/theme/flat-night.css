@@ -40,6 +40,31 @@
 
 
 
+/* ---------- 系统主题重置 ----------
+ * GTK 的默认主题会给 button 画底色/渐变/内阴影；设计稿只有 hover 与选中态才有底色。
+ * 不重置的话，暗色主题整片偏亮（实测 alpine-night 侧栏 +14 色阶）。 */
+button {
+  background-image: none;
+  border-image: none;
+  box-shadow: none;
+  text-shadow: none;
+}
+.side-link,
+.new-instance,
+.instance-item,
+.text-btn,
+.log-view,
+.row-flat {
+  background-color: transparent;
+  box-shadow: none;
+}
+.side-link.selected,
+.side-link:selected,
+.instance-item:selected,
+.instance-item.active {
+  background-color: #30313a;
+}
+
 /* ---------- 动效 ----------
  * GTK3 的 transition 只支持少数属性（颜色/背景/边框/阴影），但它们正是设计稿里
  * hover、选中、切换那些观感的来源。transform / backdrop-filter 这类 GTK 不支持，
@@ -636,7 +661,9 @@ scrollbar.vertical { margin: 2px 0; }
 .log-level { font-size: 7.5px; padding: 2px 4px; }
 
 /* 卡片与分区节奏：数值取自 design/styles.css */
-.instance-card, .control-card { min-height: 203px; }
+/* 205 是设计稿的 border-box 高度：GTK 的 min-height 只算内容盒，
+   所以要减掉 padding 18*2 与 border 1*2 → 167 */
+.instance-card, .control-card { min-height: 167px; }
 .quick-section { margin-top: 21px; }
 .section-heading { margin-bottom: 11px; }
 .log-card { margin-top: 20px; }
@@ -649,3 +676,14 @@ scrollbar.vertical { margin: 2px 0; }
 
 /* 顶栏分隔线（设计稿 .top-divider：1×20 的 inner-border） */
 .top-divider { background-color: #383a43; min-width: 1px; min-height: 20px; }
+/* 内容区 padding（设计稿 .content：25px 30px 15px） */
+.content { padding: 25px 30px 15px; }
+/* 页脚：容器负责整行与留白，文字只负责字号/颜色（设计稿 .page-footer） */
+.page-footer { padding: 12px 2px 0; }
+.footer-text { color: #71747f; font-size: 8px; }
+.subtle-tag { min-height: 11px; }
+
+/* 盒模型收口（GTK 的 min-height 只算内容盒） */
+.runtime { min-height: 28px; padding: 13px 10px; }
+.log-card { padding: 0; }
+.side-section-title { padding: 0 8px; }

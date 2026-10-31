@@ -1,0 +1,627 @@
+{
+ "tol": 2.0,
+ "worst": 633.3,
+ "elements": [
+  {
+   "element": "sidebar",
+   "class": "sidebar",
+   "design": [
+    1,
+    1,
+    248,
+    850
+   ],
+   "gtk": [
+    1,
+    1,
+    248,
+    850
+   ],
+   "delta": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "max_abs": 0
+  },
+  {
+   "element": "topbar",
+   "class": "topbar",
+   "design": [
+    249,
+    1,
+    1142,
+    66
+   ],
+   "gtk": [
+    249,
+    1,
+    1142,
+    67
+   ],
+   "delta": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "max_abs": 1
+  },
+  {
+   "element": "content",
+   "class": "content",
+   "design": [
+    249,
+    67,
+    1142,
+    784
+   ],
+   "gtk": [
+    249,
+    68,
+    1142,
+    783
+   ],
+   "delta": [
+    0,
+    1,
+    0,
+    -1
+   ],
+   "max_abs": 1
+  },
+  {
+   "element": "side-title",
+   "class": "side-section-title",
+   "design": [
+    17,
+    93,
+    215,
+    32
+   ],
+   "gtk": [
+    17,
+    95,
+    215,
+    32
+   ],
+   "delta": [
+    0,
+    2,
+    0,
+    0
+   ],
+   "max_abs": 2
+  },
+  {
+   "element": "instance-list",
+   "class": "instance-list",
+   "design": [
+    17,
+    132,
+    215,
+    193
+   ],
+   "gtk": [
+    17,
+    134,
+    215,
+    193
+   ],
+   "delta": [
+    0,
+    2,
+    0,
+    0
+   ],
+   "max_abs": 2
+  },
+  {
+   "element": "instance-item",
+   "class": "instance-item",
+   "design": [
+    17,
+    132,
+    215,
+    61
+   ],
+   "gtk": [
+    17,
+    134,
+    215,
+    61
+   ],
+   "delta": [
+    0,
+    2,
+    0,
+    0
+   ],
+   "max_abs": 2
+  },
+  {
+   "element": "avatar",
+   "class": "instance-avatar",
+   "design": [
+    28,
+    145.5,
+    34,
+    34
+   ],
+   "gtk": [
+    28,
+    147,
+    34,
+    34
+   ],
+   "delta": [
+    0,
+    1.5,
+    0,
+    0
+   ],
+   "max_abs": 1.5
+  },
+  {
+   "element": "new-instance",
+   "class": "new-instance",
+   "design": [
+    21,
+    338,
+    207,
+    38
+   ],
+   "gtk": [
+    21,
+    340,
+    207,
+    38
+   ],
+   "delta": [
+    0,
+    2,
+    0,
+    0
+   ],
+   "max_abs": 2
+  },
+  {
+   "element": "side-caption",
+   "class": "side-caption",
+   "design": [
+    17,
+    618,
+    215,
+    22
+   ],
+   "gtk": [
+    17,
+    615,
+    215,
+    23
+   ],
+   "delta": [
+    0,
+    -3,
+    0,
+    1
+   ],
+   "max_abs": 3
+  },
+  {
+   "element": "side-link",
+   "class": "side-link",
+   "design": [
+    17,
+    640,
+    215,
+    40
+   ],
+   "gtk": [
+    17,
+    638,
+    215,
+    40
+   ],
+   "delta": [
+    0,
+    -2,
+    0,
+    0
+   ],
+   "max_abs": 2
+  },
+  {
+   "element": "runtime",
+   "class": "runtime",
+   "design": [
+    21,
+    777,
+    207,
+    56
+   ],
+   "gtk": [
+    21,
+    775,
+    207,
+    58
+   ],
+   "delta": [
+    0,
+    -2,
+    0,
+    2
+   ],
+   "max_abs": 2
+  },
+  {
+   "element": "eyebrow",
+   "class": "eyebrow",
+   "design": [
+    279,
+    92,
+    285.7,
+    11
+   ],
+   "gtk": [
+    279,
+    93,
+    919,
+    13
+   ],
+   "delta": [
+    0,
+    1,
+    633.3,
+    2
+   ],
+   "max_abs": 633.3
+  },
+  {
+   "element": "h1",
+   "class": "page-title",
+   "design": [
+    279,
+    109,
+    216.7,
+    31.25
+   ],
+   "gtk": [
+    279,
+    111,
+    248,
+    37
+   ],
+   "delta": [
+    0,
+    2,
+    31.3,
+    5.8
+   ],
+   "max_abs": 31.3
+  },
+  {
+   "element": "btn-primary",
+   "class": "btn-primary",
+   "design": [
+    1216,
+    112.63,
+    99,
+    38
+   ],
+   "gtk": [
+    1216,
+    112,
+    99,
+    38
+   ],
+   "delta": [
+    0,
+    -0.6,
+    0,
+    0
+   ],
+   "max_abs": 0.6
+  },
+  {
+   "element": "instance-card",
+   "class": "instance-card",
+   "design": [
+    279,
+    184.25,
+    663.73,
+    205
+   ],
+   "gtk": [
+    279,
+    188,
+    664,
+    205
+   ],
+   "delta": [
+    0,
+    3.8,
+    0.3,
+    0
+   ],
+   "max_abs": 3.8
+  },
+  {
+   "element": "control-card",
+   "class": "control-card",
+   "design": [
+    958.73,
+    184.25,
+    402.25,
+    205
+   ],
+   "gtk": [
+    959,
+    188,
+    402,
+    205
+   ],
+   "delta": [
+    0.3,
+    3.8,
+    -0.2,
+    0
+   ],
+   "max_abs": 3.8
+  },
+  {
+   "element": "card",
+   "class": "card",
+   "design": [
+    279,
+    184.25,
+    663.73,
+    205
+   ],
+   "gtk": [
+    279,
+    188,
+    664,
+    205
+   ],
+   "delta": [
+    0,
+    3.8,
+    0.3,
+    0
+   ],
+   "max_abs": 3.8
+  },
+  {
+   "element": "card-label",
+   "class": "card-label",
+   "design": [
+    300,
+    204.25,
+    44,
+    15
+   ],
+   "gtk": [
+    300,
+    207,
+    44,
+    17
+   ],
+   "delta": [
+    0,
+    2.8,
+    0,
+    2
+   ],
+   "max_abs": 2.8
+  },
+  {
+   "element": "subtle-tag",
+   "class": "subtle-tag",
+   "design": [
+    875.73,
+    203.25,
+    46,
+    17
+   ],
+   "gtk": [
+    890,
+    209,
+    32,
+    13
+   ],
+   "delta": [
+    14.3,
+    5.8,
+    -14,
+    -4
+   ],
+   "max_abs": 14.3
+  },
+  {
+   "element": "large-avatar",
+   "class": "large-avatar",
+   "design": [
+    300,
+    242.25,
+    48,
+    48
+   ],
+   "gtk": [
+    300,
+    245,
+    48,
+    48
+   ],
+   "delta": [
+    0,
+    2.8,
+    0,
+    0
+   ],
+   "max_abs": 2.8
+  },
+  {
+   "element": "metric-row",
+   "class": "metric-row",
+   "design": [
+    300,
+    313.25,
+    621.73,
+    45
+   ],
+   "gtk": [
+    300,
+    330,
+    622,
+    34
+   ],
+   "delta": [
+    0,
+    16.8,
+    0.3,
+    -11
+   ],
+   "max_abs": 16.8
+  },
+  {
+   "element": "quick-action",
+   "class": "quick-action",
+   "design": [
+    279,
+    437.25,
+    262.25,
+    82
+   ],
+   "gtk": [
+    279,
+    439,
+    263,
+    82
+   ],
+   "delta": [
+    0,
+    1.8,
+    0.8,
+    0
+   ],
+   "max_abs": 1.8
+  },
+  {
+   "element": "quick-icon",
+   "class": "quick-icon",
+   "design": [
+    293,
+    461.25,
+    34,
+    34
+   ],
+   "gtk": [
+    293,
+    463,
+    34,
+    34
+   ],
+   "delta": [
+    0,
+    1.8,
+    0,
+    0
+   ],
+   "max_abs": 1.8
+  },
+  {
+   "element": "log-card",
+   "class": "log-card",
+   "design": [
+    279,
+    539.25,
+    1082,
+    144
+   ],
+   "gtk": [
+    279,
+    541,
+    1082,
+    168
+   ],
+   "delta": [
+    0,
+    1.8,
+    0,
+    24
+   ],
+   "max_abs": 24
+  },
+  {
+   "element": "log-header",
+   "class": "log-header",
+   "design": [
+    280,
+    540.25,
+    1080,
+    45
+   ],
+   "gtk": [
+    280,
+    562,
+    1080,
+    45
+   ],
+   "delta": [
+    0,
+    21.8,
+    0,
+    0
+   ],
+   "max_abs": 21.8
+  },
+  {
+   "element": "log-line",
+   "class": "log-line",
+   "design": [
+    298,
+    592.25,
+    1044,
+    27
+   ],
+   "gtk": [
+    358,
+    615,
+    1002,
+    27
+   ],
+   "delta": [
+    60,
+    22.8,
+    -42,
+    0
+   ],
+   "max_abs": 60
+  },
+  {
+   "element": "page-footer",
+   "class": "page-footer",
+   "design": [
+    279,
+    683.25,
+    1082,
+    23
+   ],
+   "gtk": [
+    279,
+    709,
+    1082,
+    25
+   ],
+   "delta": [
+    0,
+    25.8,
+    0,
+    2
+   ],
+   "max_abs": 25.8
+  }
+ ]
+}

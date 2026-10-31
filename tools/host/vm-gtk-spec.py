@@ -41,6 +41,9 @@ WANT = {
     "section-heading", "quick-grid", "quick-action", "quick-icon", "log-card",
     "log-header", "log-line", "log-title", "page-footer", "instance-name", "instance-sub",
     "settings-layout", "settings-card", "instance-copy",
+    "page-title", "page-desc", "section-title", "section-sub", "quick-title", "quick-sub",
+    "metric-label", "metric-value", "log-time", "log-level", "control-title", "control-sub",
+    "brand-title", "brand-sub", "log-empty", "top-divider", "mode-toggle", "theme-trigger",
 }
 
 

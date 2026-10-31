@@ -666,9 +666,7 @@ class ManagerWindow(Gtk.Window):
         self.chip_count = self._chip('0', 'count-pill')
         head.pack_start(self.chip_count, False, False, 0)
         head.set_size_request(-1, 32)
-        head.set_margin_start(8)
-        head.set_margin_end(8)
-        head.set_margin_bottom(7)
+        head.set_margin_bottom(7)   # 左右留白交给 CSS 的 padding（设计稿 .side-section-title）
         btn_add = self._button('new', '', 'icon-btn', 'small', icon='＋')
         btn_add.set_tooltip_text('新建实例')
         head.pack_end(btn_add, False, False, 0)
@@ -865,11 +863,7 @@ class ManagerWindow(Gtk.Window):
         self.dash_sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         page.get_style_context().add_class('content')
-        # 设计稿 .content{padding:25px 30px 15px}
-        page.set_margin_top(25)
-        page.set_margin_bottom(15)
-        page.set_margin_start(30)
-        page.set_margin_end(30)
+        # 设计稿 .content{padding:25px 30px 15px} —— 用 CSS padding，盒子本身仍是满宽
         self.dash_sw.add(page)
 
         heading = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
@@ -923,7 +917,7 @@ class ManagerWindow(Gtk.Window):
         info_card.get_style_context().add_class('card')
         info_card.get_style_context().add_class('instance-card')
         info_card.set_hexpand(True)
-        info_card.set_size_request(-1, 205)   # 设计稿 .instance-card 205
+
         top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         top.pack_start(self._label('实例信息', 'card-label'), False, False, 0)
         top.pack_end(self._chip('本地实例', 'subtle-tag', valign=Gtk.Align.CENTER),
@@ -953,6 +947,7 @@ class ManagerWindow(Gtk.Window):
         sep.set_margin_top(18)
         info_card.pack_start(sep, False, False, 0)
         metrics = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        metrics.get_style_context().add_class('metric-row')
         metrics.set_margin_top(13)
         self.lbl_metric_pid = self._metric(metrics, '进程 PID', '—', first=True)
         metrics.pack_start(self._vsep(), False, False, 0)
@@ -964,7 +959,7 @@ class ManagerWindow(Gtk.Window):
         control = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         control.get_style_context().add_class('card')
         control.get_style_context().add_class('control-card')
-        control.set_size_request(402, 205)   # 设计稿 .control-card 402.25 x 205
+        control.set_size_request(402, -1)   # 高度交给 CSS（205 含 padding）
         ctop = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         ctop.pack_start(self._label('快捷控制', 'card-label'), False, False, 0)
         self.chip_live = self._chip('● 服务正常', 'live-indicator', valign=Gtk.Align.CENTER)
@@ -1004,7 +999,8 @@ class ManagerWindow(Gtk.Window):
 
         log_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         log_card.get_style_context().add_class('card')
-        log_card.set_margin_top(18)
+        log_card.get_style_context().add_class('log-card')   # .log-card{padding:0}
+        log_card.set_margin_top(20)
         lhead = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         lhead.get_style_context().add_class('log-header')
         lhead.pack_start(self._icon('terminal', 'accent', 15), False, False, 0)
@@ -1040,10 +1036,13 @@ class ManagerWindow(Gtk.Window):
         page.pack_start(log_card, False, False, 0)
 
         footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        footer.set_margin_top(10)
-        footer.pack_start(self._label('●  所有更改已自动保存', 'page-footer'), False, False, 0)
-        self.lbl_footer_root = self._label('实例根目录 · %s' % self.manager.root, 'page-footer')
+        # 设计稿里 .page-footer 是"整行容器 + space-between"，所以样式类要挂在容器上，
+        # 而不是两个标签上（否则量出来的宽度只有文字那么宽）。
+        footer.get_style_context().add_class('page-footer')
+        footer.pack_start(self._label('●  所有更改已自动保存', 'footer-text'), False, False, 0)
+        self.lbl_footer_root = self._label('实例根目录 · %s' % self.manager.root, 'footer-text')
         footer.pack_end(self.lbl_footer_root, False, False, 0)
+        footer.set_hexpand(True)
         page.pack_start(footer, False, False, 0)
         return self.dash_sw
 
@@ -1119,6 +1118,9 @@ class ManagerWindow(Gtk.Window):
             self.instance_list.add(row)
             if keep and inst.prefix == keep:
                 target = row
+        last = self._list_rows()
+        if last:
+            last[-1].set_margin_bottom(0)
         self.instance_list.show_all()
         # ScrolledWindow 不给最小内容高就只分到 41px，列表被裁掉只剩第一行
         try:
@@ -1317,11 +1319,7 @@ class ManagerWindow(Gtk.Window):
         self.settings_sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         page.get_style_context().add_class('content')
-        # 设计稿 .content{padding:25px 30px 15px}
-        page.set_margin_top(25)
-        page.set_margin_bottom(15)
-        page.set_margin_start(30)
-        page.set_margin_end(30)
+        # 设计稿 .content{padding:25px 30px 15px} —— 用 CSS padding，盒子本身仍是满宽
         self.settings_sw.add(page)
 
         heading = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
