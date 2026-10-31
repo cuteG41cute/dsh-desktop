@@ -505,7 +505,7 @@ tooltip {
 .subtle-tag { padding: 2px 7px; }
 .badge { padding: 3px 9px; }
 .log-level { padding: 1px 5px; }
-.live-indicator { padding: 2px 7px; }
+.live-indicator { padding: 0; font-size: 8.5px; }   /* 设计稿：无内边距，只有颜色 */
 .theme-dot { border-radius: 4px; }
 
 /* 选中态：把系统主题的蓝色 :selected 盖掉，用设计稿的 hover + 内边框 */

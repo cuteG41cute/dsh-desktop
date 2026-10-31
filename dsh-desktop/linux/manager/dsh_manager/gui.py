@@ -1054,8 +1054,9 @@ class ManagerWindow(Gtk.Window):
         ctop.pack_start(self._label('快捷控制', 'card-label'), False, False, 0)
         live = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
         live.get_style_context().add_class('live-indicator')
-        live.pack_start(self._chip('', 'live-dot', width=5, height=5,
-                                   valign=Gtk.Align.CENTER), False, False, 0)
+        self.chip_live_dot = self._chip('', 'live-dot', width=5, height=5,
+                                        valign=Gtk.Align.CENTER)
+        live.pack_start(self.chip_live_dot, False, False, 0)
         self.lbl_live = self._label('服务正常', 'live-text')
         live.pack_start(self.lbl_live, False, False, 0)
         self.chip_live = live
@@ -1322,11 +1323,13 @@ class ManagerWindow(Gtk.Window):
         self.lbl_metric_status.set_text(STATUS_TEXT.get(status, status or '—'))
         running = bool(pid)
         self.lbl_live.set_text('服务正常' if running else '未运行')
-        ctx = self.lbl_live.get_style_context()
-        if running:
-            ctx.remove_class('live-stopped')
-        else:
-            ctx.add_class('live-stopped')
+        # 文字与圆点必须一起换：圆点是独立控件，只改文字会留下一个绿点
+        for widget in (self.lbl_live, self.chip_live_dot):
+            ctx = widget.get_style_context()
+            if running:
+                ctx.remove_class('live-stopped')
+            else:
+                ctx.add_class('live-stopped')
 
     def _tick(self):
         if self.busy:
