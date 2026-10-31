@@ -1,115 +1,115 @@
 {
  "crystal-night-settings": {
-  "mae": 20.709,
-  "pct16": 37.923
+  "mae": 20.705,
+  "pct16": 37.912
  },
  "crystal-night-dashboard": {
-  "mae": 19.878,
-  "pct16": 26.647
+  "mae": 18.631,
+  "pct16": 24.882
  },
  "alpine-night-dashboard": {
-  "mae": 9.048,
-  "pct16": 8.474
- },
- "liquid-night-dashboard": {
-  "mae": 8.876,
-  "pct16": 8.742
+  "mae": 8.913,
+  "pct16": 8.374
  },
  "alpine-night-settings": {
-  "mae": 8.821,
-  "pct16": 10.753
+  "mae": 8.807,
+  "pct16": 10.736
+ },
+ "liquid-night-dashboard": {
+  "mae": 8.718,
+  "pct16": 8.632
  },
  "liquid-night-settings": {
-  "mae": 8.609,
-  "pct16": 10.921
+  "mae": 8.587,
+  "pct16": 10.893
  },
  "sea-night-dashboard": {
-  "mae": 8.255,
-  "pct16": 8.451
+  "mae": 8.137,
+  "pct16": 8.345
  },
  "dawn-night-dashboard": {
-  "mae": 8.212,
-  "pct16": 8.008
+  "mae": 8.068,
+  "pct16": 7.904
  },
  "frost-night-settings": {
-  "mae": 8.034,
-  "pct16": 11.996
+  "mae": 8.006,
+  "pct16": 11.96
  },
  "sea-night-settings": {
-  "mae": 8.011,
-  "pct16": 9.712
+  "mae": 8.002,
+  "pct16": 9.704
  },
  "dawn-night-settings": {
-  "mae": 7.979,
-  "pct16": 10.38
+  "mae": 7.974,
+  "pct16": 10.357
  },
  "frost-night-dashboard": {
-  "mae": 7.391,
-  "pct16": 8.573
+  "mae": 7.224,
+  "pct16": 8.457
  },
  "flat-night-settings": {
-  "mae": 6.926,
-  "pct16": 10.246
+  "mae": 6.889,
+  "pct16": 10.196
  },
  "liquid-day-dashboard": {
-  "mae": 6.489,
-  "pct16": 16.405
+  "mae": 6.281,
+  "pct16": 16.0
  },
  "flat-night-dashboard": {
-  "mae": 6.451,
-  "pct16": 8.518
- },
- "sea-day-dashboard": {
-  "mae": 6.345,
-  "pct16": 7.488
+  "mae": 6.224,
+  "pct16": 8.387
  },
  "liquid-day-settings": {
-  "mae": 6.176,
-  "pct16": 12.211
+  "mae": 6.156,
+  "pct16": 12.189
+ },
+ "sea-day-dashboard": {
+  "mae": 6.128,
+  "pct16": 7.406
  },
  "sea-day-settings": {
-  "mae": 6.078,
-  "pct16": 7.321
- },
- "crystal-day-dashboard": {
-  "mae": 5.746,
-  "pct16": 5.976
- },
- "alpine-day-dashboard": {
-  "mae": 5.73,
-  "pct16": 6.247
+  "mae": 6.064,
+  "pct16": 7.317
  },
  "crystal-day-settings": {
-  "mae": 5.665,
-  "pct16": 6.721
+  "mae": 5.651,
+  "pct16": 6.718
  },
- "frost-day-dashboard": {
-  "mae": 5.545,
-  "pct16": 4.997
+ "crystal-day-dashboard": {
+  "mae": 5.605,
+  "pct16": 5.914
  },
- "dawn-day-dashboard": {
-  "mae": 5.534,
-  "pct16": 5.523
+ "alpine-day-dashboard": {
+  "mae": 5.531,
+  "pct16": 6.133
  },
  "alpine-day-settings": {
-  "mae": 5.446,
-  "pct16": 6.192
+  "mae": 5.432,
+  "pct16": 6.186
+ },
+ "dawn-day-dashboard": {
+  "mae": 5.389,
+  "pct16": 5.443
+ },
+ "frost-day-dashboard": {
+  "mae": 5.389,
+  "pct16": 4.916
  },
  "dawn-day-settings": {
-  "mae": 5.391,
-  "pct16": 5.534
+  "mae": 5.374,
+  "pct16": 5.512
  },
  "frost-day-settings": {
-  "mae": 5.369,
-  "pct16": 5.421
+  "mae": 5.343,
+  "pct16": 5.399
  },
  "flat-day-settings": {
-  "mae": 4.785,
-  "pct16": 6.004
+  "mae": 4.759,
+  "pct16": 5.972
  },
  "flat-day-dashboard": {
-  "mae": 4.396,
-  "pct16": 6.497
+  "mae": 4.315,
+  "pct16": 6.398
  },
  "_target": {
   "mae": 3.0,

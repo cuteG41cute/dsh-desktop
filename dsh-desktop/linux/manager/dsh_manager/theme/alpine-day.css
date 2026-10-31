@@ -642,3 +642,10 @@ scrollbar.vertical { margin: 2px 0; }
 .log-card { margin-top: 20px; }
 /* 网格间距在 gui.py 里用 Gtk.Grid(column_spacing=16, row_spacing=16) 设，GTK CSS 不认这两个属性 */
 .page-heading { margin-bottom: 22px; }
+
+/* 日夜开关的滑块与图标（设计稿 .mode-thumb / .moon-icon） */
+.mode-thumb { background-color: rgba(255,255,255,.7); border-radius: 11px; }
+.mode-toggle button, .mode-toggle { padding: 0; }
+
+/* 顶栏分隔线（设计稿 .top-divider：1×20 的 inner-border） */
+.top-divider { background-color: rgba(62,101,133,.1); min-width: 1px; min-height: 20px; }

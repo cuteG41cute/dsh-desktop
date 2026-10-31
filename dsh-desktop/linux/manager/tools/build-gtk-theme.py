@@ -55,6 +55,8 @@ THEME_SKINS = {
             # 渐变会**叠在** background-color 上，半透明色被算两次 → 卡片明显偏亮。
             # 所以必须先把底色清掉。
             'background-color: transparent;',
+            # 实测 135deg 与 to bottom right 差别很小（19.9 vs 21.3），保留角度写法，
+            # 与设计稿严格对应。
             'background-image: linear-gradient(135deg, rgba(255, 255, 255, .62), $(card));',
             'box-shadow: inset 2px 2px 0 rgba(255, 255, 255, .35), $(card-shadow);',
         ]),

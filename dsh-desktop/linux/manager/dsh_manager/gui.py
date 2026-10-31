@@ -431,8 +431,7 @@ class ManagerWindow(Gtk.Window):
         labels = index.get('labels', {}).get('%s-%s' % (theme, mode), [theme, mode])
         if getattr(self, 'lbl_theme_name', None) is not None:
             self.lbl_theme_name.set_text(labels[0])
-        if getattr(self, 'btn_mode', None) is not None:
-            self.btn_mode.set_label('☾  夜间' if mode == 'night' else '☀  日间')
+        self._sync_mode_toggle(mode)
         if getattr(self, 'lbl_settings_theme', None) is not None:
             self.lbl_settings_theme.set_text(labels[0])
             self.lbl_settings_mode.set_text(labels[1])
@@ -793,15 +792,73 @@ class ManagerWindow(Gtk.Window):
         trigger.set_popover(popover)
         self._theme_popover = popover
 
-        self.btn_mode = self._button('', '☀  日间', 'mode-toggle',
-                                     handler=self.on_toggle_mode)
+        self.btn_mode = self._build_mode_toggle()
         self.btn_mode.set_valign(Gtk.Align.CENTER)
         info = self._button('', 'ⓘ', 'icon-btn', handler=self.on_about)
         info.set_tooltip_text('关于 / 版本信息')
-        bar.pack_end(self.btn_mode, False, False, 0)
-        bar.pack_end(info, False, False, 0)
-        bar.pack_end(trigger, False, False, 0)
+        # 设计稿的右半区顺序是：主题触发器 → 日夜开关 → 分隔线 → 信息按钮。
+        # pack_end 的插入顺序反直觉（后加的会挤到左边），所以用一个横向容器把
+        # 顺序写死，再整体 pack_end 一次。
+        right = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        right.set_valign(Gtk.Align.CENTER)
+        right.pack_start(trigger, False, False, 0)
+        right.pack_start(self.btn_mode, False, False, 0)
+        divider = Gtk.Box()
+        divider.get_style_context().add_class('top-divider')
+        divider.set_size_request(1, 20)
+        divider.set_valign(Gtk.Align.CENTER)
+        right.pack_start(divider, False, False, 0)
+        right.pack_start(info, False, False, 0)
+        bar.pack_end(right, False, False, 0)
         return bar
+
+
+    # ------------------------------------------------------------ 日夜开关
+    def _build_mode_toggle(self):
+        """设计稿的 .mode-toggle：太阳/月亮两个图标 + 一个圆滑块。"""
+        btn = Gtk.Button()
+        btn.get_style_context().add_class('mode-toggle')
+        btn.connect('clicked', self.on_toggle_mode)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        row.set_homogeneous(True)
+        self.icon_mode_sun = self._icon('sun', 'accent', 14)
+        self.icon_mode_moon = self._icon('moon', 'muted', 14)
+        row.pack_start(self.icon_mode_sun, True, True, 0)
+        row.pack_start(self.icon_mode_moon, True, True, 0)
+
+        thumb = Gtk.EventBox()
+        thumb.set_visible_window(True)
+        thumb.get_style_context().add_class('mode-thumb')
+        thumb.set_size_request(22, 22)
+        thumb.set_valign(Gtk.Align.CENTER)
+        thumb.set_halign(Gtk.Align.START)
+        thumb.set_margin_start(3)
+        self.chip_mode_thumb = thumb
+
+        overlay = Gtk.Overlay()
+        overlay.add(row)
+        overlay.add_overlay(thumb)
+        btn.add(overlay)
+        return btn
+
+    def _sync_mode_toggle(self, mode):
+        """滑块靠 halign+margin 换边（GTK3 没有 transform:translateX）。"""
+        thumb = getattr(self, 'chip_mode_thumb', None)
+        if thumb is not None:
+            if mode == 'night':
+                thumb.set_halign(Gtk.Align.END)
+                thumb.set_margin_start(0)
+                thumb.set_margin_end(3)
+            else:
+                thumb.set_halign(Gtk.Align.START)
+                thumb.set_margin_end(0)
+                thumb.set_margin_start(3)
+        sun = getattr(self, 'icon_mode_sun', None)
+        moon = getattr(self, 'icon_mode_moon', None)
+        if sun is not None:
+            sun.set_opacity(0.5 if mode == 'night' else 1.0)
+        if moon is not None:
+            moon.set_opacity(1.0 if mode == 'night' else 0.55)
 
     def _build_dashboard(self):
         self.dash_sw = Gtk.ScrolledWindow()
@@ -962,7 +1019,11 @@ class ManagerWindow(Gtk.Window):
         self.log_body.set_margin_top(8)
         self.log_rows = []
         self.lbl_log_empty = self._label('还没有日志', 'log-empty')
+        # 空态要能被"有日志"盖掉；但任何 show_all() 都会把隐藏控件重新显示出来，
+        # 所以这里声明 no_show_all，可见性只由 _push_recent_log 控制。
+        self.lbl_log_empty.set_no_show_all(True)
         self.log_body.pack_start(self.lbl_log_empty, False, False, 0)
+        self.lbl_log_empty.show()      # no_show_all 之后要自己显一次（首屏就是空态）
         for _ in range(3):
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
             t = self._label('', 'log-time')
