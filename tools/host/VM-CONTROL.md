@@ -127,9 +127,23 @@ powershell -File tools\host\vm.ps1 -Script tools\host\vm-gui-shot.py -Args '/tmp
 
 | 能力 | 现状 | 补法 |
 | --- | --- | --- |
-| 点按钮 / 敲键盘 | ❌ 没有 `xdotool`/`ydotool`/`wtype`；Wayland 合成器也没有注入接口 | 跑 `sudo bash ~/share/fix-vm-sudo.sh`（已加 `xdotool`）：X11 后端下的窗口能点；或装 `ydotool`（要 uinput） |
+| 点按钮 / 敲键盘 | ❌ 没有 `xdotool`/`ydotool`/`wtype`；Wayland 合成器也没有注入接口 | 跑 `sudo bash ~/share/fix-vm-sudo.sh`（已加 `xdotool`）：X11 后端下的窗口能点；`ydotool` 仓库里有（1.0.4-3），但要 uinput + `ydotoold` |
 | 改 `/usr/lib/dsh-manager`、apt 装包、systemctl | ❌ sudo 要密码，SSH 里给不了 | 跑一次 `sudo bash ~/share/enable-vm-nopasswd-sudo.sh`，之后 `sudo -n` 直通（撤销：删 `/etc/sudoers.d/90-dsh-agent`） |
 | 现在能替代"点击"的办法 | ✅ 程序内驱动：直接调用 `apply_theme` / `_show_page` / `resp.start()` 等方法，等价于点按钮触发的代码路径 | 见 §6 |
+
+### 2026-10-31 更正：软件包名
+
+上一版 `fix-vm-sudo.sh` 写的是 `spectacle`，但 **Ubuntu 26.04 里叫 `kde-spectacle`**
+（`apt-cache search spectacl` → `kde-spectacle - Screenshot capture utility` 4:6.6.6-0ubuntu0.1）。
+名字错导致 `E: 无法定位软件包 spectacle`，apt 整批中止，于是 samba / imagemagick / xdotool
+**一个都没装**，而脚本还把 apt 输出丢进了 `/dev/null`，看不出失败。
+
+已改成逐个安装、逐个报错（`/tmp/apt-<包名>.log`）。修正后的清单实测可解：
+`kde-spectacle imagemagick xdotool python3-numpy python3-gi-cairo python3-pil`
+→ 27 个包，全部有候选版本，磁盘剩 100 G。
+
+顺带确认：`wtype`(0.4-3)、`ydotool`(1.0.4-3)、`grim`(1.4.0)、`samba`(2:4.23.6) 仓库里都有；
+但 `grim` 只认 wlroots 的 screencopy 协议，KWin 用不了，截图仍走 portal（§2）。
 
 ## 8. 文件清单
 
