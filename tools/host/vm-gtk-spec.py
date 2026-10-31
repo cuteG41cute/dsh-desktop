@@ -87,6 +87,13 @@ def walk(widget, out, root, depth=0):
             text = widget.get_text() or ""
             if text:
                 rec["text"] = text[:60]
+        try:
+            # GTK 的 allocation 是含外边距的盒子；设计稿量的是边框盒。这里把外边距记下来，
+            # 由 geometry-gate 做换算（否则带 margin 的元素会系统性差一个 margin）。
+            m = widget.get_style_context().get_margin(Gtk.StateFlags.NORMAL)
+            rec["margin"] = [m.top, m.right, m.bottom, m.left]
+        except Exception:
+            rec["margin"] = [0, 0, 0, 0]
         out.append(rec)
     if isinstance(widget, Gtk.Container):
         for child in widget.get_children():

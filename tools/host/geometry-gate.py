@@ -111,7 +111,10 @@ def main():
             # 当前页面用不到这个元素（另一页的 DOM 在截图时被 hidden，尺寸塌成 0）
             print('%-16s %-24s %-24s %s' % (ref_name, '本页无', '有', '跳过'))
             continue
-        g = (got['x'], got['y'], got['w'], got['h'])
+        # GTK 的 allocation 含外边距，设计稿量的是边框盒：换算成同一种盒子再比。
+        mt, _mr, mb, _ml = got.get('margin') or (0, 0, 0, 0)
+        g_box = [got['x'], got['y'] + mt, got['w'], got['h'] - mt - mb]
+        g = tuple(g_box)
         d = [round(g[i] - (r['x'], r['y'], r['w'], r['h'])[i], 1) for i in range(4)]
         m = max(abs(v) for v in d)
         worst = max(worst, m)

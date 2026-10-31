@@ -192,11 +192,12 @@ window.dsh-window,
 
 /* ---------- 顶栏 ---------- */
 .topbar {
-  min-height: 65px;   /* 设计稿 66px 含 1px 下边框 */
   background-color: $(topbar);
   border-bottom: 1px solid $(inner-border);
-  padding: 0 26px;
-  min-height: 66px;
+  padding: 0 30px;                 /* 设计稿 .topbar{padding:0 30px} */
+  /* 设计稿 66px = 内容 65 + 1px 下边框；这里 min-height 只算内容盒，写 65 会多出 1px，
+     把整个内容区往下推（实测所有元素 +1.8px 的来源）。 */
+  min-height: 65px;
   border-top-right-radius: $(app-radius);
 }
 .breadcrumb { color: $(muted); font-size: 11px; }
@@ -670,3 +671,6 @@ scrollbar.vertical { margin: 2px 0; }
 
 /* 指标行：设计稿 .metric-row 高 45（padding-top 13 + 内容 32） */
 .metric-row { min-height: 44px; }
+
+/* 日志正文区（设计稿 .log-body：padding 7px 18px 9px） */
+.log-body { padding: 7px 18px 9px; }

@@ -1002,7 +1002,8 @@ class ManagerWindow(Gtk.Window):
         log_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         log_card.get_style_context().add_class('card')
         log_card.get_style_context().add_class('log-card')   # .log-card{padding:0}
-        log_card.set_margin_top(20)
+        # 顶部留白交给 CSS 的 .log-card{margin-top:20px}；这里再设一次会叠加成 40px
+        log_card.set_margin_top(0)
         lhead = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         lhead.get_style_context().add_class('log-header')
         lhead.pack_start(self._icon('terminal', 'accent', 15), False, False, 0)
@@ -1013,8 +1014,10 @@ class ManagerWindow(Gtk.Window):
                                 icon='arrow', icon_role='accent', icon_size=12)
         lhead.pack_end(view_btn, False, False, 0)
         log_card.pack_start(lhead, False, False, 0)
-        self.log_body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self.log_body.set_margin_top(8)
+        # 设计稿 .log-body{padding:7px 18px 9px}，行间没有额外间距；
+        # 原来 spacing=6 + margin_top=8 让日志卡比设计稿高 20px。
+        self.log_body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.log_body.get_style_context().add_class('log-body')
         self.log_rows = []
         self.lbl_log_empty = self._label('还没有日志', 'log-empty')
         # 空态要能被"有日志"盖掉；但任何 show_all() 都会把隐藏控件重新显示出来，
