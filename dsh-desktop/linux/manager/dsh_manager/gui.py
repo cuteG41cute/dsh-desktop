@@ -2376,6 +2376,16 @@ class ManagerWindow(Gtk.Window):
         intro.get_style_context().add_class('dialog-sub')
         area.pack_start(intro, False, False, 0)
 
+        src_lbl = Gtk.Label(xalign=0)
+        src_lbl.get_style_context().add_class('dim-label')
+        area.pack_start(src_lbl, False, False, 0)
+
+        def refresh_source_label():
+            where, when = plug.source_info()
+            src_lbl.set_text('来源：%s%s' % (where, ('　抓取于 %s' % when) if when else ''))
+        plug.bootstrap_cache()
+        refresh_source_label()
+
         store = Gtk.ListStore(str, str, str, str)      # id, 说明, 状态, 版本
         tree = Gtk.TreeView(model=store)
         for idx, (title, width) in enumerate((('插件', 210), ('仓库 / 说明', 420),
@@ -2405,7 +2415,8 @@ class ManagerWindow(Gtk.Window):
         btn_refresh = Gtk.Button(label='刷新状态')
         btn_repo = Gtk.Button(label='打开仓库')
         btn_import = Gtk.Button(label='导入本地包…')
-        for btn in (btn_install, btn_uninstall, btn_import, btn_refresh, btn_repo):
+        btn_gh = Gtk.Button(label='刷新 GitHub 列表')
+        for btn in (btn_install, btn_uninstall, btn_import, btn_refresh, btn_repo, btn_gh):
             row.pack_start(btn, False, False, 0)
         area.pack_start(row, False, False, 0)
 
@@ -2431,7 +2442,10 @@ class ManagerWindow(Gtk.Window):
                 src = item['repo'] or '（未发布到 GitHub，可本地导入）'
                 if item.get('extra'):
                     src = '（实例里已装，不在目录中）'
-                it = store.append([item['id'], '%s · %s' % (src, item['desc']),
+                extra = ''
+                if item.get('updated'):
+                    extra = '　★%s · 更新 %s' % (item.get('stars', 0), item['updated'])
+                it = store.append([item['id'], '%s · %s%s' % (src, item['desc'], extra),
                                    label, st.get('version') or '-'])
                 if select and item['id'] == select:
                     tree.get_selection().select_iter(it)
@@ -2517,8 +2531,38 @@ class ManagerWindow(Gtk.Window):
         btn_refresh.connect('clicked', lambda *a: fill(select=current()))
         btn_repo.connect('clicked', open_repo)
 
+        def refresh_github(*_):
+            state['busy'] = True
+            btn_gh.set_sensitive(False)
+            note.set_text('正在从 GitHub 拉取带 dsh-plugin 标签的仓库…')
+
+            def work():
+                try:
+                    items, fetched = plug.refresh_github()
+                    err = ''
+                except Exception as exc:
+                    items, fetched, err = [], '', str(exc)
+
+                def done():
+                    state['busy'] = False
+                    btn_gh.set_sensitive(True)
+                    refresh_source_label()
+                    fill(select=current())
+                    if err:
+                        note.set_text('拉取失败：%s（列表沿用上次结果）' % err)
+                    else:
+                        note.set_text('已刷新：GitHub 上 %d 个带 dsh-plugin 标签的仓库' % len(items))
+                    return False
+                GLib.idle_add(done)
+
+            threading.Thread(target=work, daemon=True).start()
+
+        btn_gh.connect('clicked', refresh_github)
+
         fill()
         note.set_text('安装后需要重启该实例的服务才会加载：先「停止服务」再「启动服务」。')
+        # 打开时自动拉一次（不阻塞界面）：没缓存时列表会先用内置目录，拉到后自动刷新
+        GLib.timeout_add(200, lambda: (refresh_github(), False)[1])
         dlg.show_all()
         dlg.run()
         dlg.destroy()

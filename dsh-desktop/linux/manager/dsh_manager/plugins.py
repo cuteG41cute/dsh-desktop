@@ -24,6 +24,7 @@ import re
 import shutil
 import tarfile
 import tempfile
+import time
 import urllib.request
 
 MARKER = '# ── installed-by: dsh-manager (%s) ──'
@@ -127,11 +128,15 @@ def cache_dir():
 
 
 def catalog():
+    """当前插件目录：优先 GitHub 发现结果（带 dsh-plugin 标签的仓库），
+    没有就退回内置 CATALOG。"""
+    if _DYNAMIC:
+        return [dict(item) for item in _DYNAMIC]
     return [dict(item) for item in CATALOG]
 
 
 def find(id_):
-    for item in CATALOG:
+    for item in catalog():
         if item['id'] == id_:
             return dict(item)
     return None
@@ -194,7 +199,7 @@ def _extra_installed(inst):
         names = sorted(os.listdir(base))
     except OSError:
         return out
-    known = {item['id'] for item in CATALOG}
+    known = {item['id'] for item in catalog()}
     for name in names:
         if not name.startswith('dsh-') or name in known:
             continue
@@ -486,3 +491,114 @@ def uninstall(inst, entry=None, pid=None, log=print):
     if not (removed_dir or removed_row):
         return False, '%s 似乎没装过（既没有包目录也没有 patch 记录）' % pid
     return True, '已卸载 %s（重启服务后生效）' % pid
+
+
+# ---------------------------------------------------------------------------
+# GitHub 插件发现（topic: dsh-plugin）
+# ---------------------------------------------------------------------------
+GH_USER = 'cuteG41cute'
+GH_TOPIC = 'dsh-plugin'
+_DYNAMIC = []          # 发现到的插件条目（空 = 用内置 CATALOG）
+
+
+def github_cache_path():
+    return os.path.join(cache_dir(), 'github-plugins.json')
+
+
+def _hints():
+    """仓库全名 → 内置目录里的提示（subdir / id / 显示名）。
+
+    有些仓库的插件在子目录里（dsh-mobile 的 netmon/），只按仓库名做条目会挑错包。
+    """
+    out = {}
+    for item in CATALOG:
+        repo = (item.get('repo') or '').strip()
+        if repo:
+            out[repo.lower()] = item
+    return out
+
+
+def _entry_from_repo(repo, hints=None):
+    """GitHub 仓库对象 → 插件条目（字段与 CATALOG 对齐，命中提示时沿用内置值）。"""
+    full = repo.get('full_name') or ''
+    name = repo.get('name') or ''
+    hint = (hints or {}).get(full.lower()) or {}
+    return {
+        'id': hint.get('id') or name,
+        'name': hint.get('name') or name,
+        'repo': full,
+        'subdir': hint.get('subdir') or '',   # 没提示就按"含 package.json 的目录"自动挑包
+        'desc': (repo.get('description') or '').strip(),
+        'inject': hint.get('inject') or [],
+        'stars': repo.get('stargazers_count') or 0,
+        'updated': (repo.get('pushed_at') or '')[:10],
+        'url': repo.get('html_url') or '',
+        'discovered': True,
+    }
+
+
+def github_plugins(user=None, topic=None, timeout=15):
+    """列出某账号下打了 topic 标签的仓库（公开 API，无需 token）。"""
+    user = user or GH_USER
+    topic = (topic or GH_TOPIC).lower()
+    url = 'https://api.github.com/users/%s/repos?per_page=100&sort=updated' % user
+    req = urllib.request.Request(url, headers=dict(UA, Accept='application/vnd.github+json'))
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode('utf-8'))
+    hints = _hints()
+    out = []
+    for repo in data:
+        topics = [str(t).lower() for t in (repo.get('topics') or [])]
+        if topic not in topics:
+            continue
+        out.append(_entry_from_repo(repo, hints))
+    out.sort(key=lambda e: e['id'])
+    return out
+
+
+def load_github_cache():
+    """读缓存；返回 (items, fetched_iso) 或 ([], '')。"""
+    try:
+        with open(github_cache_path(), 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        return list(data.get('items') or []), data.get('fetched') or ''
+    except (OSError, ValueError):
+        return [], ''
+
+
+def save_github_cache(items):
+    os.makedirs(cache_dir(), exist_ok=True)
+    payload = {'fetched': time.strftime('%Y-%m-%d %H:%M:%S'), 'user': GH_USER,
+               'topic': GH_TOPIC, 'items': items}
+    tmp = github_cache_path() + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=1)
+    os.replace(tmp, github_cache_path())
+    return payload['fetched']
+
+
+def bootstrap_cache():
+    """启动/开对话框时先用缓存，避免列表一闪变成空的。"""
+    global _DYNAMIC
+    items, fetched = load_github_cache()
+    if items:
+        _DYNAMIC = items
+    return items, fetched
+
+
+def refresh_github(user=None, topic=None, timeout=15):
+    """真正联网刷新一次，成功则替换目录并写缓存。"""
+    global _DYNAMIC
+    items = github_plugins(user=user, topic=topic, timeout=timeout)
+    _DYNAMIC = items
+    fetched = save_github_cache(items)
+    return items, fetched
+
+
+def source_info():
+    """给界面显示"这批列表是从哪来的"。"""
+    items, fetched = load_github_cache()
+    if _DYNAMIC:
+        return ('GitHub · %s（topic: %s）' % (GH_USER, GH_TOPIC),
+                fetched or '（本次会话内刷新）')
+    return ('内置目录（尚未从 GitHub 拉取）', '')
