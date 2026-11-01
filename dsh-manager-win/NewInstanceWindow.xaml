@@ -117,6 +117,8 @@
                            Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis"
                            MaxWidth="300" HorizontalAlignment="Left" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="RefreshVersionsBtn" Style="{StaticResource BtnSecondary}" Height="34"
+                            Content="更新 dsh / Node 版本" Margin="0,0,8,0" Click="OnRefreshVersions" />
                     <Button x:Name="CancelBtn" Style="{StaticResource BtnSecondary}" Height="34" Content="取消"
                             Click="OnClose" />
                     <Button x:Name="CreateBtn" Style="{StaticResource BtnPrimary}" Height="34" Margin="8,0,0,0"

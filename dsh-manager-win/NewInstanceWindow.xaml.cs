@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -25,13 +25,13 @@ public partial class NewInstanceWindow : Window
         {
             DirBox.Text = def;
             AppendLog("提示：安装会用系统的 npm（PATH 上的 npm.cmd），装到上面的目录里。");
-            LoadVersionLists();
+            _ = LoadVersionLists();
             AppendLog("已有的 DSH 安装不需要新建——直接在主界面选它就行。");
         };
     }
 
     /// <summary>联网取 dsh / Node 的候选版本（拿不到就用内置列表，不阻塞界面）。</summary>
-    private async void LoadVersionLists()
+    private async System.Threading.Tasks.Task LoadVersionLists()
     {
         try
         {
@@ -49,6 +49,27 @@ public partial class NewInstanceWindow : Window
             AppendLog("Node 版本候选 " + node.Count + " 个（默认 system = 用系统的 node）");
         }
         catch (Exception ex) { AppendLog("Node 版本列表失败：" + ex.Message); }
+    }
+
+    /// <summary>底部「更新 dsh / Node 版本」：重新拉一次候选列表。</summary>
+    private async void OnRefreshVersions(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            RefreshVersionsBtn.IsEnabled = false;
+            StatusText.Text = "正在重新获取版本列表…";
+            AppendLog("=== 重新获取 dsh / Node 版本列表 ===");
+            await LoadVersionLists();
+            StatusText.Text = "版本列表已更新";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "更新版本列表失败：" + ex.Message;
+        }
+        finally
+        {
+            RefreshVersionsBtn.IsEnabled = true;
+        }
     }
 
     private void AppendLog(string line)
