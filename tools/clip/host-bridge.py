@@ -163,8 +163,23 @@ class Bridge:
     def __init__(self):
         self.synced = None          # 最近一次同步成功的文本 sha1（防回声）
         self.writer = None          # 发通道的 Popen
+        self.watch_proc = None
         self.writer_lock = threading.Lock()
         self.stop = threading.Event()
+
+    def shutdown(self):
+        """把自己拉起的 ssh 子进程都收掉。
+
+        Windows 上杀掉父进程不会连带子进程，否则 ssh 会留在虚拟机里挂着一对
+        vm-watch/vm-apply，下次启动就变成两套通道（脏但无害，排障时很误导）。
+        """
+        self.stop.set()
+        for proc in (self.writer, self.watch_proc):
+            try:
+                if proc is not None and proc.poll() is None:
+                    proc.kill()
+            except Exception:
+                pass
 
     # ---- 发：本机 -> 虚拟机 ----
     def _writer_proc(self):
@@ -213,6 +228,7 @@ class Bridge:
                     ssh_args('vm-watch.py'), stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE, stderr=open(LOG_PATH, 'ab'),
                     creationflags=CREATE_NO_WINDOW)
+                self.watch_proc = proc
                 for raw in proc.stdout:
                     if self.stop.is_set():
                         break
@@ -267,12 +283,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        bridge.stop.set()
-        try:
-            if bridge.writer is not None:
-                bridge.writer.kill()
-        except Exception:
-            pass
+        bridge.shutdown()
         log('=== 剪切板桥退出 ===')
 
 
