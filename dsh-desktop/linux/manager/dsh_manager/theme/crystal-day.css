@@ -778,6 +778,27 @@ button:disabled, .btn:disabled, .side-link:disabled, .quick-action:disabled {
 .badge.running .badge-text { color: #188d73; }
 .badge.needs-repair .badge-text { color: #d56575; }
 
+/* ==========================================================================
+ * 无边框窗口（自绘窗口按钮）
+ * ========================================================================== */
+.window-btn {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+.window-btn:hover { background-color: rgba(255,255,255,.7); }
+.window-close:hover { background-color: alpha(#d56575, .16); }
+.window-close:hover image { color: #d56575; }
+.window-buttons { margin-left: 2px; }
+
+/* 最大化时窗口圆角与外壳圆角都要归零（否则四角会露出桌面） */
+.maximized, .maximized.dsh-shell { border-radius: 0; }
+
 /* 主题专属皮肤：对应 design/styles.css 里 body[data-theme="crystal"] 的规则 */
 .card, .quick-action {
   background-color: transparent;

@@ -751,3 +751,24 @@ button:disabled, .btn:disabled, .side-link:disabled, .quick-action:disabled {
 .badge-text { font-size: 9px; font-weight: 600; }
 .badge.running .badge-text { color: $(success); }
 .badge.needs-repair .badge-text { color: $(danger); }
+
+/* ==========================================================================
+ * 无边框窗口（自绘窗口按钮）
+ * ========================================================================== */
+.window-btn {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+.window-btn:hover { background-color: $(hover); }
+.window-close:hover { background-color: alpha($(danger), .16); }
+.window-close:hover image { color: $(danger); }
+.window-buttons { margin-left: 2px; }
+
+/* 最大化时窗口圆角与外壳圆角都要归零（否则四角会露出桌面） */
+.maximized, .maximized.dsh-shell { border-radius: 0; }

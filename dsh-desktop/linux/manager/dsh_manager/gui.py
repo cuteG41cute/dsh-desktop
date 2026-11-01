@@ -20,6 +20,11 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 from gi.repository import Gdk, GdkPixbuf, GLib, Gtk  # noqa: E402
 
+try:                      # 圆角裁切需要 cairo；没有就退回方形窗口
+    import cairo
+except ImportError:       # pragma: no cover
+    cairo = None
+
 from . import plugins as plug  # noqa: E402
 from .core import (DEFAULT_DSH, DEFAULT_NODE, MANAGER_LIB, MANAGER_VERSION,  # noqa: E402
                    FALLBACK_DSH_VERSIONS, FALLBACK_NODE_VERSIONS,
@@ -506,6 +511,10 @@ class ManagerWindow(Gtk.Window):
                     img.set_from_pixbuf(pb)
                 except Exception:
                     pass
+        try:
+            self._sync_max_icon()          # 最大化/还原图标跟着主题色重画
+        except Exception:
+            pass
 
     # GTK3 的 EventBox 不把 CSS padding 算进尺寸（实测 allocation 完全一样），
     # 所以药丸的内边距必须做成内部 label 的 margin。数值取自 DESIGN_SPEC。
@@ -614,6 +623,209 @@ class ManagerWindow(Gtk.Window):
         GLib.timeout_add(2600, hide)
 
     # ------------------------------------------------------------ 界面
+
+    # ------------------------------------------------------------ 无边框窗口
+    def _setup_frameless(self):
+        """关掉系统标题栏，改用自绘窗口按钮 + 圆角裁切（可用环境变量退回系统标题栏）。"""
+        self._frameless = os.environ.get('DSH_MANAGER_SYSTEM_TITLEBAR') != '1'
+        self._maximized = False
+        self._rgba = False
+        if not self._frameless:
+            self.set_decorated(True)
+            return
+        # 走 CSD：保留 decorated=True 但提供一个零高度自绘标题栏，
+        # Wayland 会协商成 client-side，KWin 不画标题栏也不画兜底图标。
+        self.set_decorated(True)
+        # 窗口图标：任务栏/切换器用得到；也顺便观察它是不是右上角那个方块
+        for icon_path in (os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',
+                                      'share', 'dsh-desktop.png'),
+                          '/usr/lib/dsh-manager/share/dsh-desktop.png',
+                          '/usr/share/icons/hicolor/256x256/apps/dsh-manager.png'):
+            try:
+                if os.path.exists(icon_path):
+                    self.set_icon_from_file(icon_path)
+                    break
+            except Exception:
+                continue
+        # 关键：给一个零高度的自绘标题栏，让 Wayland 协商成 CSD；
+        # 否则 GTK 会退回服务端装饰，KWin 照样画标题栏。
+        placeholder = Gtk.Box()
+        placeholder.set_size_request(-1, 0)
+        self.set_titlebar(placeholder)
+        try:
+            screen = Gdk.Screen.get_default()
+            visual = screen.get_rgba_visual() if screen is not None else None
+            if visual is not None and screen.is_composited():
+                self.set_visual(visual)
+                self.set_app_paintable(True)
+                self._rgba = True
+        except Exception:
+            self._rgba = False
+        if self._rgba and cairo is not None:
+            self.connect('draw', self._on_window_draw)
+        self.connect('window-state-event', self._on_window_state)
+
+    def _corner_radius(self):
+        """窗口圆角：跟主题的 app-radius；最大化时为 0。"""
+        if self._maximized:
+            return 0
+        try:
+            theme, mode = self._theme_state()
+            value = str(token_color(theme, mode, 'app-radius') or '26px')
+            return int(round(float(value.replace('px', ''))))
+        except Exception:
+            return 26
+
+    @staticmethod
+    def _rounded_path(cr, x, y, width, height, radius):
+        if radius <= 0:
+            cr.rectangle(x, y, width, height)
+            return
+        cr.new_sub_path()
+        cr.arc(x + width - radius, y + radius, radius, -1.5708, 0)
+        cr.arc(x + width - radius, y + height - radius, radius, 0, 1.5708)
+        cr.arc(x + radius, y + height - radius, radius, 1.5708, 3.1416)
+        cr.arc(x + radius, y + radius, radius, 3.1416, 4.7124)
+        cr.close_path()
+
+    def _window_bg_pixbuf(self):
+        """当前主题的预渲染背景图（和 CSS 里 $(bg-image) 是同一张）。"""
+        theme, mode = self._theme_state()
+        key = '%s-%s' % (theme, mode)
+        cached = getattr(self, '_bg_cache', None) or {}
+        if key in cached:
+            return cached[key]
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            'backgrounds', '%s.png' % key)
+        pb = None
+        if os.path.exists(path):
+            try:
+                pb = GdkPixbuf.Pixbuf.new_from_file(path)
+            except Exception:
+                pb = None
+        cached[key] = pb
+        self._bg_cache = cached
+        return pb
+
+    def _on_window_draw(self, _widget, cr):
+        """清透明（含四角）→ 圆角裁切 → 铺主题背景；子控件由默认处理器接着画。"""
+        alloc = self.get_allocation()
+        # 1) 整幅清成透明：圆角之外必须真的透出桌面
+        cr.save()
+        cr.set_operator(cairo.OPERATOR_SOURCE)
+        cr.set_source_rgba(0, 0, 0, 0)
+        cr.paint()
+        cr.set_operator(cairo.OPERATOR_OVER)
+        cr.restore()
+        # 2) 圆角裁切（这个 clip 要留给子控件，所以不能 restore 掉）
+        self._rounded_path(cr, 0, 0, alloc.width, alloc.height, self._corner_radius())
+        cr.clip()
+        # 3) 自己画窗口背景：app_paintable 之后 GTK 不会替我们填
+        pb = self._window_bg_pixbuf()
+        if pb is not None and pb.get_width() > 0 and pb.get_height() > 0:
+            cr.save()
+            cr.scale(alloc.width / float(pb.get_width()),
+                     alloc.height / float(pb.get_height()))
+            Gdk.cairo_set_source_pixbuf(cr, pb, 0, 0)
+            cr.paint()
+            cr.restore()
+        return False
+
+    def _on_window_state(self, _widget, event):
+        maximized = bool(event.changed_mask & Gdk.WindowState.MAXIMIZED) and \
+            bool(event.new_window_state & Gdk.WindowState.MAXIMIZED)
+        self._maximized = maximized
+        shell = getattr(self, 'shell_box', None)
+        if shell is not None:
+            ctx = shell.get_style_context()
+            if maximized:
+                ctx.add_class('maximized')
+            else:
+                ctx.remove_class('maximized')
+        self.queue_draw()
+        return False
+
+    def _start_window_drag(self, widget, event):
+        """顶栏空白处拖动窗口；双击切最大化。按钮等子控件会自己吃掉事件。"""
+        if not getattr(self, '_frameless', False):
+            return False
+        if event.button != 1:
+            return False
+        # GDK 的双击事件名带前导下划线（_2BUTTON_PRESS），不同绑定版本暴露方式不一，
+        # 用 getattr 取，取不到就退化成只支持拖动。
+        double = getattr(Gdk.EventType, '_2BUTTON_PRESS', None)
+        if double is not None and event.type == double:
+            self._toggle_maximize()
+            return True
+        try:
+            self.begin_move_drag(event.button, int(event.x_root), int(event.y_root), event.time)
+            return True
+        except Exception:
+            return False
+
+    def _toggle_maximize(self):
+        if self.is_maximized():
+            self.unmaximize()
+        else:
+            self.maximize()
+
+    def _window_buttons(self):
+        """右上角三个自绘窗口按钮（最小化 / 最大化-还原 / 关闭）。"""
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
+        box.get_style_context().add_class('window-buttons')
+        box.set_valign(Gtk.Align.CENTER)
+        self.btn_win_min = self._window_button('minus', '最小化', self.iconify)
+        self.btn_win_max = self._window_button('maximize', '最大化', self._toggle_maximize)
+        self.btn_win_close = self._window_button('x', '关闭', self.close)
+        self.btn_win_close.get_style_context().add_class('window-close')
+        box.pack_start(self.btn_win_min, False, False, 0)
+        box.pack_start(self.btn_win_max, False, False, 0)
+        box.pack_start(self.btn_win_close, False, False, 0)
+        self._refresh_window_icons()   # 三个图标按当前主题色先画一次
+        return box
+
+    def _window_button(self, icon, tooltip, handler):
+        btn = Gtk.Button()
+        btn.get_style_context().add_class('window-btn')
+        btn.set_size_request(32, 32)
+        btn.set_valign(Gtk.Align.CENTER)
+        img = Gtk.Image()
+        btn.add(img)
+        btn._img = img
+        btn._icon_name = icon
+        btn.set_tooltip_text(tooltip)
+        btn.connect('clicked', lambda *a: handler())
+        btn.set_relief(Gtk.ReliefStyle.NONE)
+        return btn
+
+    def _refresh_window_icons(self):
+        """按当前主题色重画三个窗口图标（最小化/最大化-还原/关闭）。"""
+        theme, mode = self._theme_state()
+        color = token_color(theme, mode, 'muted')
+        for btn in (getattr(self, 'btn_win_min', None),
+                    getattr(self, 'btn_win_max', None),
+                    getattr(self, 'btn_win_close', None)):
+            if btn is None:
+                continue
+            img = getattr(btn, '_img', None)
+            if img is None:
+                continue
+            pb = icon_pixbuf(getattr(btn, '_icon_name', 'x'), color, 16)
+            if pb is not None:
+                img.set_from_pixbuf(pb)
+
+    def _sync_max_icon(self):
+        """最大化后把"最大化"图标换成"还原"（只换 pixbuf，不动子控件）。"""
+        btn = getattr(self, 'btn_win_max', None)
+        if btn is None:
+            return
+        btn._icon_name = 'restore' if self.is_maximized() else 'maximize'
+        btn.set_tooltip_text('还原' if self.is_maximized() else '最大化')
+        theme, mode = self._theme_state()
+        pb = icon_pixbuf(btn._icon_name, token_color(theme, mode, 'muted'), 16)
+        if pb is not None and getattr(btn, '_img', None) is not None:
+            btn._img.set_from_pixbuf(pb)
+
     def _build(self):
         self.buttons = {}
         self._need_selection = {'start', 'stop', 'open', 'reload', 'rebuild', 'token',
@@ -623,8 +835,9 @@ class ManagerWindow(Gtk.Window):
         self._recent = []
         # 完整日志只存缓冲区（界面上的「最近日志」只显示 3 行；完整内容走对话框）
         self.log_buf = Gtk.TextBuffer()
-        self.set_titlebar(None)          # 设计稿没有系统标题栏样式，用自绘顶栏
+        self.set_titlebar(None)
         self.get_style_context().add_class('dsh-window')
+        self._setup_frameless()
 
         toast = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         toast.get_style_context().add_class('toast')
@@ -908,7 +1121,18 @@ class ManagerWindow(Gtk.Window):
         divider.set_valign(Gtk.Align.CENTER)
         right.pack_start(divider, False, False, 0)
         right.pack_start(info, False, False, 0)
+        if getattr(self, '_frameless', False):
+            sep2 = Gtk.Box()
+            sep2.get_style_context().add_class('top-divider')
+            sep2.set_size_request(1, 20)
+            sep2.set_valign(Gtk.Align.CENTER)
+            right.pack_start(sep2, False, False, 0)
+            right.pack_start(self._window_buttons(), False, False, 0)
         bar.pack_end(right, False, False, 0)
+        bar.connect('button-press-event', self._start_window_drag)
+        bar.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        self.connect_after('window-state-event',
+                           lambda *a: (self._sync_max_icon(), False)[1])
         return bar
 
 
