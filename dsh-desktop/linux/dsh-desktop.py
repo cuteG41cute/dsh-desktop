@@ -228,6 +228,105 @@ SHIM_JS = r"""
 })();
 """
 
+# 1b) 页面里的 window.open / target=_blank 改走宿主的内置浏览器。
+#
+# 为什么不直接让 WebKit 开（也就是原来的 create 信号做法）：
+# WebKitGTK 2.4x 在 `window.open('about:blank')`（不带 features 参数）时，
+# create 回调里"返回自己的一个 WebView"会踩到
+#   optional:1179: ... std::optional<WebCore::WindowFeatures>::operator* ...
+#   Assertion 'this->_M_is_engaged()' failed.
+# 直接 abort —— 整个进程连所有窗口一起消失，用户看到的就是"点了登录，程序关了窗口"。
+# 最小复现器 tools/host/vm-popup-probe.py 能稳定复现这条断言。
+#
+# 所以：create 只做兜底并且**一律返回 None**（拦掉，不动进程）；
+# 真正开窗由这段注入脚本接管 —— window.open 立刻给宿主发消息并返回一个
+# **假窗口对象**（DSH 登录流程要用到 location.replace / closed / close / opener）。
+POPUP_JS = r"""
+(function () {
+  if (window.__dshPopupShim) return;
+  window.__dshPopupShim = true;
+
+  var seq = 0;
+  var stubs = {};
+
+  function send(msg) {
+    try { window.webkit.messageHandlers.dsh.postMessage(JSON.stringify(msg)); } catch (e) {}
+  }
+
+  function makeStub(id, url) {
+    var initial = url || 'about:blank';
+    var stub = {
+      __dshPopupId: id,
+      __url: initial,
+      closed: false,
+      name: '_dsh_inapp_' + id,
+      innerWidth: 980, innerHeight: 760, outerWidth: 980, outerHeight: 760,
+      focus: function () {}, blur: function () {},
+      postMessage: function () {}, print: function () {},
+      moveTo: function () {}, resizeTo: function () {}, scrollTo: function () {},
+      close: function () {
+        if (stub.closed) return;
+        stub.closed = true;
+        send({ type: 'dsh-popup-close', id: id });
+      }
+    };
+    var nav = function (u) {
+      if (u === undefined || u === null) return;
+      var target = String(u);
+      stub.__url = target;
+      send({ type: 'dsh-popup-nav', id: id, url: target });
+    };
+    stub.location = {
+      replace: nav,
+      assign: nav,
+      reload: function () {},
+      toString: function () { return stub.__url; }
+    };
+    // 页面可能写 location.href（OAuth 流程常见），必须真的转发出去
+    try {
+      Object.defineProperty(stub.location, 'href', {
+        configurable: true,
+        get: function () { return stub.__url; },
+        set: function (v) { nav(v); }
+      });
+    } catch (e) {}
+    stubs[id] = stub;
+    return stub;
+  }
+
+  // 宿主 -> 页面：内置浏览器窗口被用户关掉时，把 stub.closed 置真（DSH 会据此复位）
+  window.__dshPopupClosed = function (id) {
+    var s = stubs[id];
+    if (s) s.closed = true;
+  };
+
+  var origOpen = window.open;
+  window.open = function (url, name, features) {
+    try {
+      var target = (url === undefined || url === null || url === '') ? 'about:blank' : String(url);
+      var id = 'p' + (++seq) + '-' + Math.random().toString(36).slice(2, 8);
+      var stub = makeStub(id, target);
+      send({ type: 'dsh-popup-open', id: id, url: target });
+      return stub;
+    } catch (e) {
+      try { return origOpen.apply(window, arguments); } catch (e2) { return null; }
+    }
+  };
+
+  // target=_blank 的普通链接同样走内置浏览器（create 已被我们拦成 None）
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    var t = (a.getAttribute('target') || '').toLowerCase();
+    if (t !== '_blank') return;
+    var href = a.href;
+    if (!href || !/^https?:/i.test(href)) return;
+    e.preventDefault();
+    window.open(href, '_blank');
+  }, true);
+})();
+"""
+
 # 2) 会话拖拽分离（与 Windows 版同一套手势：拖出侧边栏 -> 开新窗口）
 DETACH_JS = r"""
 (function () {
@@ -397,7 +496,9 @@ def selftest():
         pass
     popup_marks = (
         ('弹窗按请求的地址打开（不是又开一个应用窗口）', 'req.get_uri()'),
-        ('内置浏览器用独立 WebView（不注入 DSH 脚本）', 'WebKit2.WebView(web_context=context)'),
+        ('内置浏览器用独立 WebView（不注入 DSH 脚本）', "WebKit2.WebView(web_context=context)"),
+        ('页面 window.open 走宿主内置浏览器（假窗口对象）', '__dshPopupClosed'),
+        ('create 兜底不返回 WebView（避开 WebKitGTK 断言崩溃）', 'return None'),
         ('主窗口拒绝页面发起的 window.close()', '_on_view_close'),
         ('窗口可被跨进程唤起（控制套接字）', 'start_control_server'),
         ('无 GPU 时自动软件渲染', 'software_render_if_no_gpu'),
@@ -405,7 +506,6 @@ def selftest():
         ('原生截屏桥（portal Screenshot）', '_native_screenshot'),
         ('portal 截图文件转 data URL', 'load_png_data_url'),
         ('内置浏览器（登录 / 外部页面）', 'class BrowserWindow'),
-        ('空白弹窗也返回真实窗口（window.open 不为 null）', 'about:blank'),
     )
     for label, mark in popup_marks:
         if mark in src:
@@ -824,6 +924,9 @@ def run_gui():
                 SHIM_JS, WebKit2.UserContentInjectedFrames.TOP_FRAME,
                 WebKit2.UserScriptInjectionTime.START, None, None))
             ucm.add_script(WebKit2.UserScript(
+                POPUP_JS, WebKit2.UserContentInjectedFrames.TOP_FRAME,
+                WebKit2.UserScriptInjectionTime.START, None, None))
+            ucm.add_script(WebKit2.UserScript(
                 DETACH_JS, WebKit2.UserContentInjectedFrames.TOP_FRAME,
                 WebKit2.UserScriptInjectionTime.START, None, None))
 
@@ -861,6 +964,22 @@ def run_gui():
                 return
             window = self.window
             window.set_progress(0)
+            # 主窗口自己跳去站外（不是 window.open，而是 location.href 那种）：
+            # 把那个页面交给内置浏览器，主窗口退回 DSH —— 否则用户看到的就是
+            # "会话窗口被登录页顶掉了"，回来还得重新进会话。
+            try:
+                if getattr(window, 'primary', False):
+                    here = view.get_uri() or ''
+                    if (here.lower().startswith(('http://', 'https://'))
+                            and not same_origin(here, WEB_URL)
+                            and getattr(window, '_left_app', None) != here):
+                        window._left_app = here
+                        sys.stderr.write('[dsh-desktop] 主窗口被带去站外，改开内置窗口：%s\n' % here)
+                        open_popup(here, None, view)
+                        view.load_uri(WEB_URL)
+                        return
+            except Exception as exc:
+                sys.stderr.write('[dsh-desktop] 站外导航处理失败：%s\n' % exc)
             if window.auth_done or not AUTH_COOKIE and not window.cookie:
                 return
             value = '%s; path=/; max-age=%s; SameSite=Strict' % (window.cookie_value, AUTH_MAXAGE)
@@ -875,18 +994,15 @@ def run_gui():
             self.run_js(script)
 
         def _on_create(self, view, action):
-            """页面要开新窗口时（window.open / target=_blank）。
+            """页面要开新窗口（window.open / target=_blank）时的**兜底**。
 
-            关键点：**必须返回一个真实的 WebView**，否则 WebKit 视作"弹窗被拦"，
-            `window.open()` 返回 null —— DSH 的登录就靠它弹授权页，一旦返回 null
-            就只会显示「没有自动打开新页面？复制登录链接…」的兜底提示（实测就是这样）。
+            关键：这里**绝对不能返回 WebView**。WebKitGTK 2.4x 在无 features 的
+            `window.open('about:blank')` 上会断言崩溃（见 POPUP_JS 注释），返回
+            None 只是"这次弹窗被拦"，进程是安全的。
 
-            因此这里分成三条：
-              - `about:blank` / 空地址：照样开一个**内置浏览器**空窗口并返回它，
-                页面随后会把地址写进去（OAuth 流程常见：先 open('') 再给 location 赋值）；
-              - 站内地址：开应用窗口（保留会话分离体验）；
-              - 站外地址（登录页、外部站点）：开**内置浏览器**窗口，不注入 DSH 脚本。
-            非 http(s) 协议（mailto: 等）仍交给系统处理。
+            正常路径已经由注入脚本里的 window.open 接管（它会给宿主发
+            `dsh-popup-open` 消息），这里只兜住注入脚本没覆盖到的情况
+            （例如 iframe 里开窗、页面在被注入前就调用了 open）。
             """
             uri = ''
             try:
@@ -895,26 +1011,16 @@ def run_gui():
             except Exception:
                 uri = ''
             uri = (uri or '').strip()
-            low = uri.lower()
-
-            if uri and not low.startswith(('http://', 'https://', 'about:blank', 'data:')):
-                # mailto: / 自定义协议 之类，交给系统处理
-                sys.stderr.write('[dsh-desktop] 新窗口请求交给系统（%s）\n' % uri)
-                open_external(uri)
-                return None
-
+            sys.stderr.write('[dsh-desktop] create 兜底（不返回 WebView）：%r\n' % uri)
             try:
-                if uri and same_origin(uri, WEB_URL):
-                    win = DshWindow(uri, primary=False)
+                low = uri.lower()
+                if uri and not low.startswith(('http://', 'https://', 'about:blank', 'data:')):
+                    open_external(uri)
                 else:
-                    win = BrowserWindow(uri or 'about:blank', parent=self.window)
-                win.show_all()
-                win.present()
-                sys.stderr.write('[dsh-desktop] 新窗口已开：%s\n' % (uri or '(空白页)'))
-                return win.web
+                    open_popup(uri or 'about:blank', None, self)
             except Exception as exc:
-                sys.stderr.write('[dsh-desktop] 开新窗口失败（%s）：%s\n' % (uri, exc))
-                return None
+                sys.stderr.write('[dsh-desktop] create 兜底开窗失败：%s\n' % exc)
+            return None
 
     # ---------------- 窗口 ----------------
     class DshWindow(Gtk.Window):
@@ -999,6 +1105,10 @@ def run_gui():
             return False
 
         def _on_destroy(self, widget):
+            try:
+                notify_popup_closed(self)
+            except Exception:
+                pass
             if self in windows:
                 windows.remove(self)
             if not windows:
@@ -1007,6 +1117,40 @@ def run_gui():
         # ---- 宿主消息 ----
         def handle_message(self, web, msg):
             mtype = msg.get('type')
+            if mtype == 'dsh-popup-open':
+                # 注入脚本接管了 window.open：请求宿主开一个内置浏览器窗口
+                win = open_popup(msg.get('url'), msg.get('id'), web)
+                if win is None:
+                    try:
+                        web.run_js('window.__dshPopupClosed && window.__dshPopupClosed(%s)'
+                                   % json.dumps(msg.get('id')))
+                    except Exception:
+                        pass
+                return
+            if mtype == 'dsh-popup-nav':
+                pid = msg.get('id')
+                url = (msg.get('url') or '').strip()
+                win = popups.get(pid)
+                if win is not None and url:
+                    try:
+                        win.web.load_uri(url)
+                        if hasattr(win, 'lbl_url'):
+                            win.lbl_url.set_text(url)
+                        sys.stderr.write('[dsh-desktop] 内置窗口导航：%s\n' % url)
+                    except Exception as exc:
+                        sys.stderr.write('[dsh-desktop] 内置窗口导航失败：%s\n' % exc)
+                elif url:
+                    # 用户已经把那个窗口关了：按新地址再开一个（登录流程还在等它）
+                    open_popup(url, pid, web)
+                return
+            if mtype == 'dsh-popup-close':
+                pwin = popups.pop(msg.get('id'), None)
+                if pwin is not None:
+                    try:
+                        pwin.destroy()
+                    except Exception:
+                        pass
+                return
             if mtype == 'dsh-detach':
                 from urllib.parse import quote
                 sid = msg.get('id', '')
@@ -1273,41 +1417,36 @@ def run_gui():
         """内置浏览器窗口：登录页、外部链接、OAuth 授权页都走它。
 
         与主窗口的区别：**不注入 DSH 的任何脚本、不签认证 cookie**，
-        只带一个极简工具栏（返回 / 刷新 / 用系统浏览器打开）和当前地址。
+        只带一个极简工具栏（返回 / 刷新 / 地址 / 用系统浏览器打开 / 关闭）。
 
-        之所以要"内置"而不是丢给系统浏览器：登录流程往往依赖 `window.open()`
-        返回的那个窗口对象（`opener`、`w.closed`、`postMessage`），交给系统浏览器
+        为什么工具栏自己画、不用 Gtk.HeaderBar：这台机器上 GTK 是关掉 CSD 跑的
+        （GTK_CSD=0，Plasma 的「GTK 应用使用 CSD」默认关闭），set_titlebar() 会被
+        直接忽略 —— 实测窗口顶上只剩系统画的一条标题栏，返回/刷新/地址全没了。
+        所以这里用一个普通 Gtk.Box 画工具栏，有没有 CSD 都长一样。
+
+        之所以要"内置"而不是丢给系统浏览器：登录流程依赖 `window.open()` 返回的
+        那个窗口对象（`location.replace`、`closed`、`close`），交给系统浏览器
         这条链就断了；而返回 null 会让 DSH 直接显示「没有自动打开新页面」。
         """
 
         def __init__(self, uri, parent=None):
             Gtk.Window.__init__(self, title='DeepSeek Harness · 内置浏览器')
             self.uri = uri or 'about:blank'
-            self.set_default_size(1000, 780)
+            # 别铺满整块屏幕：按屏幕的 88% 开一个像样的窗口（虚拟机上默认 1000x780
+            # 比 1280x720 的屏还高，KWin 会直接最大化）
+            try:
+                screen = Gdk.Screen.get_default()
+                sw, sh = screen.get_width(), screen.get_height()
+            except Exception:
+                sw, sh = 1280, 800
+            self.set_default_size(max(640, min(1080, int(sw * 0.88))),
+                                  max(480, min(820, int(sh * 0.88))))
             self.set_position(Gtk.WindowPosition.CENTER)
             if ICON_PATH:
                 try:
                     self.set_icon_from_file(ICON_PATH)
                 except Exception:
                     pass
-
-            hb = Gtk.HeaderBar()
-            hb.set_show_close_button(True)
-            hb.props.title = '内置浏览器'
-            hb.props.subtitle = '登录 / 外部页面'
-            btn_back = Gtk.Button.new_from_icon_name('go-previous-symbolic', Gtk.IconSize.BUTTON)
-            btn_back.set_tooltip_text('后退')
-            btn_back.connect('clicked', lambda *a: _safe(self.web.go_back))
-            btn_reload = Gtk.Button.new_from_icon_name('view-refresh-symbolic', Gtk.IconSize.BUTTON)
-            btn_reload.set_tooltip_text('刷新')
-            btn_reload.connect('clicked', lambda *a: _safe(self.web.reload))
-            btn_ext = Gtk.Button.new_from_icon_name('web-browser-symbolic', Gtk.IconSize.BUTTON)
-            btn_ext.set_tooltip_text('改用系统浏览器打开这个地址')
-            btn_ext.connect('clicked', lambda *a: open_external(self.web.get_uri() or self.uri))
-            hb.pack_start(btn_back)
-            hb.pack_start(btn_reload)
-            hb.pack_end(btn_ext)
-            self.set_titlebar(hb)
 
             self.web = WebKit2.WebView(web_context=context)
             try:
@@ -1317,17 +1456,37 @@ def run_gui():
             except Exception:
                 pass
 
+            # ---- 工具栏 ----
+            bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            bar.set_margin_top(6)
+            bar.set_margin_bottom(6)
+            bar.set_margin_start(8)
+            bar.set_margin_end(8)
+
+            btn_back = self._tool_button('go-previous-symbolic', '后退', lambda *a: _safe(self.web.go_back))
+            btn_reload = self._tool_button('view-refresh-symbolic', '刷新', lambda *a: _safe(self.web.reload))
+            btn_ext = self._tool_button('web-browser-symbolic', '改用系统浏览器打开这个地址',
+                                        lambda *a: open_external(self.web.get_uri() or self.uri))
+            btn_close = self._tool_button('window-close-symbolic', '关闭这个窗口',
+                                          lambda *a: self.destroy())
+
             self.lbl_url = Gtk.Label(xalign=0)
-            self.lbl_url.set_ellipsize(3)          # END
-            self.lbl_url.set_margin_top(3)
-            self.lbl_url.set_margin_bottom(3)
-            self.lbl_url.set_margin_start(8)
-            self.lbl_url.set_margin_end(8)
+            self.lbl_url.set_ellipsize(3)          # Pango.EllipsizeMode.END
+            self.lbl_url.set_selectable(True)
+            self.lbl_url.set_margin_start(4)
+            self.lbl_url.set_margin_end(4)
             self.lbl_url.get_style_context().add_class('dim-label')
             self.lbl_url.set_text(self.uri)
 
+            bar.pack_start(btn_back, False, False, 0)
+            bar.pack_start(btn_reload, False, False, 0)
+            bar.pack_start(self.lbl_url, True, True, 0)
+            bar.pack_start(btn_ext, False, False, 0)
+            bar.pack_start(btn_close, False, False, 0)
+
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-            box.pack_start(self.lbl_url, False, False, 0)
+            box.pack_start(bar, False, False, 0)
+            box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
             box.pack_start(self.web, True, True, 0)
             self.add(box)
 
@@ -1337,6 +1496,19 @@ def run_gui():
             self.connect('destroy', self._on_destroy)
             _WINDOWS.append(self)
             _safe(lambda: self.web.load_uri(self.uri))
+
+        @staticmethod
+        def _tool_button(icon, tip, on_click):
+            btn = Gtk.Button()
+            btn.set_relief(Gtk.ReliefStyle.NONE)
+            try:
+                img = Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.BUTTON)
+                btn.set_image(img)
+            except Exception:
+                btn.set_label(tip)
+            btn.set_tooltip_text(tip)
+            btn.connect('clicked', on_click)
+            return btn
 
         def _on_uri(self, view, _pspec=None):
             self.lbl_url.set_text(view.get_uri() or '')
@@ -1351,6 +1523,10 @@ def run_gui():
                 self._on_title(view)
 
         def _on_destroy(self, _w):
+            try:
+                notify_popup_closed(self)
+            except Exception:
+                pass
             if self in _WINDOWS:
                 _WINDOWS.remove(self)
 
@@ -1360,6 +1536,55 @@ def run_gui():
             return fn(*args)
         except Exception:
             return None
+
+    # ---------------- 页面发起的"新窗口" ----------------
+    popups = {}      # 注入脚本给的句柄 id -> Gtk 窗口（登录页等）
+    popup_seq = [0]
+
+    def open_popup(uri, popup_id=None, opener=None):
+        """给页面发起的 window.open 打开一个窗口，并把它记进 popups。
+
+        站内地址开**应用窗口**（沿用会话分离的体验），站外/空白页开**内置浏览器**。
+        popup_id 是注入脚本生成的句柄 id：页面之后写 `popup.location` 时，
+        宿主靠它找到这个窗口去导航；用户手动关窗时也靠它通知页面（closed=true）。
+        """
+        uri = (uri or '').strip()
+        low = uri.lower()
+        if uri and low.startswith(('mailto:', 'tel:', 'sms:', 'file:')):
+            open_external(uri)
+            return None
+        if uri and '://' in uri and not low.startswith(('http://', 'https://')):
+            open_external(uri)
+            return None
+        try:
+            if uri and same_origin(uri, WEB_URL):
+                win = DshWindow(uri, primary=False)
+            else:
+                win = BrowserWindow(uri or 'about:blank')
+            win.popup_id = popup_id
+            win.popup_opener = opener
+            if popup_id:
+                popups[popup_id] = win
+            win.show_all()
+            win.present()
+            sys.stderr.write('[dsh-desktop] 为页面打开窗口：%s\n' % (uri or '(空白页)'))
+            return win
+        except Exception as exc:
+            sys.stderr.write('[dsh-desktop] 打开窗口失败（%s）：%s\n' % (uri, exc))
+            return None
+
+    def notify_popup_closed(win):
+        """窗口被关掉时告诉页面（stub.closed = true），否则 DSH 会一直等它。"""
+        pid = getattr(win, 'popup_id', None)
+        opener = getattr(win, 'popup_opener', None)
+        if pid:
+            popups.pop(pid, None)
+        if pid and opener is not None:
+            try:
+                opener.run_js('window.__dshPopupClosed && window.__dshPopupClosed(%s)'
+                              % json.dumps(pid))
+            except Exception:
+                pass
 
     # ---------------- 单实例 / 托盘 / 主循环 ----------------
     def make_tray(show_window, quit_app):

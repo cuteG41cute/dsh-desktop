@@ -167,7 +167,13 @@ find_dsh() {
         if [ -f "$DSH_BIN" ]; then printf '%s' "$DSH_BIN"; return 0; fi
         echo "警告：DSH_BIN 指向的文件不存在：$DSH_BIN" >&2
     fi
-    # 1) npx 缓存（npx @deepseek-ai/dsh 跑过一次就会有）
+    # 1) 便携安装器的布局：<prefix>/app/node_modules/@deepseek-ai/dsh/lib/bin.js
+    #    （从菜单/图标启动时 PATH 里没有 dsh，也没有全局 npm 包，只能靠实例自己的）
+    for d in "$PREFIX/app/node_modules/@deepseek-ai/dsh/lib/bin.js" \
+             "$PREFIX/share/app/node_modules/@deepseek-ai/dsh/lib/bin.js"; do
+        [ -f "$d" ] && { printf '%s' "$d"; return 0; }
+    done
+    # 2) npx 缓存（npx @deepseek-ai/dsh 跑过一次就会有）
     for d in "$HOME/.npm/_npx"/*/node_modules/@deepseek-ai/dsh/lib/bin.js; do
         [ -f "$d" ] && { printf '%s' "$d"; return 0; }
     done
