@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # ============================================================================
 # 构建 dsh-manager 的 .deb（任何 Debian 系系统都能跑，不需要 dh / dpkg-buildpackage）
 #   用法：bash build-deb.sh [--version 1.0.0] [--out <目录>]
@@ -10,7 +10,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # dsh-desktop/linux/manag
 MANAGER_DIR="$HERE"
 LINUX_DIR="$(cd "$HERE/.." && pwd)"                    # dsh-desktop/linux
 DESKTOP_DIR="$(cd "$LINUX_DIR/.." && pwd)"             # dsh-desktop
-VERSION="1.5.1"
+VERSION="1.5.2"
 OUT="$HERE"
 
 while [ $# -gt 0 ]; do

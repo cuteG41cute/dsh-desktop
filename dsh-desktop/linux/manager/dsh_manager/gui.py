@@ -2151,8 +2151,9 @@ class ManagerWindow(Gtk.Window):
         # 会让文字区只剩两行高（用户实测："日志只显示两行"）。
         area.pack_start(sw, True, True, 0)
         dlg.show_all()
-        dlg.run()
-        dlg.destroy()
+        # 纯查看：非模态 + 自绘关闭（对齐 Windows 的 modeless 日志窗口）
+        dlg.connect('response', lambda d, *a: d.destroy())
+        dlg.show()
 
     def _section(self, title):
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -2293,29 +2294,61 @@ class ManagerWindow(Gtk.Window):
 
     # ------------------------------------------------------------ 对话框统一样式
     def _style_dialog(self, dlg, title, subtitle=''):
-        """把 Gtk.Dialog 统一成主界面的观感（自绘标题栏 + 主题按钮 + 主题选中色）。"""
+        """把 Gtk.Dialog 统一成主界面观感：**没有系统标题栏**（自绘标题区 + 右上关闭），
+        并且非模态 —— 对齐 Windows 版：开着插件/日志等子窗口时，管理器与 DSH 窗口都还能用。
+
+        Windows 那边是 WPF 的 Show()（modeless）；GTK 里 modal 是**整个应用**都被锁，
+        所以这里必须 set_modal(False)，查看型对话框还要绕开 run()（它自己会临时模态化）。
+        """
         dlg.get_style_context().add_class('dsh-dialog')
+        # Wayland 下 set_decorated(False) 会被忽略（GTK 退回服务端装饰，KWin 照样画标题栏）。
+        # 跟主窗口同一手：decorated=True + 零高度的自绘标题栏 → 协商成 CSD。
         dlg.set_decorated(True)
-        bar = Gtk.HeaderBar()
-        bar.get_style_context().add_class('dsh-headerbar')
-        bar.set_show_close_button(True)
-        bar.set_decoration_layout(':close')
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        _placeholder = Gtk.Box()
+        _placeholder.set_size_request(-1, 0)
+        dlg.set_titlebar(_placeholder)
+        dlg.set_modal(False)          # 不锁住管理器/DSH 窗口
+        dlg.set_resizable(True)
+        dlg.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
+
+        area = dlg.get_content_area()
+        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        head.set_margin_top(16)
+        head.set_margin_start(18)
+        head.set_margin_end(12)
+        head.set_margin_bottom(6)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
         lbl = Gtk.Label(xalign=0.0)
         lbl.set_markup('<b>%s</b>' % GLib.markup_escape_text(title))
         lbl.get_style_context().add_class('dialog-title')
-        box.pack_start(lbl, False, False, 0)
+        left.pack_start(lbl, False, False, 0)
         if subtitle:
-            sub = Gtk.Label(xalign=0.0)
+            sub = Gtk.Label(xalign=0.0, wrap=True)
             sub.set_markup(subtitle)
             sub.get_style_context().add_class('dialog-sub')
-            box.pack_start(sub, False, False, 0)
-        bar.set_custom_title(box)
-        dlg.set_titlebar(bar)
+            left.pack_start(sub, False, False, 0)
+        head.pack_start(left, True, True, 0)
+
+        btn_close = Gtk.Button()
+        btn_close.set_relief(Gtk.ReliefStyle.NONE)
+        btn_close.get_style_context().add_class('icon-btn')
+        btn_close.set_size_request(28, 28)
+        btn_close.set_tooltip_text('关闭')
+        try:
+            btn_close.add(self._icon('x', 'muted', 16))
+        except Exception:
+            btn_close.set_label('✕')
+        btn_close.connect('clicked', lambda *a: dlg.response(Gtk.ResponseType.CLOSE))
+        head.pack_end(btn_close, False, False, 0)
+
+        # 按住标题区可以拖窗口（无边框窗口没有系统拖动区）
+        head.connect('button-press-event', lambda w, ev: self._drag_window(dlg, w, ev))
+        area.pack_start(head, False, False, 0)
+
         # 动作区按钮：统一成主界面按钮风格（主操作 accent，其余 secondary）
         try:
-            area = dlg.get_action_area()
-            kids = area.get_children()
+            act = dlg.get_action_area()
+            kids = act.get_children()
             for idx, btn in enumerate(reversed(kids)):
                 btn.get_style_context().add_class('btn')
                 btn.get_style_context().add_class('btn-primary' if idx == 0 else 'btn-secondary')
@@ -2323,6 +2356,17 @@ class ManagerWindow(Gtk.Window):
             pass
         self._dialog_rounded(dlg)
         return dlg
+
+    def _drag_window(self, win, widget, event):
+        """无边框窗口：按住标题区拖动（GTK3 的 begin_move_drag）。"""
+        try:
+            if event.button == 1:
+                win.begin_move_drag(event.button, int(event.x_root), int(event.y_root),
+                                    event.time)
+                return True
+        except Exception:
+            pass
+        return False
 
     def _dialog_rounded(self, dlg, radius=18):
         """对话框也开 RGBA + 画圆角背景（否则四角是白的方角）。"""
@@ -2564,8 +2608,9 @@ class ManagerWindow(Gtk.Window):
         # 打开时自动拉一次（不阻塞界面）：没缓存时列表会先用内置目录，拉到后自动刷新
         GLib.timeout_add(200, lambda: (refresh_github(), False)[1])
         dlg.show_all()
-        dlg.run()
-        dlg.destroy()
+        # 非模态：show() 而不是 run()（run 会临时把对话框设成 modal，锁住整个应用）
+        dlg.connect('response', lambda d, *a: d.destroy())
+        dlg.show()
     # ---- 更新 ----
     def on_update(self, *_):
         inst = self._need()
