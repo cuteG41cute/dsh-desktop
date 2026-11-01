@@ -1965,6 +1965,7 @@ class ManagerWindow(Gtk.Window):
     def on_new(self, *_):
         dlg = Gtk.Dialog(title='新建实例', transient_for=self, modal=True)
         dlg.add_buttons('取消', Gtk.ResponseType.CANCEL, '安装', Gtk.ResponseType.OK)
+        self._style_dialog(dlg, '新建实例', '选目录、端口与版本')
         dlg.set_default_size(560, 320)
         grid = Gtk.Grid(column_spacing=8, row_spacing=10, border_width=12)
         dlg.get_content_area().add(grid)
@@ -2132,6 +2133,7 @@ class ManagerWindow(Gtk.Window):
     def _text_dialog(self, title, text, width=None, height=None):
         dlg = Gtk.Dialog(title=title, transient_for=self, modal=True)
         dlg.add_buttons('关闭', Gtk.ResponseType.CLOSE)
+        self._style_dialog(dlg, title)
         w, h = self._dialog_size(width, height)
         dlg.set_default_size(w, h)
         area = dlg.get_content_area()
@@ -2288,23 +2290,91 @@ class ManagerWindow(Gtk.Window):
         self._run_async('查看 Token · %s' % inst.label, job, on_done=done)
 
     # ---- 插件管理（第一阶段：我们自己的 GitHub 仓库）----
+
+    # ------------------------------------------------------------ 对话框统一样式
+    def _style_dialog(self, dlg, title, subtitle=''):
+        """把 Gtk.Dialog 统一成主界面的观感（自绘标题栏 + 主题按钮 + 主题选中色）。"""
+        dlg.get_style_context().add_class('dsh-dialog')
+        dlg.set_decorated(True)
+        bar = Gtk.HeaderBar()
+        bar.get_style_context().add_class('dsh-headerbar')
+        bar.set_show_close_button(True)
+        bar.set_decoration_layout(':close')
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        lbl = Gtk.Label(xalign=0.0)
+        lbl.set_markup('<b>%s</b>' % GLib.markup_escape_text(title))
+        lbl.get_style_context().add_class('dialog-title')
+        box.pack_start(lbl, False, False, 0)
+        if subtitle:
+            sub = Gtk.Label(xalign=0.0)
+            sub.set_markup(subtitle)
+            sub.get_style_context().add_class('dialog-sub')
+            box.pack_start(sub, False, False, 0)
+        bar.set_custom_title(box)
+        dlg.set_titlebar(bar)
+        # 动作区按钮：统一成主界面按钮风格（主操作 accent，其余 secondary）
+        try:
+            area = dlg.get_action_area()
+            kids = area.get_children()
+            for idx, btn in enumerate(reversed(kids)):
+                btn.get_style_context().add_class('btn')
+                btn.get_style_context().add_class('btn-primary' if idx == 0 else 'btn-secondary')
+        except Exception:
+            pass
+        self._dialog_rounded(dlg)
+        return dlg
+
+    def _dialog_rounded(self, dlg, radius=18):
+        """对话框也开 RGBA + 画圆角背景（否则四角是白的方角）。"""
+        try:
+            screen = Gdk.Screen.get_default()
+            visual = screen.get_rgba_visual() if screen is not None else None
+            if visual is None or not screen.is_composited() or cairo is None:
+                return
+            dlg.set_visual(visual)
+            dlg.set_app_paintable(True)
+            theme, mode = self._theme_state()
+            color = Gdk.RGBA()
+            color.parse(token_color(theme, mode, 'card-solid'))
+
+            def on_draw(_w, cr):
+                alloc = dlg.get_allocation()
+                cr.save()
+                cr.set_operator(cairo.OPERATOR_SOURCE)
+                cr.set_source_rgba(0, 0, 0, 0)
+                cr.paint()
+                cr.set_operator(cairo.OPERATOR_OVER)
+                cr.restore()
+                self._rounded_path(cr, 0, 0, alloc.width, alloc.height, radius)
+                cr.clip()
+                cr.set_source_rgba(color.red, color.green, color.blue, 1.0)
+                cr.paint()
+                return False
+
+            dlg.connect('draw', on_draw)
+            ctx = dlg.get_style_context()
+            ctx.add_class('dsh-dialog-flat')
+        except Exception:
+            pass
+
     def on_plugins(self, *_):
         inst = self._need()
         if not inst:
             return
         dlg = Gtk.Dialog(title='插件 · %s' % inst.label, transient_for=self, modal=True)
         dlg.add_buttons('关闭', Gtk.ResponseType.CLOSE)
+        self._style_dialog(dlg, '插件 · %s' % inst.label,
+                           '装在 <tt>%s</tt>'
+                           % GLib.markup_escape_text(plug.profile_dir(inst)))
         dlg.set_default_size(880, 580)
         area = dlg.get_content_area()
         area.set_border_width(14)
         area.set_spacing(10)
 
-        head = Gtk.Label(xalign=0, wrap=True)
-        head.set_markup('<b>插件 · %s</b>\n'
-                        '从我们自己的 GitHub 仓库安装 / 卸载；装在这个实例自己的 profile 里：\n'
-                        '<tt>%s</tt>' % (GLib.markup_escape_text(inst.label),
-                                         GLib.markup_escape_text(plug.profile_dir(inst))))
-        area.pack_start(head, False, False, 0)
+        intro = Gtk.Label(xalign=0, wrap=True)
+        intro.set_markup('从我们自己的 GitHub 仓库安装 / 卸载；装在这个实例自己的 profile 里。')
+        intro.get_style_context().add_class('dialog-sub')
+        area.pack_start(intro, False, False, 0)
 
         store = Gtk.ListStore(str, str, str, str)      # id, 说明, 状态, 版本
         tree = Gtk.TreeView(model=store)
@@ -2459,6 +2529,7 @@ class ManagerWindow(Gtk.Window):
             return
         dlg = Gtk.Dialog(title='更新 %s' % inst.label, transient_for=self, modal=True)
         dlg.add_buttons('取消', Gtk.ResponseType.CANCEL, '更新', Gtk.ResponseType.OK)
+        self._style_dialog(dlg, '更新 %s' % inst.label)
         grid = Gtk.Grid(column_spacing=8, row_spacing=10, border_width=12)
         dlg.get_content_area().add(grid)
 
