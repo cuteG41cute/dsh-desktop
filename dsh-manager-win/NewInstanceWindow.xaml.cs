@@ -25,8 +25,30 @@ public partial class NewInstanceWindow : Window
         {
             DirBox.Text = def;
             AppendLog("提示：安装会用系统的 npm（PATH 上的 npm.cmd），装到上面的目录里。");
+            LoadVersionLists();
             AppendLog("已有的 DSH 安装不需要新建——直接在主界面选它就行。");
         };
+    }
+
+    /// <summary>联网取 dsh / Node 的候选版本（拿不到就用内置列表，不阻塞界面）。</summary>
+    private async void LoadVersionLists()
+    {
+        try
+        {
+            var dsh = await VersionCatalog.DshVersionsAsync(AppendLog);
+            DshVersionBox.ItemsSource = dsh;
+            if (string.IsNullOrWhiteSpace(DshVersionBox.Text)) DshVersionBox.Text = "latest";
+            AppendLog("dsh 版本候选 " + dsh.Count + " 个（" + dsh[0] + " … " + dsh[dsh.Count - 1] + "）");
+        }
+        catch (Exception ex) { AppendLog("dsh 版本列表失败：" + ex.Message); }
+        try
+        {
+            var node = await VersionCatalog.NodeVersionsAsync(AppendLog);
+            NodeVersionBox.ItemsSource = node;
+            if (string.IsNullOrWhiteSpace(NodeVersionBox.Text)) NodeVersionBox.Text = VersionCatalog.SystemNode;
+            AppendLog("Node 版本候选 " + node.Count + " 个（默认 system = 用系统的 node）");
+        }
+        catch (Exception ex) { AppendLog("Node 版本列表失败：" + ex.Message); }
     }
 
     private void AppendLog(string line)
@@ -75,7 +97,10 @@ public partial class NewInstanceWindow : Window
         StatusText.Text = "正在安装…（npm 可能需要几分钟）";
         AppendLog("=== 开始安装 ===");
 
-        var (ok, msg) = await InstanceInstaller.InstallAsync(dir, VersionBox.Text, AppendLog, port);
+        var nodeVer = (NodeVersionBox.Text ?? "").Trim();
+        var (ok, msg) = await InstanceInstaller.InstallAsync(
+            dir, DshVersionBox.Text ?? "latest", AppendLog, port,
+            string.IsNullOrWhiteSpace(nodeVer) ? VersionCatalog.SystemNode : nodeVer);
         _busy = false;
         CreateBtn.IsEnabled = true;
         CancelBtn.IsEnabled = true;

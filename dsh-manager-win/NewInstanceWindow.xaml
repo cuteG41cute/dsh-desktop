@@ -83,13 +83,21 @@
                                    Foreground="{DynamicResource Muted}" />
                         <Border BorderBrush="{DynamicResource InnerBorder}" BorderThickness="1" CornerRadius="10"
                                 Background="{DynamicResource Card}" Height="38">
-                            <TextBox x:Name="VersionBox" FontSize="11" VerticalContentAlignment="Center" Margin="12,0"
-                                     Background="Transparent" BorderThickness="0"
-                                     Foreground="{DynamicResource Text}" Text="latest" />
+                            <ComboBox x:Name="DshVersionBox" FontSize="11" IsEditable="True" Height="36"
+                                      Margin="4,0" Background="Transparent" BorderThickness="0"
+                                      Foreground="{DynamicResource Text}" Text="latest" />
+                        </Border>
+                        <TextBlock Text="Node 版本" FontSize="9" FontWeight="SemiBold" Margin="0,12,0,7"
+                                   Foreground="{DynamicResource Muted}" />
+                        <Border BorderBrush="{DynamicResource InnerBorder}" BorderThickness="1" CornerRadius="10"
+                                Background="{DynamicResource Card}" Height="38">
+                            <ComboBox x:Name="NodeVersionBox" FontSize="11" IsEditable="True" Height="36"
+                                      Margin="4,0" Background="Transparent" BorderThickness="0"
+                                      Foreground="{DynamicResource Text}" Text="system" />
                         </Border>
                     </StackPanel>
                 </Grid>
-                <TextBlock Text="端口留空则由管理器自动挑一个空闲端口；版本可填 latest 或具体版本号。"
+                <TextBlock Text="端口留空则由管理器自动挑一个空闲端口；版本可填 latest 或具体版本号；Node 选 system 用系统 node，选具体版本会下载便携 Node（约 30MB）。"
                            FontSize="8" Margin="0,8,0,0" Foreground="{DynamicResource Subtle}"
                            TextWrapping="Wrap" />
             </StackPanel>
