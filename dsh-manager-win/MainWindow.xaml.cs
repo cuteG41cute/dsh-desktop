@@ -1263,9 +1263,7 @@ public partial class MainWindow : Window
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "dsh-manager")),
             ("运行环境", ".NET " + Environment.Version + " · WPF"),
             ("DSH_HOME", DshDiscovery.HomeDir),
-            ("实例根目录", _instances.Count > 0
-                ? System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(_instances[0].Entry) ?? "")
-                : "—"),
+            ("实例根目录", _instances.Count > 0 ? _instances[0].Dir : InstanceRegistry.DefaultRoot),
         };
         foreach (var (key, value) in rows)
         {
