@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="DeepSeek Harness 管理器"
+        Icon="/app.ico"
         Width="1308" Height="840" MinWidth="720" MinHeight="450"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="True"
@@ -67,16 +68,11 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Border Width="38" Height="38" CornerRadius="12">
-                                <Border.Background>
-                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                        <GradientStop Color="{DynamicResource Accent2.Color}" Offset="0" />
-                                        <GradientStop Color="{DynamicResource Accent.Color}" Offset="1" />
-                                    </LinearGradientBrush>
-                                </Border.Background>
-                                <TextBlock Text="D" Foreground="{DynamicResource OnAccent}"
-                                           FontSize="19" FontWeight="Bold"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <!-- 品牌标：沿用旧启动器的黑色鲸鱼（白底圆角方，深浅主题都认得出） -->
+                            <Border Width="38" Height="38" CornerRadius="12" Background="#FFFFFFFF"
+                                    BorderBrush="{DynamicResource InnerBorder}" BorderThickness="1">
+                                <Image Source="Assets/whale.png" Stretch="Uniform" Margin="4,5"
+                                       RenderOptions.BitmapScalingMode="HighQuality" />
                             </Border>
                             <StackPanel x:Name="BrandCopy" Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
                                 <TextBlock x:Name="BrandTitle" Text="DeepSeek Harness" FontSize="13" FontWeight="SemiBold"

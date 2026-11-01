@@ -33,6 +33,7 @@ powershell -ExecutionPolicy Bypass -File uninstall-win.ps1 -Purge # 连配置一
   窗口里外一个色，不会出现「管理器黑、网页白」
 - 插件管理：GitHub `topic: dsh-plugin` 发现，安装 / 更新 / 卸载
 - 主题：7 套 × 昼/夜（14 个配色），和 Linux 版同一套 tokens
+- 图标：沿用旧启动器的黑色鲸鱼（程序图标 / 快捷方式 / 任务栏 / 侧栏品牌位）
 - 单实例 + 托盘：点 X 收进托盘，真正退出在托盘菜单；再启动一次只是把窗口提到前台
 - 窗口可以缩到 1/4 屏（720×450），布局自动响应式收窄
 

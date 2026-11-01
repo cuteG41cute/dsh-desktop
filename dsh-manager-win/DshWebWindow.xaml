@@ -4,6 +4,7 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="" Width="1280" Height="860" MinWidth="720" MinHeight="450"
+        Icon="/app.ico"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="False"
         Background="{DynamicResource CardSolid}" UseLayoutRounding="True"

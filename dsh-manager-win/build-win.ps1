@@ -46,6 +46,10 @@ foreach ($f in @('install-win.ps1', 'uninstall-win.ps1', 'README-win.md')) {
     $p = Join-Path $here $f
     if (Test-Path $p) { Copy-Item $p $out -Force }
 }
+# 最新的发布说明也带上（按版本号取最新一份）
+$notes = Get-ChildItem $here -Filter 'RELEASE-NOTES-win-*.md' -File -ErrorAction SilentlyContinue |
+    Sort-Object Name -Descending | Select-Object -First 1
+if ($notes) { Copy-Item $notes.FullName $out -Force }
 
 $exe = Join-Path $out 'DshManager.exe'
 if (-not (Test-Path $exe)) { throw 'DshManager.exe missing after publish' }

@@ -1,7 +1,7 @@
 <Window x:Class="DshManager.HelpWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="使用帮助 · DeepSeek Harness 管理器"
+        Title="使用帮助 · DeepSeek Harness 管理器" Icon="/app.ico"
         Width="680" Height="560" MinWidth="560" MinHeight="420"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
