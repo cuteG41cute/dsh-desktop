@@ -127,6 +127,10 @@ def cache_dir():
     return os.path.join(base, 'dsh-manager', 'plugin-cache')
 
 
+# 插件 tarball 缓存的有效期（秒）。超过就重新下载，避免"更新"装回旧包。
+CACHE_TTL = 3600
+
+
 def catalog():
     """当前插件目录：优先 GitHub 发现结果（带 dsh-plugin 标签的仓库），
     没有就退回内置 CATALOG。"""
@@ -175,9 +179,12 @@ def save_state(inst, data):
 
 
 def package_meta(pkg_dir):
+    # 用 utf-8-sig 读：有些插件的 package.json 带 UTF-8 BOM（dsh-memory-db 就踩过），
+    # 用 utf-8 会直接 JSONDecodeError → 版本读成空、界面上显示 "-"。
     try:
-        with open(os.path.join(pkg_dir, 'package.json'), 'r', encoding='utf-8') as fh:
-            return json.load(fh)
+        with open(os.path.join(pkg_dir, 'package.json'), 'rb') as fh:
+            raw = fh.read()
+        return json.loads(raw.decode('utf-8-sig'))
     except Exception:
         return {}
 
@@ -327,13 +334,25 @@ def _download(urls, dest, log):
     return False, last or '没有可用地址'
 
 
-def fetch(entry, ref='main', log=print):
+def fetch(entry, ref='main', log=print, force=False):
     if not entry.get('repo'):
         return '', '这个插件没有 GitHub 仓库（只能用本地包导入）'
     dest = os.path.join(cache_dir(), '%s-%s.tar.gz' % (entry['id'], ref))
-    if os.path.exists(dest) and os.path.getsize(dest) > 512:
-        log('使用缓存 %s' % dest)
+    # 缓存有寿命：以前这里是"只要文件在就一直用"，于是插件作者发了新版、
+    # 用户在管理器里点更新，装回去的还是几天前那个旧 tarball（实测踩过：
+    # dsh-memory-db 0.6.2 已经发布，装上去还是 0.6.0）。
+    fresh = (os.path.exists(dest) and os.path.getsize(dest) > 512
+             and (time.time() - os.path.getmtime(dest)) < CACHE_TTL)
+    if fresh and not force:
+        log('使用缓存 %s（%.0f 分钟前下载）'
+            % (dest, (time.time() - os.path.getmtime(dest)) / 60))
         return dest, ''
+    if force:
+        try:
+            os.remove(dest)
+            log('已丢弃旧缓存 %s' % os.path.basename(dest))
+        except OSError:
+            pass
     urls = [
         'https://api.github.com/repos/%s/tarball/%s' % (entry['repo'], ref),
         'https://codeload.github.com/%s/tar.gz/refs/heads/%s' % (entry['repo'], ref),
@@ -390,7 +409,8 @@ def install(inst, entry, log=print):
     if entry.get('local_only') or not entry.get('repo'):
         return False, ('%s 还没发布到 GitHub，只能本地导入：把仓库打成 .tar.gz 后点'
                        '「导入本地包…」' % entry['id'])
-    tarball, err = fetch(entry, log=log)
+    tarball, err = fetch(entry, log=log, force=os.path.isdir(
+        os.path.join(node_modules(inst), entry['id'])))
     if not tarball:
         return False, '下载失败（%s）。可把 tarball 放到 %s 后重试' % (err, cache_dir())
     work = tempfile.mkdtemp(prefix='dsh-plugin-')
