@@ -29,19 +29,31 @@ powershell -ExecutionPolicy Bypass -File tools\clip\clip-bridge.ps1 -Install   #
 两条常驻 ssh 通道，各自带守护线程，断了自动重连（虚拟机在重启也不会崩）：
 
 ```
-Windows 剪切板  ──host-bridge.py──▶ ssh ──▶ vm-apply.py ──▶ wl-copy   （本机 → 虚拟机）
-Windows 剪切板  ◀──host-bridge.py── ssh ◀── vm-watch.py ◀── wl-paste  （虚拟机 → 本机）
+Windows 剪切板  ──host-bridge.py──▶ ssh ──▶ vm-apply.py ──▶ Klipper (DBus)   （本机 → 虚拟机）
+Windows 剪切板  ◀──host-bridge.py── ssh ◀── vm-watch.py ◀── Klipper (DBus)   （虚拟机 → 本机）
 ```
 
 - 本机侧用 `ctypes` 直接调 Win32 剪切板（`GetClipboardSequenceNumber` 判变化，
   不轮询文本内容），没有第三方依赖。
-- 虚拟机侧用 `wl-clipboard`（`wl-copy` / `wl-paste`），补齐 `XDG_RUNTIME_DIR`、
-  `WAYLAND_DISPLAY=wayland-0` 就能在 SSH 会话里操作 Wayland 剪切板 —— 实测
-  `wl-copy` 写进去的内容，桌面应用粘贴得到。
+- 虚拟机侧走 Plasma 自带的剪贴板服务 **Klipper**（`org.kde.klipper` 的
+  `getClipboardContents` / `setClipboardContents` + `clipboardHistoryUpdated` 信号）：
+  一个常驻进程、**零 Wayland 客户端**，只在真的变化时读一次。
+  非 Plasma 桌面时退回 `wl-paste --watch` / `wl-copy`（同样是事件驱动）。
 - **防回声**：两边都按文本的 sha1 去重，只同步"和上次同步过的版本不同"的内容，
   所以不会 A→B 之后再弹回 B→A。
 - **只同步文本**：剪切板里是图片/文件时整条跳过（不会把本机的文本顶掉）。
 - 单条上限 4MB；超大文本跳过并写日志。
+
+### 踩过的坑：不要轮询 Wayland 剪切板
+
+第一版虚拟机侧是每 0.35 秒跑一次 `wl-paste --no-newline`。结果：**虚拟机里所有弹出菜单
+（桌面右键、应用菜单）都变成"闪一下就消失"** —— 用户实测确认：把桥停掉，右键立刻恢复正常；
+重新起桥，菜单又开始被顶掉。
+
+原因：这种轮询每隔几百毫秒就在 KWin 里新建一个 Wayland 客户端、并向合成器请求剪贴板数据，
+反复打断弹出的 grab。改成 Klipper DBus 之后，虚拟机侧不再创建任何 Wayland 客户端，
+菜单恢复正常。**所以这里的设计原则是：虚拟机侧绝不轮询、绝不反复起 wl-* 进程。**
+
 
 ## 已知边界
 

@@ -98,7 +98,7 @@ def main():
         log_path = os.path.join(os.environ.get('LOCALAPPDATA', '.'), 'dsh-clip', 'bridge.log')
         print('\n== 桥日志末尾（%s）' % log_path)
         try:
-            with open(log_path, 'r', encoding='utf-8') as fh:
+            with open(log_path, 'r', encoding='utf-8', errors='replace') as fh:
                 for line in fh.readlines()[-12:]:
                     sys.stdout.write('  ' + line)
         except Exception as exc:
