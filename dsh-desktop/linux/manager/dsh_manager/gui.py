@@ -241,6 +241,9 @@ def _extra_css_text():
         'accent2': tok('accent2', tok('accent', '#8b7cf6')),
         'on_accent': tok('on-accent', '#ffffff'),
         'danger': tok('danger', '#e35d6a'),
+        'muted': tok('muted', '#6b6a7d'),
+        'success': tok('success', '#2f9e6f'),
+        'accent_soft': tok('accent-soft', 'rgba(139,124,246,0.18)'),
     }
     return (
         '.brand-logo { background-color: #ffffff; border-radius: 12px;'
@@ -263,6 +266,18 @@ def _extra_css_text():
         '.foot-btn.danger { border-width: 0; color: %(danger)s;'
         ' background-image: none; background-color: alpha(%(danger)s, 0.14); }\n'
         '.foot-btn.danger:hover { background-color: alpha(%(danger)s, 0.22); }\n'
+        '.plugin-thead { padding: 0; }\n'
+        '.plugin-th { font-size: 10px; font-weight: bold; opacity: 0.7; }\n'
+        '.plugin-id { font-size: 11px; font-weight: bold; }\n'
+        '.plugin-desc { font-size: 11px; color: %(muted)s; }\n'
+        '.plugin-status { font-size: 11px; }\n'
+        '.plugin-status.ok { color: %(success)s; }\n'
+        '.plugin-status.bad { color: %(danger)s; }\n'
+        '.plugin-status.dim { color: %(muted)s; }\n'
+        '.plugin-ver { font-size: 11px; font-family: monospace; color: %(muted)s; }\n'
+        '.plugin-list row { padding: 0; margin: 2px 0; border-radius: 9px; }\n'
+        '.plugin-list row:selected { background-color: %(accent_soft)s; }\n'
+        '.plugin-row-body { padding: 13px 12px; border-radius: 9px; }\n'
     ) % vals
 
 
@@ -2586,51 +2601,32 @@ class ManagerWindow(Gtk.Window):
         plug.bootstrap_cache()
         refresh_source_label()
 
-        store = Gtk.ListStore(str, str, str, str)      # id, 说明, 状态, 版本
-        tree = Gtk.TreeView(model=store)
-        tree.set_headers_visible(False)      # 表头自己做一张卡（对齐 Windows）
-        tree.get_style_context().add_class('plugin-tree')
-        renderers = []
-        for idx, (title, width) in enumerate((('插件', 210), ('仓库 / 说明', 420),
-                                              ('状态', 100), ('版本', 80))):
-            renderer = Gtk.CellRendererText()
-            renderer.set_property('ellipsize', 3)
-            renderer.set_property('ypad', 14)     # 行再高一档（用户要求）
-            col = Gtk.TreeViewColumn(title, renderer)
-            col.add_attribute(renderer, 'text', idx)
-            col.set_min_width(width)
-            col.set_resizable(True)
-            if idx == 1:
-                col.set_expand(True)            # 说明列吃掉剩余宽度
-            tree.append_column(col)
-            renderers.append(renderer)
-        # 说明列：字号与第一列一致、不斜体，只把颜色压成灰（对齐 Windows）
-        try:
-            renderers[1].set_property('foreground', token_color(
-                *_CURRENT.get('theme') and (_CURRENT.get('theme'), _CURRENT.get('mode'))
-                or ('frost', 'day'), 'muted'))
-        except Exception:
-            pass
+        # 表头 + 行都用同一套列宽自绘（TreeView 的选中是逐 cell 画的，做不到整行一块）
+        COLS = ((190, False), (0, True), (110, False), (90, False))
+        HEAD = ('插件', '仓库 / 说明', '状态', '版本')
 
-        # 状态列上色（对齐 Windows：已安装=绿、半装=红、其余=灰）
-        def _status_color(_col, cell, model, it, _data):
-            label = model[it][2]
-            theme, mode = self._theme_state()
-            if label == '已安装':
-                cell.set_property('foreground', token_color(theme, mode, 'success'))
-            elif label.startswith('半装'):
-                cell.set_property('foreground', token_color(theme, mode, 'danger'))
-            else:
-                cell.set_property('foreground', token_color(theme, mode, 'muted'))
+        def make_line(widgets, cls):
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+            box.get_style_context().add_class(cls)
+            for widget, (width, expand) in zip(widgets, COLS):
+                cell = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+                cell.set_size_request(width, -1) if not expand else cell.set_hexpand(True)
+                cell.pack_start(widget, expand, expand, 0)
+                box.pack_start(cell, expand, expand, 0)
+            return box
 
-        try:
-            tree.get_column(2).set_cell_data_func(renderers[2], _status_color)
-        except Exception:
-            pass
+        head = make_line([self._label(t, 'plugin-th') for t in HEAD], 'plugin-thead')
+        head.set_margin_top(10)
+        head.set_margin_bottom(4)
+        area.pack_start(head, False, False, 0)
+
+        listbox = Gtk.ListBox()
+        listbox.get_style_context().add_class('plugin-list')
+        listbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        listbox.set_activate_on_single_click(True)
         sw = Gtk.ScrolledWindow()
         sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        sw.get_style_context().add_class('panel')
-        sw.add(tree)
+        sw.add(listbox)
         area.pack_start(sw, True, True, 0)
 
         # 底部条：一条细线 + 左状态、右操作（对齐 Windows 版）
@@ -2663,36 +2659,63 @@ class ManagerWindow(Gtk.Window):
         state = {'busy': False}
 
         def current():
-            model, it = tree.get_selection().get_selected()
-            return model[it][0] if it is not None else None
+            row = listbox.get_selected_row()
+            return getattr(row, 'pid', None) if row is not None else None
 
         def fill(select=None):
-            store.clear()
+          try:
+            for child in listbox.get_children():
+                listbox.remove(child)
             status = plug.installed(inst)
+            theme, mode = self._theme_state()
+            first = None
             for item in plug.all_entries(inst):
                 st = status.get(item['id'], {})
                 if st.get('installed'):
-                    label = '已安装'
+                    label, role = '已安装', 'success'
                 elif st.get('package_on_disk') or st.get('registered'):
-                    label = '半装（需修）'
+                    label, role = '半装（需修）', 'danger'
                 elif item.get('local_only'):
-                    label = '未发布'
+                    label, role = '未发布', 'muted'
                 else:
-                    label = '未安装'
+                    label, role = '未安装', 'muted'
                 src = item['repo'] or '（未发布到 GitHub，可本地导入）'
                 if item.get('extra'):
                     src = '（实例里已装，不在目录中）'
                 extra = ''
                 if item.get('updated'):
                     extra = '　★%s · 更新 %s' % (item.get('stars', 0), item['updated'])
-                it = store.append([item['id'], '%s · %s%s' % (src, item['desc'], extra),
-                                   label, st.get('version') or '-'])
+
+                name = self._label(item['id'], 'plugin-id')
+                name.set_ellipsize(3)
+                repo = self._label('%s — %s%s' % (src, item['desc'], extra), 'plugin-desc')
+                repo.set_ellipsize(3)
+                st_lbl = self._label(label, 'plugin-status',
+                                     {'success': 'ok', 'danger': 'bad'}.get(role, 'dim'))
+                ver = self._label(st.get('version') or '—', 'plugin-ver')
+                row_box = make_line([name, repo, st_lbl, ver], 'plugin-row-body')
+                row = Gtk.ListBoxRow()
+                row.get_style_context().add_class('plugin-row')
+                row.pid = item['id']
+                row.add(row_box)
+                listbox.add(row)
+                if first is None:
+                    first = row
                 if select and item['id'] == select:
-                    tree.get_selection().select_iter(it)
-            if tree.get_selection().get_selected()[1] is None and store.iter_n_children(None):
-                tree.get_selection().select_iter(store.get_iter_first())
+                    first = row
+            target = None
+            if select:
+                for child in listbox.get_children():
+                    if getattr(child, 'pid', None) == select:
+                        target = child
+                        break
+            listbox.select_row(target or first)
+            listbox.show_all()
             btn_install.set_sensitive(not state['busy'])
             btn_uninstall.set_sensitive(not state['busy'])
+          except Exception:
+            import traceback
+            traceback.print_exc()
 
         def do(action):
             pid = current()
