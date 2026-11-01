@@ -208,21 +208,90 @@ def load_css(theme='frost', mode='day'):
     Gtk.StyleContext.add_provider_for_screen(
         screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER)
     _PROVIDER['provider'] = provider
+    _CURRENT.update({'theme': theme, 'mode': mode})
+    try:
+        ensure_extra_css(force=True)      # 主题色变了：底部按钮等自绘样式要重算
+    except Exception:
+        pass
     return True, theme, mode
 
 
 
 _EXTRA_CSS = {'provider': None}
+_CURRENT = {'theme': 'frost', 'mode': 'day'}
 
 
-def ensure_extra_css():
-    """补几条主题文件里没有的规则（鲸鱼品牌块、对话框卡片头）。
+def _extra_css_text():
+    """按当前主题令牌生成小皮肤（底部按钮对齐 Windows 的 BtnBase/Primary/DangerSoft）。"""
+    theme = _CURRENT.get('theme') or 'frost'
+    mode = _CURRENT.get('mode') or 'day'
 
-    主题 CSS 由 tools/build-gtk-theme.py 从设计稿生成，14 个文件；
-    只为一两个新控件去改生成器不划算，这里挂一份独立的小皮肤（和主题不冲突）。
+    def tok(name, fallback):
+        try:
+            return token_color(theme, mode, name) or fallback
+        except Exception:
+            return fallback
+
+    vals = {
+        'text': tok('text', '#1a1a2e'),
+        'card': tok('card', '#ffffff'),
+        'card_solid': tok('card-solid', '#ffffff'),
+        'inner': tok('inner-border', 'rgba(0,0,0,0.08)'),
+        'accent': tok('accent', '#8b7cf6'),
+        'accent2': tok('accent2', tok('accent', '#8b7cf6')),
+        'on_accent': tok('on-accent', '#ffffff'),
+        'danger': tok('danger', '#e35d6a'),
+    }
+    return (
+        '.brand-logo { background-color: #ffffff; border-radius: 12px;'
+        ' border: 1px solid rgba(0, 0, 0, 0.10); }\n'
+        '.plugin-tree { font-size: 11px; }\n'
+        '.plugin-thead { min-height: 22px; }\n'
+        '.plugin-th { font-size: 10px; font-weight: bold; opacity: 0.7; }\n'
+        '.foot-note { font-size: 10px; opacity: 0.75; }\n'
+        '.foot-btn { min-height: 32px; min-width: 0; padding: 0 15px;'
+        ' border-radius: 11px; font-size: 10px; font-weight: bold;'
+        ' border-width: 1px; border-style: solid; border-color: %(inner)s;'
+        ' background-image: none; background-color: %(card)s; color: %(text)s;'
+        ' box-shadow: none; text-shadow: none; }\n'
+        '.foot-btn:hover { background-color: %(card_solid)s; }\n'
+        '.foot-btn.primary { border-width: 0; color: %(on_accent)s;'
+        ' background-image: linear-gradient(135deg, %(accent2)s, %(accent)s);'
+        ' background-color: %(accent)s; }\n'
+        '.foot-btn.primary:hover { background-image:'
+        ' linear-gradient(135deg, %(accent)s, %(accent2)s); }\n'
+        '.foot-btn.danger { border-width: 0; color: %(danger)s;'
+        ' background-image: none; background-color: alpha(%(danger)s, 0.14); }\n'
+        '.foot-btn.danger:hover { background-color: alpha(%(danger)s, 0.22); }\n'
+    ) % vals
+
+
+def ensure_extra_css(force=False):
+    """补几条主题文件里没有的规则（鲸鱼品牌块、对话框按钮）。
+
+    主题 CSS 是生成出来的 14 个文件；只为一两个控件去改生成器不划算，
+    这里挂一份独立小皮肤。颜色取自主题令牌 → 换主题/昼夜时重算（load_css 带 force=True 调）。
     """
-    if _EXTRA_CSS['provider'] is not None:
+    if _EXTRA_CSS['provider'] is not None and not force:
         return _EXTRA_CSS['provider']
+    screen = Gdk.Screen.get_default()
+    try:
+        provider = Gtk.CssProvider()
+        provider.load_from_data(_extra_css_text().encode('utf-8'))
+        old = _EXTRA_CSS.get('provider')
+        if old and screen is not None:
+            try:
+                Gtk.StyleContext.remove_provider_for_screen(screen, old)
+            except Exception:
+                pass
+        if screen is not None:
+            Gtk.StyleContext.add_provider_for_screen(
+                screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER)
+        _EXTRA_CSS['provider'] = provider
+    except Exception as exc:
+        sys.stderr.write('[dsh-manager] 额外样式未加载：%s\n' % exc)
+        _EXTRA_CSS['provider'] = False
+    return _EXTRA_CSS['provider']
     try:
         provider = Gtk.CssProvider()
         provider.load_from_data(b"""
