@@ -1,22 +1,38 @@
 <Window x:Class="DshManager.DshWebWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="" Width="1280" Height="860" MinWidth="720" MinHeight="450"
         WindowStartupLocation="CenterScreen"
-        WindowStyle="None" AllowsTransparency="True" Background="Transparent">
+        WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="False"
+        Background="{DynamicResource CardSolid}" UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        FontFamily="{StaticResource UiFont}">
 
-    <Border x:Name="Shell" CornerRadius="{DynamicResource Radius}"
-            Background="{DynamicResource CardSolid}" BorderBrush="{DynamicResource Border}"
-            BorderThickness="1" MouseLeftButtonDown="OnDrag">
-        <Grid>
+    <!--
+      会话窗口里装的是 WebView2（原生子窗口 / HwndHost）：WPF 的 Clip 裁不到它，
+      所以这里不走「自绘圆角」，交给 DWM 圆（Win11 的窗口圆角），
+      窗口本身也就不做成分层窗口——原生缩放、贴边分屏、投影都交给系统。
+    -->
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6"
+                            GlassFrameThickness="0" CornerRadius="0"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+    <Border x:Name="Shell" Background="{DynamicResource CardSolid}"
+            BorderBrush="{DynamicResource Border}" BorderThickness="1"
+            MouseLeftButtonDown="OnDrag">
+        <Grid x:Name="ShellContent">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
             <!-- 极简工具栏：DSH 页面本身什么都有，这里只留窗口级操作 -->
-            <Border Grid.Row="0" Height="38" Background="{DynamicResource Sidebar}"
+            <Border Grid.Row="0" Height="38" Background="{DynamicResource CardSolid}"
                     BorderBrush="{DynamicResource InnerBorder}" BorderThickness="0,0,0,1">
                 <Grid Margin="8,0,6,0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -36,7 +52,7 @@
                         <TextBlock x:Name="TitleText" Text="DeepSeek Harness" FontSize="10.5"
                                    Margin="8,0,0,0" VerticalAlignment="Center"
                                    Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis"
-                                   MaxWidth="520" />
+                                   MaxWidth="560" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                         <Button Style="{StaticResource IconBtn}" Width="30" Height="30"
@@ -49,8 +65,8 @@
                                   StrokeThickness="1.6" />
                         </Button>
                         <Button Style="{StaticResource IconBtn}" Width="30" Height="30" Click="OnMaximize" ToolTip="最大化">
-                            <Path Width="11" Height="11" Data="M 4 4 H 20 V 20 H 4 Z" Style="{StaticResource IconPath}"
-                                  StrokeThickness="1.6" />
+                            <Path x:Name="MaxGlyph" Width="11" Height="11" Data="M 4 4 H 20 V 20 H 4 Z"
+                                  Style="{StaticResource IconPath}" StrokeThickness="1.6" />
                         </Button>
                         <Button Style="{StaticResource IconBtn}" Width="30" Height="30" Click="OnClose" ToolTip="关闭">
                             <Path Width="12" Height="12" Data="{StaticResource Icon.x}"
@@ -60,7 +76,28 @@
                 </Grid>
             </Border>
 
-            <wv2:WebView2 x:Name="Web" Grid.Row="1" />
+            <!--
+              WebView2 是原生子窗口（HwndHost），它会盖住整个客户区：
+              贴着窗口边放时，鼠标在边上按下是发给它而不是发给本窗口的，
+              于是 WM_NCHITTEST 永远看不到，四边就抓不动。
+              留 6px 的边给本窗口（下面那圈 CardSolid 就是它），边才抓得住。
+            -->
+            <wv2:WebView2 x:Name="Web" Grid.Row="1" Margin="6,0,6,6" />
+
+            <!-- 连接中 / 加载失败时盖在上面，别让人对着一片空白 -->
+            <Border x:Name="StatusOverlay" Grid.Row="1" Margin="6,0,6,6" Background="{DynamicResource CardSolid}">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="460">
+                    <TextBlock x:Name="StatusTitle" Text="正在连接 DSH…" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Text}" HorizontalAlignment="Center"
+                               TextAlignment="Center" TextWrapping="Wrap" />
+                    <TextBlock x:Name="StatusDetail" Text="" FontSize="10.5" Margin="0,8,0,0"
+                               Foreground="{DynamicResource Muted}" HorizontalAlignment="Center"
+                               TextAlignment="Center" TextWrapping="Wrap" />
+                    <Button x:Name="RetryBtn" Content="重试" Style="{StaticResource BtnPrimary}"
+                            HorizontalAlignment="Center" Margin="0,16,0,0" Padding="18,7"
+                            Visibility="Collapsed" Click="OnRetry" />
+                </StackPanel>
+            </Border>
         </Grid>
     </Border>
 </Window>

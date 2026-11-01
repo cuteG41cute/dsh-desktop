@@ -1,7 +1,8 @@
 <Application x:Class="DshManager.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             StartupUri="MainWindow.xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 没有 StartupUri：主窗口由 App.OnStartup 显式创建，
+         否则命令行自检模式（open/shot 等）会顺带弹一个管理器窗口。 -->
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>

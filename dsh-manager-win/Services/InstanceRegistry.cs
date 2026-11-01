@@ -48,7 +48,10 @@ public static class InstanceRegistry
     public static void Add(RegistryEntry entry)
     {
         var list = Load();
-        list.RemoveAll(e => string.Equals(e.Id, entry.Id, StringComparison.OrdinalIgnoreCase));
+        // 同一个目录只留一条：id 曾经用 GetHashCode()（每个进程都不同），
+        // 老版本留下过重复登记，这里顺手清掉。
+        list.RemoveAll(e => string.Equals(e.Id, entry.Id, StringComparison.OrdinalIgnoreCase)
+                            || SamePath(e.Dir, entry.Dir));
         list.Add(entry);
         Save(list);
     }
@@ -59,6 +62,22 @@ public static class InstanceRegistry
         var n = list.RemoveAll(e => string.Equals(e.Id, id, StringComparison.OrdinalIgnoreCase));
         Save(list);
         return n > 0;
+    }
+
+    /// <summary>按目录移除（卸载时用这个更稳：登记表里可能有历史重复项）。</summary>
+    public static bool RemoveByDir(string dir)
+    {
+        var list = Load();
+        var n = list.RemoveAll(e => SamePath(e.Dir, dir));
+        Save(list);
+        return n > 0;
+    }
+
+    private static bool SamePath(string a, string b)
+    {
+        if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+        try { return string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase); }
+        catch { return false; }
     }
 
     public static RegistryEntry Find(string id) =>

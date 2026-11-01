@@ -65,8 +65,24 @@ public partial class App : Application
             // 半个窗口放大、要么拿到垃圾矩形；离屏渲染得到的就是 1280×812 的 DIP 像素，
             // 正好和设计稿（1 CSS px = 1 DIP）逐像素比对。
             var args = Environment.GetCommandLineArgs();
-            if (args.Contains("--shot"))
+            // --open [--open-hold 秒]：按当前发现的实例打开内置会话窗，到时自动退出（自检用）。
+            // 单独用，不用配 --shot：会话窗里是 WebView2 原生子窗口，离屏渲染拍不到。
+            if (args.Contains("--open"))
             {
+                var hold = args.SkipWhile(a => a != "--open-hold").Skip(1).FirstOrDefault();
+                OpenWindowSelfCheck(int.TryParse(hold, out var holdSeconds) ? holdSeconds : 10);
+                return;
+            }
+            // --selftest-install <dir>：真装一份实例，然后依次跑 修复/更新/卸载，结果写 crash.log。
+            // 用来在没有界面的情况下走一遍「管理器创建的实例」的完整生命周期。
+            if (args.Contains("--selftest-install"))
+            {
+                var dir = args.SkipWhile(a => a != "--selftest-install").Skip(1).FirstOrDefault();
+                SelfTestInstallAndExit(dir ?? "");
+                return;
+            }
+            if (args.Contains("--shot"))
+{
                 var path = args.SkipWhile(a => a != "--shot").Skip(1).FirstOrDefault()
                            ?? "shot.png";
                 var theme = args.SkipWhile(a => a != "--theme").Skip(1).FirstOrDefault();
@@ -74,11 +90,7 @@ public partial class App : Application
                 var size = args.SkipWhile(a => a != "--size").Skip(1).FirstOrDefault();
                 if (!string.IsNullOrEmpty(theme)) ThemeService.SetTheme(theme);
                 if (!string.IsNullOrEmpty(mode) && mode != ThemeService.Mode) ThemeService.ToggleMode();
-                if (args.Contains("--open"))
-                {
-                    OpenWindowSelfCheck();
-                }
-                else if (args.Contains("--selftest-actions"))
+                if (args.Contains("--selftest-actions"))
                 {
                     SelfTestActionsAndExit();
                 }
@@ -94,13 +106,84 @@ public partial class App : Application
                 {
                     ShotAndExit(path, size);
                 }
+                return;
             }
+
+            // 正常启动：管理器主窗口。README 里的 StartupUri 已经去掉，
+            // 命令行模式（--open/--shot/…）就不会顺带弹一个管理器窗口出来。
+            var main = new MainWindow();
+            main.Show();
         }
         catch (Exception ex)
         {
             Log("startup: " + ex);
             throw;
         }
+    }
+
+    /// <summary>
+    /// --selftest-install &lt;dir&gt;：装一份实例，然后依次跑 修复 / 更新 / 卸载。
+    /// 结果写进 crash.log（开发期验证「管理器创建的实例」这套动作，不用点界面）。
+    /// </summary>
+    private void SelfTestInstallAndExit(string dir)
+    {
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        Task.Run(async () =>
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(dir))
+                {
+                    dir = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "dsh-manager", "instances", "selftest");
+                    Log("[install-test] 没给目录，用默认：" + dir);
+                }
+                Log("[install-test] dir=" + dir);
+                var binJs = Path.Combine(dir, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
+                if (File.Exists(binJs))
+                {
+                    Log("[install-test] 目录里已经有安装，跳过 npm install");
+                }
+                else
+                {
+                    var (iok, imsg) = await InstanceInstaller.InstallAsync(
+                        dir, "latest", m => Log("    npm | " + m), 0);
+                    Log("[install-test] install -> " + (iok ? "OK" : "FAIL") + ": " + imsg);
+                    if (!iok) return;
+                }
+
+                var list = DshDiscovery.Scan().ToList();
+                DshDiscovery.AttachRunning(list);
+                var inst = list.FirstOrDefault(i => string.Equals(
+                    Path.GetFullPath(i.Dir ?? ""), Path.GetFullPath(dir), StringComparison.OrdinalIgnoreCase));
+                if (inst == null)
+                {
+                    Log("[install-test] 扫描没找到这个实例（发现 " + list.Count + " 个）");
+                    foreach (var i in list) Log("[install-test]   saw " + i.Label + " dir=" + i.Dir);
+                    return;
+                }
+                Log("[install-test] found " + inst.Label + " ver=" + inst.DshVersion
+                    + " managed=" + InstanceActions.IsManaged(inst) + " entry=" + inst.Entry);
+
+                var (rok, rmsg) = await InstanceActions.RepairAsync(inst, m => Log("    repair | " + m));
+                Log("[install-test] repair -> " + (rok ? "OK" : "FAIL") + ": " + rmsg);
+
+                var (uok, umsg) = await InstanceActions.UpdateAsync(inst, m => Log("    update | " + m));
+                Log("[install-test] update -> " + (uok ? "OK" : "FAIL") + ": " + umsg);
+
+                var (dok, dmsg) = InstanceActions.Uninstall(inst, deleteDir: true);
+                Log("[install-test] uninstall -> " + (dok ? "OK" : "FAIL") + ": " + dmsg);
+            }
+            catch (Exception ex)
+            {
+                Log("[install-test] 异常：" + ex);
+            }
+            finally
+            {
+                Dispatcher.Invoke(Shutdown);
+            }
+        });
     }
 
     private void ShotAndExit(string path, string size)
@@ -150,8 +233,8 @@ public partial class App : Application
     }
 
     /// <summary>--plugins：只打开插件对话框并截图（开发期用来核对样式/数据）。</summary>
-    /// <summary>--open：按当前发现的实例打开内置会话窗（自检用），10 秒后退出。</summary>
-    private void OpenWindowSelfCheck()
+    /// <summary>--open [--open-hold 秒]：按当前发现的实例打开内置会话窗（自检用），到时退出。</summary>
+    private void OpenWindowSelfCheck(int holdSeconds = 10)
     {
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         var list = DshDiscovery.Scan().ToList();
@@ -161,7 +244,7 @@ public partial class App : Application
         if (inst == null) { Log("[open] 没有可用实例"); Shutdown(); return; }
         var ok = DshHost.OpenWindow(inst, out var msg);
         Log("[open] " + inst.Label + " port=" + inst.Port + " -> " + (ok ? "OK" : "FAIL") + ": " + msg);
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(Math.Max(2, holdSeconds)) };
         timer.Tick += (_, _) =>
         {
             timer.Stop();

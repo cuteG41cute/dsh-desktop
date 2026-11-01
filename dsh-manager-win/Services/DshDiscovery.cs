@@ -71,7 +71,7 @@ public static class DshDiscovery
                 NodeExe = FindNodeNear(root) ?? FindNodeOnPath(),
                 Source = source,
                 Home = HomeDir,
-                Dir = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(entry) ?? "", "..")),
+                Dir = InstallRootOf(root),
                 LogPath = Path.Combine(LocalAppData, "dsh-manager", "logs", MakeId(root, source) + ".log"),
                 SortKey = sort,
             });
@@ -109,6 +109,7 @@ public static class DshDiscovery
         foreach (var reg in InstanceRegistry.Load())
         {
             if (string.IsNullOrWhiteSpace(reg.Dir)) continue;
+            if (!Directory.Exists(reg.Dir)) continue;   // 目录被手动删了就跳过
             Add(Path.Combine(reg.Dir, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"),
                 "管理器创建", 5);
         }
@@ -143,7 +144,40 @@ public static class DshDiscovery
     private static string MakeId(string entry, string source)
     {
         var dir = Path.GetDirectoryName(entry) ?? entry;
-        return source + "@" + Math.Abs(dir.GetHashCode()).ToString("x");
+        return source + "@" + StableHash(dir);
+    }
+
+    /// <summary>
+    /// 稳定的短哈希：string.GetHashCode() 在 .NET 里每个进程都不一样，
+    /// 用它做实例 id 会让日志文件名每次都变（旧日志再也对不上）。
+    /// </summary>
+    internal static string StableHash(string text)
+    {
+        try
+        {
+            using var sha = System.Security.Cryptography.SHA1.Create();
+            var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes((text ?? "").ToLowerInvariant()));
+            return Convert.ToHexString(bytes, 0, 4).ToLowerInvariant();
+        }
+        catch
+        {
+            return Math.Abs((text ?? "").Length).ToString("x");
+        }
+    }
+
+    /// <summary>
+    /// 安装根目录：入口是 …\node_modules\@deepseek-ai\dsh\lib\bin.js，
+    /// 根就是 node_modules 的上一层（npx 缓存 → …\_npx\&lt;hash&gt;，管理器创建 → 安装目录）。
+    /// 管理器登记表里存的是这个根，两边必须对得上，否则「管理器创建的实例」会被当成系统安装。
+    /// </summary>
+    private static string InstallRootOf(string entry)
+    {
+        if (string.IsNullOrEmpty(entry)) return "";
+        var marker = Path.DirectorySeparatorChar + "node_modules" + Path.DirectorySeparatorChar;
+        var idx = entry.LastIndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (idx > 0) return Path.GetFullPath(entry.Substring(0, idx));
+        var dir = Path.GetDirectoryName(entry) ?? "";
+        return Path.GetFullPath(Path.Combine(dir, ".."));
     }
 
     private static string FindNodeNear(string entry)
@@ -360,7 +394,6 @@ public static class DshDiscovery
     private static string ExtractEntry(string cmd)
     {
         if (string.IsNullOrEmpty(cmd)) return "";
-        var marker = "dsh\\lib\\bin.js";
         var idx = cmd.IndexOf("lib\\bin.js", StringComparison.OrdinalIgnoreCase);
         if (idx < 0) return "";
         // 向前找到路径起点（引号或空格之后）

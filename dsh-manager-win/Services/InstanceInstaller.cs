@@ -99,7 +99,7 @@ public static class InstanceInstaller
             log("完成：" + entry);
 
             var versionText = ReadVersion(Path.Combine(dir, "node_modules", "@deepseek-ai", "dsh", "package.json"));
-            var id = "own@" + Math.Abs(dir.GetHashCode()).ToString("x");
+            var id = "own@" + DshDiscovery.StableHash(dir);
             InstanceRegistry.Add(new RegistryEntry
             {
                 Id = id,

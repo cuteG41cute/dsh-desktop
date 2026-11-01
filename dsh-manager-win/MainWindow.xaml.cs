@@ -41,6 +41,20 @@ public partial class MainWindow : Window
 
     private double Dpi => VisualTreeHelper.GetDpi(this).DpiScaleX;
 
+    /// <summary>管理器版本（取自程序集，csproj 里一处定义）。</summary>
+    internal static string AppVersion
+    {
+        get
+        {
+            try
+            {
+                var v = typeof(MainWindow).Assembly.GetName().Version;
+                return v == null ? "1.0.0" : v.ToString(3);
+            }
+            catch { return "1.0.0"; }
+        }
+    }
+
     private void OnLoadedResponsive(object sender, RoutedEventArgs e) => ApplyResponsive();
 
     /// <summary>临时诊断：把缩放相关的事件写进 %LOCALAPPDATA%\dsh-manager\ui.log。</summary>
@@ -64,6 +78,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        if (BrandVersion != null) BrandVersion.Text = "v" + AppVersion;
         // 实例在 OnLoaded 里扫描（构造时还没有扫描结果，不能索引）
         Loaded += OnLoaded;
         SizeChanged += (_, _) =>
@@ -1169,6 +1184,12 @@ public partial class MainWindow : Window
     private void OnOpenWindow(object sender, RoutedEventArgs e)
     {
         if (_current == null) return;
+        // 服务没跑就先拉起来，别让人点开一个空窗口
+        if (!_current.Running && !DshHost.Start(_current, out var startMsg))
+        {
+            Toast(startMsg);
+            return;
+        }
         DshHost.OpenWindow(_current, out var msg);
         RefreshLogs(_current);
         Toast(msg);
@@ -1236,7 +1257,7 @@ public partial class MainWindow : Window
         InfoList.Children.Clear();
         var rows = new (string Key, string Value)[]
         {
-            ("管理器版本", "v" + typeof(MainWindow).Assembly.GetName().Version),
+            ("管理器版本", "v" + AppVersion),
             ("程序目录", AppContext.BaseDirectory.TrimEnd('\\')),
             ("配置目录", System.IO.Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "dsh-manager")),

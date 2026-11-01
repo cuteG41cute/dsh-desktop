@@ -68,6 +68,13 @@ public static class DshHost
             psi.ArgumentList.Add("--no-open");
             psi.ArgumentList.Add("--port");
             psi.ArgumentList.Add(inst.Port.ToString());
+            // 手机/平板局域网接入（dsh-mobile-bridge）：把手机侧看到的来源登记进
+            // DSH 的 Host/Origin 信任栅栏，否则从手机连过来的请求会被拒。
+            foreach (var addr in LanAddresses())
+            {
+                psi.ArgumentList.Add("--trusted-host");
+                psi.ArgumentList.Add(addr + ":" + BridgePort);
+            }
             psi.Environment["DSH_HOME"] = inst.Home;
 
             var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
@@ -196,6 +203,34 @@ public static class DshHost
     private static int SafeExitCode(Process p)
     {
         try { return p.ExitCode; } catch { return -1; }
+    }
+
+    /// <summary>手机端桥的端口（和 dsh-mobile-bridge 的默认值一致，可用 DSH_BRIDGE_PORT 覆盖）。</summary>
+    private static int BridgePort =>
+        int.TryParse(Environment.GetEnvironmentVariable("DSH_BRIDGE_PORT"), out var p) && p > 0 ? p : 8099;
+
+    /// <summary>本机的局域网 IPv4（手机通过这些地址 + 桥端口访问这台机器）。</summary>
+    private static IEnumerable<string> LanAddresses()
+    {
+        System.Net.NetworkInformation.NetworkInterface[] nics;
+        try { nics = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces(); }
+        catch { yield break; }
+        foreach (var nic in nics)
+        {
+            if (nic.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+            System.Net.NetworkInformation.UnicastIPAddressInformationCollection addrs;
+            try { addrs = nic.GetIPProperties().UnicastAddresses; }
+            catch { continue; }
+            foreach (var a in addrs)
+            {
+                var ip = a.Address;
+                if (ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
+                if (System.Net.IPAddress.IsLoopback(ip)) continue;
+                var s = ip.ToString();
+                if (s.StartsWith("169.254.")) continue;   // 链路本地地址没用
+                yield return s;
+            }
+        }
     }
 
     private static void Append(Running running, string log, string line)

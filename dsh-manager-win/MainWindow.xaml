@@ -82,7 +82,7 @@
                                 <TextBlock x:Name="BrandTitle" Text="DeepSeek Harness" FontSize="13" FontWeight="SemiBold"
                                            Foreground="{DynamicResource Text}" />
                                 <TextBlock x:Name="BrandSub" FontSize="11" Margin="0,4,0,0" Foreground="{DynamicResource Muted}">
-                                    <Run Text="管理器 " /><Run Text="v1.2.0" Foreground="{DynamicResource Subtle}" />
+                                    <Run Text="管理器 " /><Run x:Name="BrandVersion" Text="v1.0.0" Foreground="{DynamicResource Subtle}" />
                                 </TextBlock>
                             </StackPanel>
                         </Grid>

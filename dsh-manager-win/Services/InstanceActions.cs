@@ -89,9 +89,7 @@ public static class InstanceActions
                 return (false, "删目录失败（可能有进程占用）：" + ex.Message);
             }
         }
-        InstanceRegistry.Remove(InstanceRegistry.Load().Find(e =>
-            string.Equals(Path.GetFullPath(e.Dir ?? ""), Path.GetFullPath(inst.Dir ?? ""),
-                StringComparison.OrdinalIgnoreCase))?.Id ?? "");
+        InstanceRegistry.RemoveByDir(inst.Dir);
         return (true, deleteDir ? "已删除实例目录并从登记表移除" : "已从登记表移除（目录保留）");
     }
 }

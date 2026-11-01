@@ -23,7 +23,8 @@ if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 New-Item -ItemType Directory -Path $out -Force | Out-Null
 
 $a = @('publish', (Join-Path $here 'DshManager.csproj'),
-    '-c', $Configuration, '-r', 'win-x64', '-o', $out, '--nologo')
+    '-c', $Configuration, '-r', 'win-x64', '-o', $out, '--nologo',
+    '-p:DebugType=None', '-p:DebugSymbols=false')
 if ($FrameworkDependent) {
     $a += @('--self-contained', 'false')
 } else {
@@ -36,6 +37,10 @@ if ($FrameworkDependent) {
 Write-Host "== dotnet $($a -join ' ')"
 & $dotnet @a
 if ($LASTEXITCODE -ne 0) { throw "publish failed ($LASTEXITCODE)" }
+
+# 发布包里不需要调试符号和第三方 XML 文档
+Get-ChildItem $out -Filter *.pdb -File -ErrorAction SilentlyContinue | Remove-Item -Force
+Get-ChildItem $out -Filter *.xml -File -ErrorAction SilentlyContinue | Remove-Item -Force
 
 foreach ($f in @('install-win.ps1', 'uninstall-win.ps1', 'README-win.md')) {
     $p = Join-Path $here $f
