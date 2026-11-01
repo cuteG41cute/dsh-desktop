@@ -1,32 +1,27 @@
-"""生成 GitHub Release 的 API 载荷（UTF-8 无 BOM）。
+#!/usr/bin/env python3
+"""生成任一版本的 GitHub Release 载荷（UTF-8 无 BOM）。
 
-为什么不直接把标题写在命令行里：PowerShell 5.1 会把中文参数按 ANSI 传出去，
-gh/curl 收到就是乱码（之前发 dsh-screenshot 时踩过）。所以中文一律走文件。
+  python tools/host/make-release-payload.py v1.4.8 recovery/RELEASE-NOTES-v1.4.8.md "标题"
+
+中文只从文件/参数读入文件后再交给 gh，避免 PowerShell 5.1 把中文参数按 ANSI 传坏。
 """
 import io
 import json
 import os
 import sys
 
-NOTES = 'recovery/RELEASE-NOTES-v1.4.5.md'
-OUT = os.path.join(os.environ.get('TEMP', '/tmp'), 'release-1.4.5.json')
-TAG = 'v1.4.5'
-NAME = 'dsh-manager 1.4.5 — 按设计规范逐像素复刻'
-
 
 def main():
-    with io.open(NOTES, encoding='utf-8') as fh:
+    if len(sys.argv) < 4:
+        raise SystemExit('usage: make-release-payload.py TAG NOTES_MD "TITLE"')
+    tag, notes, title = sys.argv[1], sys.argv[2], sys.argv[3]
+    with io.open(notes, encoding='utf-8') as fh:
         body = fh.read()
-    payload = {
-        'tag_name': TAG,
-        'name': NAME,
-        'body': body,
-        'draft': False,
-        'prerelease': False,
-    }
-    with io.open(OUT, 'w', encoding='utf-8', newline='\n') as fh:
+    out = os.path.join(os.environ.get('TEMP', '/tmp'), 'release-%s.json' % tag)
+    payload = {'tag_name': tag, 'name': title, 'body': body, 'draft': False, 'prerelease': False}
+    with io.open(out, 'w', encoding='utf-8', newline='\n') as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=1)
-    print('payload -> %s (%d chars, name=%r)' % (OUT, len(body), NAME))
+    print('payload -> %s (%d chars body)' % (out, len(body)))
     return 0
 
 
