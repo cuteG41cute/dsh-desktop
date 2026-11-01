@@ -278,6 +278,11 @@ def _extra_css_text():
         '.plugin-list row { padding: 0; margin: 2px 0; border-radius: 9px; }\n'
         '.plugin-list row:selected { background-color: %(accent_soft)s; }\n'
         '.plugin-row-body { padding: 13px 12px; border-radius: 9px; }\n'
+        'entry, spinbutton { min-height: 32px; border-radius: 10px; padding: 4px 10px; }\n'
+        '.dsh-dialog button { min-height: 32px; border-radius: 11px; padding: 0 15px; font-size: 10px; font-weight: bold; }\n'
+        '.dlg-close, .dlg-close:hover, .dlg-close:focus { border: none;'
+        ' box-shadow: none; background-image: none; background-color: transparent;'
+        ' outline: none; }\n'
     ) % vals
 
 
@@ -2122,8 +2127,8 @@ class ManagerWindow(Gtk.Window):
     # ---- 新建 ----
     def on_new(self, *_):
         dlg = Gtk.Dialog(title='新建实例', transient_for=self, modal=True)
-        dlg.add_buttons('取消', Gtk.ResponseType.CANCEL, '安装', Gtk.ResponseType.OK)
-        self._style_dialog(dlg, '新建实例', '选目录、端口与版本')
+        dlg.add_buttons('取消', Gtk.ResponseType.CANCEL, '创建实例', Gtk.ResponseType.OK)
+        self._style_dialog(dlg, '新建实例', '在独立目录里安装一份 DeepSeek Harness（用系统 node/npm）')
         dlg.set_default_size(560, 320)
         grid = Gtk.Grid(column_spacing=8, row_spacing=10, border_width=12)
         dlg.get_content_area().add(grid)
@@ -2221,18 +2226,28 @@ class ManagerWindow(Gtk.Window):
         box_prefix.pack_start(ent_prefix, True, True, 0)
         box_prefix.pack_start(btn_browse, False, False, 0)
 
-        rows = [('安装目录', box_prefix), ('显示名称', ent_label), ('端口', ent_port),
-                ('dsh 版本', picker_dsh), ('Node 版本', picker_node)]
-        for r, (label, widget) in enumerate(rows):
-            grid.attach(Gtk.Label(label=label, xalign=0), 0, r, 1, 1)
-            grid.attach(widget, 1, r, 1, 1)
-        grid.attach(box_ver, 0, len(rows), 2, 1)
+        def field(label, widget):
+            """标签在上、控件在下（对齐 Windows 的表单形态）。"""
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            lbl = Gtk.Label(label=label, xalign=0)
+            lbl.get_style_context().add_class('dim-label')
+            box.pack_start(lbl, False, False, 0)
+            box.pack_start(widget, False, False, 0)
+            return box
+
+        grid.attach(field('实例名称', ent_label), 0, 0, 2, 1)
+        grid.attach(field('安装目录', box_prefix), 0, 1, 2, 1)
+        # 端口与 dsh 版本并排（Windows 版就是这两项一行）
+        grid.attach(field('端口', ent_port), 0, 2, 1, 1)
+        grid.attach(field('dsh 版本', picker_dsh), 1, 2, 1, 1)
+        grid.attach(field('Node 版本', picker_node), 0, 3, 2, 1)
+        grid.attach(box_ver, 0, 4, 2, 1)
         hint = Gtk.Label(xalign=0, wrap=True)
         hint.set_text('提示：latest = 最新的非 alpha 版本（由管理器联网解析）；每个实例自带 Node 与 dsh，'
                       '装在所选目录里，数据目录是该目录下的 dsh-home，不会动 ~/.dsh。'
                       '安装需要联网（下载 Node 与 npm 包）。')
         hint.get_style_context().add_class('dim-label')
-        grid.attach(hint, 0, len(rows) + 1, 2, 1)
+        grid.attach(hint, 0, 5, 2, 1)
         dlg.show_all()
         resp = dlg.run()
         if resp != Gtk.ResponseType.OK:
@@ -2508,7 +2523,9 @@ class ManagerWindow(Gtk.Window):
         btn_close = Gtk.Button()
         btn_close.set_relief(Gtk.ReliefStyle.NONE)
         btn_close.get_style_context().add_class('icon-btn')
+        btn_close.get_style_context().add_class('dlg-close')
         btn_close.set_size_request(28, 28)
+        btn_close.set_can_focus(False)        # 不抢焦点 → 没有那圈紫色边框
         btn_close.set_tooltip_text('关闭')
         try:
             btn_close.add(self._icon('x', 'muted', 16))
@@ -2520,6 +2537,7 @@ class ManagerWindow(Gtk.Window):
         # 按住标题区可以拖窗口（无边框窗口没有系统拖动区）
         head.connect('button-press-event', lambda w, ev: self._drag_window(dlg, w, ev))
         area.pack_start(head, False, False, 0)
+        dlg._sub_lbl = sub if subtitle else None
 
         # 动作区按钮：统一成主界面按钮风格（主操作 accent，其余 secondary）
         try:
@@ -2581,25 +2599,23 @@ class ManagerWindow(Gtk.Window):
         inst = self._need()
         if not inst:
             return
+        plug.bootstrap_cache()
+        where, when = plug.source_info()
+        source_text = '来自 %s%s' % (where, (' · 抓取于 %s' % when) if when else '')
         dlg = Gtk.Dialog(title='插件 · %s' % inst.label, transient_for=self, modal=True)
         self._style_dialog(dlg, '插件 · %s' % inst.label,
-                           '装在 <tt>%s</tt>'
-                           % GLib.markup_escape_text(plug.profile_dir(inst)))
+                           GLib.markup_escape_text(source_text))
         dlg.set_default_size(880, 580)
         area = dlg.get_content_area()
         area.set_border_width(14)
         area.set_spacing(10)
 
-        src_lbl = Gtk.Label(xalign=0)
-        src_lbl.get_style_context().add_class('dim-label')
-        area.pack_start(src_lbl, False, False, 0)
-
         def refresh_source_label():
             where, when = plug.source_info()
-            # 文案对齐 Windows：「来自 GitHub · topic: dsh-plugin · 抓取于 HH:MM:SS」
-            src_lbl.set_text('来自 %s%s' % (where, (' · 抓取于 %s' % when) if when else ''))
-        plug.bootstrap_cache()
-        refresh_source_label()
+            text = '来自 %s%s' % (where, (' · 抓取于 %s' % when) if when else '')
+            lbl = getattr(dlg, '_sub_lbl', None)
+            if lbl is not None:
+                lbl.set_text(text)
 
         # 表头 + 行都用同一套列宽自绘（TreeView 的选中是逐 cell 画的，做不到整行一块）
         COLS = ((190, False), (0, True), (110, False), (90, False))
@@ -2618,6 +2634,8 @@ class ManagerWindow(Gtk.Window):
         head = make_line([self._label(t, 'plugin-th') for t in HEAD], 'plugin-thead')
         head.set_margin_top(10)
         head.set_margin_bottom(4)
+        head.set_margin_start(12)   # 与行内左右 12px 的 padding 对齐
+        head.set_margin_end(12)
         area.pack_start(head, False, False, 0)
 
         listbox = Gtk.ListBox()
