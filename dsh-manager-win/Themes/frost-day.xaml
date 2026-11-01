@@ -1,0 +1,55 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+    <!-- 由 tools/gen-win-themes.py 从 Linux 版 themes.json 生成，勿手改 -->
+    <Color x:Key="Bg.Color">#FFE9EAF5</Color>
+    <SolidColorBrush x:Key="Bg" Color="#FFE9EAF5" />
+    <Color x:Key="Bg2.Color">#FFF5F2FA</Color>
+    <SolidColorBrush x:Key="Bg2" Color="#FFF5F2FA" />
+    <Color x:Key="App.Color">#A3F9FAFF</Color>
+    <SolidColorBrush x:Key="App" Color="#A3F9FAFF" />
+    <Color x:Key="Sidebar.Color">#80F8F9FF</Color>
+    <SolidColorBrush x:Key="Sidebar" Color="#80F8F9FF" />
+    <Color x:Key="Topbar.Color">#40FFFFFF</Color>
+    <SolidColorBrush x:Key="Topbar" Color="#40FFFFFF" />
+    <Color x:Key="Card.Color">#9EFFFFFF</Color>
+    <SolidColorBrush x:Key="Card" Color="#9EFFFFFF" />
+    <Color x:Key="CardSolid.Color">#FFF9FAFF</Color>
+    <SolidColorBrush x:Key="CardSolid" Color="#FFF9FAFF" />
+    <Color x:Key="Text.Color">#FF25243A</Color>
+    <SolidColorBrush x:Key="Text" Color="#FF25243A" />
+    <Color x:Key="Muted.Color">#FF747288</Color>
+    <SolidColorBrush x:Key="Muted" Color="#FF747288" />
+    <Color x:Key="Subtle.Color">#FF9996AA</Color>
+    <SolidColorBrush x:Key="Subtle" Color="#FF9996AA" />
+    <Color x:Key="Border.Color">#B8FFFFFF</Color>
+    <SolidColorBrush x:Key="Border" Color="#B8FFFFFF" />
+    <Color x:Key="InnerBorder.Color">#174D4678</Color>
+    <SolidColorBrush x:Key="InnerBorder" Color="#174D4678" />
+    <Color x:Key="Accent.Color">#FF7968E8</Color>
+    <SolidColorBrush x:Key="Accent" Color="#FF7968E8" />
+    <Color x:Key="Accent2.Color">#FF9B8AF4</Color>
+    <SolidColorBrush x:Key="Accent2" Color="#FF9B8AF4" />
+    <Color x:Key="AccentSoft.Color">#1A7968E8</Color>
+    <SolidColorBrush x:Key="AccentSoft" Color="#1A7968E8" />
+    <Color x:Key="OnAccent.Color">#FFFFFFFF</Color>
+    <SolidColorBrush x:Key="OnAccent" Color="#FFFFFFFF" />
+    <Color x:Key="Hover.Color">#B2FFFFFF</Color>
+    <SolidColorBrush x:Key="Hover" Color="#B2FFFFFF" />
+    <Color x:Key="Success.Color">#FF2B9B78</Color>
+    <SolidColorBrush x:Key="Success" Color="#FF2B9B78" />
+    <Color x:Key="Danger.Color">#FFD56575</Color>
+    <SolidColorBrush x:Key="Danger" Color="#FFD56575" />
+    <SolidColorBrush x:Key="DangerSoft" Color="#12D56575" />
+    <SolidColorBrush x:Key="SuccessSoft" Color="#172B9B78" />
+    <sys:Double x:Key="RadiusValue">20</sys:Double>
+    <CornerRadius x:Key="Radius">20</CornerRadius>
+    <sys:Double x:Key="AppRadiusValue">26</sys:Double>
+    <CornerRadius x:Key="AppRadius">26</CornerRadius>
+    <DropShadowEffect x:Key="WindowShadow" x:Shared="False" BlurRadius="26" ShadowDepth="6" Direction="270" Opacity="0.22" Color="#FF1F1B33" />
+    <DropShadowEffect x:Key="CardShadow" x:Shared="False" BlurRadius="24" ShadowDepth="8" Direction="270" Opacity="0.045" Color="#FF41376E" />
+    <sys:String x:Key="AccentRgb">121,104,232</sys:String>
+    <sys:String x:Key="ThemeId">frost</sys:String>
+    <sys:String x:Key="ThemeLabel">毛玻璃</sys:String>
+    <sys:String x:Key="ThemeMode">day</sys:String>
+</ResourceDictionary>

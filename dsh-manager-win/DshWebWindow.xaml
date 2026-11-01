@@ -1,0 +1,66 @@
+<Window x:Class="DshManager.DshWebWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="" Width="1280" Height="860" MinWidth="720" MinHeight="450"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent">
+
+    <Border x:Name="Shell" CornerRadius="{DynamicResource Radius}"
+            Background="{DynamicResource CardSolid}" BorderBrush="{DynamicResource Border}"
+            BorderThickness="1" MouseLeftButtonDown="OnDrag">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- 极简工具栏：DSH 页面本身什么都有，这里只留窗口级操作 -->
+            <Border Grid.Row="0" Height="38" Background="{DynamicResource Sidebar}"
+                    BorderBrush="{DynamicResource InnerBorder}" BorderThickness="0,0,0,1">
+                <Grid Margin="8,0,6,0">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Style="{StaticResource IconBtn}" Width="30" Height="30" Click="OnBack" ToolTip="后退">
+                            <Path Width="14" Height="14" Data="{StaticResource Icon.chevron}"
+                                  Style="{StaticResource IconPath}" RenderTransformOrigin="0.5,0.5">
+                                <Path.RenderTransform>
+                                    <RotateTransform Angle="90" />
+                                </Path.RenderTransform>
+                            </Path>
+                        </Button>
+                        <Button Style="{StaticResource IconBtn}" Width="30" Height="30" Margin="2,0,0,0"
+                                Click="OnReload" ToolTip="刷新">
+                            <Path Width="14" Height="14" Data="{StaticResource Icon.refresh}"
+                                  Style="{StaticResource IconPath}" />
+                        </Button>
+                        <TextBlock x:Name="TitleText" Text="DeepSeek Harness" FontSize="10.5"
+                                   Margin="8,0,0,0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis"
+                                   MaxWidth="520" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Button Style="{StaticResource IconBtn}" Width="30" Height="30"
+                                Click="OnOpenExternal" ToolTip="用系统浏览器打开">
+                            <Path Width="14" Height="14" Data="{StaticResource Icon.external}"
+                                  Style="{StaticResource IconPath}" />
+                        </Button>
+                        <Button Style="{StaticResource IconBtn}" Width="30" Height="30" Click="OnMinimize" ToolTip="最小化">
+                            <Path Width="12" Height="12" Data="M 4 12 H 20" Style="{StaticResource IconPath}"
+                                  StrokeThickness="1.6" />
+                        </Button>
+                        <Button Style="{StaticResource IconBtn}" Width="30" Height="30" Click="OnMaximize" ToolTip="最大化">
+                            <Path Width="11" Height="11" Data="M 4 4 H 20 V 20 H 4 Z" Style="{StaticResource IconPath}"
+                                  StrokeThickness="1.6" />
+                        </Button>
+                        <Button Style="{StaticResource IconBtn}" Width="30" Height="30" Click="OnClose" ToolTip="关闭">
+                            <Path Width="12" Height="12" Data="{StaticResource Icon.x}"
+                                  Style="{StaticResource IconPath}" StrokeThickness="1.6" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <wv2:WebView2 x:Name="Web" Grid.Row="1" />
+        </Grid>
+    </Border>
+</Window>

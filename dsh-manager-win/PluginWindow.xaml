@@ -1,0 +1,93 @@
+<Window x:Class="DshManager.PluginWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="插件 · DeepSeek Harness 管理器"
+        Width="940" Height="620" MinWidth="720" MinHeight="460"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display"
+        FontFamily="{StaticResource UiFont}">
+
+    <Border x:Name="Shell" Margin="0" CornerRadius="{DynamicResource Radius}"
+            Background="{DynamicResource CardSolid}" BorderBrush="{DynamicResource Border}"
+            BorderThickness="1" MouseLeftButtonDown="OnDrag">
+        <Border.Clip>
+            <RectangleGeometry RadiusX="20" RadiusY="20">
+                <RectangleGeometry.Rect>
+                    <Rect X="0" Y="0" Width="940" Height="620" />
+                </RectangleGeometry.Rect>
+            </RectangleGeometry>
+        </Border.Clip>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- 头部 -->
+            <Grid Grid.Row="0" Margin="24,20,16,0">
+                <StackPanel>
+                    <TextBlock Text="插件" FontSize="20" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Text}" />
+                    <TextBlock x:Name="SourceLine" Text="来自 GitHub · topic: dsh-plugin"
+                               FontSize="10" Margin="0,6,0,0" Foreground="{DynamicResource Muted}" />
+                </StackPanel>
+                <Button x:Name="CloseBtn" Style="{StaticResource IconBtn}" HorizontalAlignment="Right"
+                        VerticalAlignment="Top" Click="OnClose" ToolTip="关闭">
+                    <Path Width="14" Height="14" Data="{StaticResource Icon.x}"
+                          Style="{StaticResource IconPath}" StrokeThickness="1.6" />
+                </Button>
+            </Grid>
+
+            <!-- 表头 -->
+            <Border Grid.Row="1" Margin="24,18,24,0" Padding="12,8"
+                    Background="{DynamicResource CardSolid}" CornerRadius="10"
+                    BorderBrush="{DynamicResource InnerBorder}" BorderThickness="1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="190" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="110" />
+                        <ColumnDefinition Width="90" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="插件" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Grid.Column="1" Text="仓库 / 说明" FontSize="10" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Muted}" />
+                    <TextBlock Grid.Column="2" Text="状态" FontSize="10" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Muted}" />
+                    <TextBlock Grid.Column="3" Text="版本" FontSize="10" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Muted}" />
+                </Grid>
+            </Border>
+
+            <!-- 列表 -->
+            <ScrollViewer Grid.Row="2" Margin="24,8,24,0" VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="Rows" />
+            </ScrollViewer>
+
+            <!-- 底部 -->
+            <Border Grid.Row="3" Margin="24,14,24,20" Padding="0,14,0,0"
+                    BorderBrush="{DynamicResource InnerBorder}" BorderThickness="0,1,0,0">
+                <Grid>
+                    <TextBlock x:Name="StatusLine" Text="正在加载…" FontSize="10"
+                               VerticalAlignment="Center" Foreground="{DynamicResource Muted}"
+                               TextTrimming="CharacterEllipsis" MaxWidth="480" HorizontalAlignment="Left" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button x:Name="RefreshStateBtn" Style="{StaticResource BtnSecondary}" Height="32"
+                                FontSize="10" Click="OnRefreshState" Content="刷新状态" />
+                        <Button x:Name="InstallBtn" Style="{StaticResource BtnPrimary}" Height="32"
+                                FontSize="10" Margin="8,0,0,0" Click="OnInstall" Content="安装 / 更新" />
+                        <Button x:Name="UninstallBtn" Style="{StaticResource BtnDangerSoft}" Height="32"
+                                FontSize="10" Margin="8,0,0,0" Click="OnUninstall" Content="卸载" />
+                        <Button x:Name="RepoBtn" Style="{StaticResource BtnSecondary}" Height="32"
+                                FontSize="10" Margin="8,0,0,0" Click="OnOpenRepo" Content="打开仓库" />
+                        <Button x:Name="RefreshGhBtn" Style="{StaticResource BtnSecondary}" Height="32"
+                                FontSize="10" Margin="8,0,0,0" Click="OnRefreshGithub" Content="刷新 GitHub 列表" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

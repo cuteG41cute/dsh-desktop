@@ -1,0 +1,82 @@
+<Window x:Class="DshManager.HelpWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="使用帮助 · DeepSeek Harness 管理器"
+        Width="680" Height="560" MinWidth="560" MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display"
+        FontFamily="{StaticResource UiFont}">
+
+    <Border CornerRadius="{DynamicResource Radius}" Background="{DynamicResource CardSolid}"
+            BorderBrush="{DynamicResource Border}" BorderThickness="1"
+            MouseLeftButtonDown="OnDrag">
+        <Grid Margin="24,20,24,20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0">
+                <StackPanel>
+                    <TextBlock Text="使用帮助" FontSize="20" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Text}" />
+                    <TextBlock Text="管理器与桌面窗口是一体的：这里开的就是 DSH 会话窗口"
+                               FontSize="10" Margin="0,6,0,0" Foreground="{DynamicResource Muted}" />
+                </StackPanel>
+                <Button Style="{StaticResource IconBtn}" HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Click="OnClose">
+                    <Path Width="14" Height="14" Data="{StaticResource Icon.x}"
+                          Style="{StaticResource IconPath}" StrokeThickness="1.6" />
+                </Button>
+            </Grid>
+
+            <ScrollViewer Grid.Row="1" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="常用操作" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Text}" />
+                    <TextBlock FontSize="10" LineHeight="20" Margin="0,8,0,0" TextWrapping="Wrap"
+                               Foreground="{DynamicResource Muted}">
+                        · 打开窗口：启动服务（若没在跑）并打开内置 DSH 窗口<LineBreak />
+                        · 启动 / 停止：只动服务进程，不影响其它实例<LineBreak />
+                        · 重建窗口：重启服务后再开一次窗口<LineBreak />
+                        · 管理插件：从 GitHub（topic: dsh-plugin）安装、更新、卸载插件<LineBreak />
+                        · 管理器设置：主题、日志保留行数、诊断信息<LineBreak />
+                        · 点窗口右上角 X 是收进托盘，真正退出在托盘菜单里
+                    </TextBlock>
+
+                    <TextBlock Text="实例从哪来" FontSize="12" FontWeight="SemiBold" Margin="0,18,0,0"
+                               Foreground="{DynamicResource Text}" />
+                    <TextBlock FontSize="10" LineHeight="20" Margin="0,8,0,0" TextWrapping="Wrap"
+                               Foreground="{DynamicResource Muted}">
+                        管理器会扫描：npx 缓存（npm-cache\_npx）、pi-node、全局 npm、
+                        %DSH_HOME%\profiles、PATH 上的 dsh，以及管理器自己创建的实例。
+                        列表里带绿点的就是当前真正在监听端口的那个。
+                    </TextBlock>
+
+                    <TextBlock Text="出问题时" FontSize="12" FontWeight="SemiBold" Margin="0,18,0,0"
+                               Foreground="{DynamicResource Text}" />
+                    <TextBlock FontSize="10" LineHeight="20" Margin="0,8,0,0" TextWrapping="Wrap"
+                               Foreground="{DynamicResource Muted}">
+                        · 设置页 →「复制诊断信息」，把内容贴到 issue 里<LineBreak />
+                        · 设置页 →「查看管理器日志」打开 %LOCALAPPDATA%\dsh-manager<LineBreak />
+                        · 会话窗口白屏：多半是认证没过，先确认实例在跑（端口能访问）
+                    </TextBlock>
+
+                    <TextBlock Text="链接" FontSize="12" FontWeight="SemiBold" Margin="0,18,0,0"
+                               Foreground="{DynamicResource Text}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button Style="{StaticResource BtnCompact}" Click="OnOpenRepo" Content="项目主页" />
+                        <Button Style="{StaticResource BtnCompact}" Margin="8,0,0,0" Click="OnOpenData"
+                                Content="打开数据目录" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                <Button Style="{StaticResource BtnPrimary}" Height="34" Content="知道了" Click="OnClose" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
