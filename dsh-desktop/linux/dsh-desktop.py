@@ -845,6 +845,25 @@ def probe_gl_context():
 # ---------------------------------------------------------------------------
 # 图形界面
 # ---------------------------------------------------------------------------
+def apply_color_scheme_from_env():
+    """管理器传来的昼/夜 → 本窗口的 GTK 深色偏好 → 页面 prefers-color-scheme。
+
+    WebKitGTK 的 prefers-color-scheme 取自平台的深色设置；这里只改本进程
+    （Gtk.Settings 是进程内对象），所以不会影响用户桌面或管理器窗口。
+    """
+    mode = (os.environ.get('DSH_DESKTOP_MODE') or '').strip().lower()
+    if mode not in ('day', 'night'):
+        return
+    try:
+        from gi.repository import Gtk
+        settings = Gtk.Settings.get_default()
+        if settings is not None:
+            settings.set_property('gtk-application-prefer-dark-theme', mode == 'night')
+            sys.stderr.write('[dsh-desktop] 跟随管理器主题：%s\n' % mode)
+    except Exception as exc:
+        sys.stderr.write('[dsh-desktop] 主题同步跳过：%s\n' % exc)
+
+
 def run_gui():
     import gi
     gi.require_version('Gtk', '3.0')
@@ -855,6 +874,9 @@ def run_gui():
         except ValueError:
             continue
     from gi.repository import Gtk, Gdk, GLib, Gio, WebKit2
+
+    # 管理器昼/夜 → 页面 prefers-color-scheme（必须在创建 WebView 之前）
+    apply_color_scheme_from_env()
 
     # 创建 WebView 之前先确认 GL 真的能用：不可用就强制软件渲染。
     # 这一步必须在这里做（而不是只靠启动器看 /dev/dri），否则 WebKit 已经按 GPU

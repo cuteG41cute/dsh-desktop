@@ -453,6 +453,9 @@ class ManagerWindow(Gtk.Window):
         self.theme_loaded = ok
         self.settings['theme'] = theme if ok else ''
         self.settings['mode'] = mode
+        # 窗口进程（WebKitGTK）据此决定页面的 prefers-color-scheme：
+        # 只对本进程派生出来的窗口有效，不动系统设置。
+        os.environ['DSH_DESKTOP_MODE'] = mode
         if persist and ok:
             save_settings({'theme': theme, 'mode': mode})
         self._sync_theme_labels(theme, mode)
