@@ -45,7 +45,8 @@ public static class InstanceInstaller
     /// 返回 (ok, 说明)。log 会收到 npm 的实时输出（用来显示在对话框里）。
     /// </summary>
     public static async Task<(bool Ok, string Message)> InstallAsync(
-        string dir, string version, Action<string> log, int port)
+        string dir, string version, Action<string> log, int port,
+        string nodeVersion = VersionCatalog.SystemNode)
     {
         var npm = FindNpm();
         if (string.IsNullOrEmpty(npm)) return (false, "PATH 上找不到 npm.cmd（先装 Node.js）");
@@ -57,6 +58,11 @@ public static class InstanceInstaller
         try
         {
             Directory.CreateDirectory(dir);
+            // 便携 Node：选了具体版本就真下载到 <dir>\node\（对齐 Linux 的实例自带 node）
+            var (nok, nmsg) = await VersionCatalog.InstallPortableNodeAsync(dir, nodeVersion, log);
+            if (!nok) return (false, nmsg);
+            if (!string.IsNullOrEmpty(nodeVersion) && nodeVersion != VersionCatalog.SystemNode)
+                log(nmsg);
             log("目录：" + dir);
             log("命令：npm install " + spec + " --prefix …");
             var psi = new ProcessStartInfo(npm)
@@ -72,6 +78,11 @@ public static class InstanceInstaller
             psi.ArgumentList.Add("--no-audit");
             psi.ArgumentList.Add("--no-fund");
             psi.ArgumentList.Add("--loglevel=error");
+            // 实例自带了便携 Node 时，npm 也用它的（PATH 前置，npm.cmd 会调 node）
+            var instNodeDir = Path.Combine(dir, "node");
+            if (File.Exists(Path.Combine(instNodeDir, "node.exe")))
+                psi.Environment["PATH"] = instNodeDir + ";" +
+                    (Environment.GetEnvironmentVariable("PATH") ?? "");
 
             var proc = new Process { StartInfo = psi };
             var buffer = new StringBuilder();
@@ -107,6 +118,7 @@ public static class InstanceInstaller
                 Dir = dir,
                 Port = port,
                 DshVersion = versionText,
+                NodeVersion = nodeVersion ?? "",
                 CreatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
             });
             return (true, "已创建实例 " + new DirectoryInfo(dir).Name + "（dsh " + versionText + "）");

@@ -13,6 +13,8 @@ public sealed class RegistryEntry
     public string Dir { get; set; } = "";
     public int Port { get; set; }
     public string DshVersion { get; set; } = "";
+    /// <summary>实例自带的 Node 版本（空/&quot;system&quot; = 用系统 node）。</summary>
+    public string NodeVersion { get; set; } = "";
     public string CreatedAt { get; set; } = "";
 }
 

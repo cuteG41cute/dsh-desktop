@@ -68,7 +68,9 @@ public static class DshDiscovery
                 Id = MakeId(root, source),
                 Label = label,
                 Entry = root,
-                NodeExe = FindNodeNear(root) ?? FindNodeOnPath(),
+                NodeExe = FindNodeNear(root)
+                          ?? PortableNodeOf(InstallRootOf(root))
+                          ?? FindNodeOnPath(),
                 Source = source,
                 Home = HomeDir,
                 Dir = InstallRootOf(root),
@@ -139,6 +141,18 @@ public static class DshDiscovery
         }
         catch { }
         return "DeepSeek Harness";
+    }
+
+    /// <summary>管理器给实例装的便携 Node（&lt;安装根&gt;\node\node.exe）。</summary>
+    private static string PortableNodeOf(string installRoot)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(installRoot)) return null;
+            var exe = Path.Combine(installRoot, "node", "node.exe");
+            return File.Exists(exe) ? exe : null;
+        }
+        catch { return null; }
     }
 
     private static string MakeId(string entry, string source)
