@@ -10,6 +10,9 @@ namespace DshManager;
 
 public partial class NewInstanceWindow : Window
 {
+    /// <summary>装完之后发一次（非模态窗口没有 DialogResult，由管理器订阅它刷新列表）。</summary>
+    public event Action<string> Created;
+
     public string CreatedDir { get; private set; } = "";
     private bool _busy;
 
@@ -81,7 +84,7 @@ public partial class NewInstanceWindow : Window
         if (ok)
         {
             CreatedDir = dir;
-            DialogResult = true;
+            Created?.Invoke(dir);
             Close();
         }
     }
@@ -89,7 +92,6 @@ public partial class NewInstanceWindow : Window
     private void OnClose(object sender, RoutedEventArgs e)
     {
         if (_busy) return;
-        DialogResult = false;
         Close();
     }
 

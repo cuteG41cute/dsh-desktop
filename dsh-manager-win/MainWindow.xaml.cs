@@ -1372,10 +1372,18 @@ public partial class MainWindow : Window
         Toast("已打开实例目录");
     }
 
+    // 子窗口都做成非模态：开着「管理插件」时管理器本身和 DSH 会话窗口都还能用
+    private HelpWindow _helpWin;
+    private NewInstanceWindow _newInstanceWin;
+    private PluginWindow _pluginWin;
+
     private void OnHelp(object sender, RoutedEventArgs e)
     {
+        if (_helpWin != null) { _helpWin.Activate(); return; }
         var win = new HelpWindow { Owner = this };
-        win.ShowDialog();
+        _helpWin = win;
+        win.Closed += (_, _) => _helpWin = null;
+        win.Show();
     }
 
     private void OnAbout(object sender, RoutedEventArgs e)
@@ -1391,19 +1399,27 @@ public partial class MainWindow : Window
 
     private void OnNewInstance(object sender, RoutedEventArgs e)
     {
+        if (_newInstanceWin != null) { _newInstanceWin.Activate(); return; }
         var win = new NewInstanceWindow { Owner = this };
-        if (win.ShowDialog() == true)
+        _newInstanceWin = win;
+        // 非模态窗口没有 DialogResult：装完由窗口自己发事件，这里刷新列表
+        win.Created += dir =>
         {
             ReloadInstances();
-            Toast("实例已创建：" + win.CreatedDir);
-        }
+            Toast("实例已创建：" + dir);
+        };
+        win.Closed += (_, _) => _newInstanceWin = null;
+        win.Show();
     }
 
     private void OnManagePlugins(object sender, MouseButtonEventArgs e)
     {
         if (_current == null) { Toast("先选一个实例"); return; }
+        if (_pluginWin != null) { _pluginWin.Activate(); return; }
         var win = new PluginWindow(_current) { Owner = this };
-        win.ShowDialog();
+        _pluginWin = win;
+        win.Closed += (_, _) => _pluginWin = null;
+        win.Show();
     }
 
     private void Toast(string text)
