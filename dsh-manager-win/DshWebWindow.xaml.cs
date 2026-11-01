@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Net.Http;
-using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -18,15 +16,14 @@ namespace DshManager;
 ///
 /// 两件事是从 Linux 启动器（launcher.ps1）搬过来的：
 ///   1. 认证 cookie —— 自己签发并验证过，服务是外部启动的也能用；
-///   2. 手机端桥 —— 本机跑着 dsh-mobile-bridge（默认 8099）时优先走桥，
-///      这样设置里才有「手机端」面板；桥自检不过就退回直连，窗口一定能打开。
+///   2. 直连实例端口 —— 电脑端窗口就走 127.0.0.1:&lt;port&gt;，不经过手机端桥（8099）。
+///      桥是给局域网里的手机/平板用的反向代理，桌面窗口再绕它一圈没意义。
 /// </summary>
 public partial class DshWebWindow : Window
 {
     private readonly DshInstance _inst;
     private bool _ready;
     private string _baseUrl;
-    private bool _viaBridge;
 
     /// <summary>同一个端口只开一个窗口（多点几次只是提回前台）。</summary>
     private static readonly Dictionary<int, DshWebWindow> Open = new();
@@ -136,7 +133,7 @@ public partial class DshWebWindow : Window
             };
 
             _ready = true;
-            await NavigateAsync();
+            NavigateToInstance();
             ThemeService.ThemeChanged += ApplyThemeToWeb;
             ApplyThemeToWeb();
         }
@@ -148,72 +145,24 @@ public partial class DshWebWindow : Window
         }
     }
 
-    // ---------------------------------------------------------------- 地址 / 桥
+    // ---------------------------------------------------------------- 地址
     /// <summary>
-    /// 决定窗口打开哪个地址：
-    ///  - 本机有 dsh-mobile-bridge 且自检通过、并且桥指向的就是这个实例 → 走桥（有「手机端」面板）
-    ///  - 否则直连实例端口（桥是可选增强，不能挡住开窗）
-    /// 桥的上游端口默认 3080，桥只能在它自己的上游上工作，所以端口对不上就直连。
+    /// 电脑端窗口**永远直连实例自己的端口**（127.0.0.1:&lt;port&gt;）。
+    /// 手机端桥（8099）只服务手机/平板：那是给局域网设备用的反向代理，
+    /// 桌面窗口本来就在同一台机器上，绕一圈只会多一跳、还多一个「桥没在跑」的依赖。
     /// </summary>
-    private static int BridgePort =>
-        int.TryParse(Environment.GetEnvironmentVariable("DSH_MANAGER_BRIDGE_PORT"), out var p) && p > 0
-            ? p : 8099;
-
-    private async System.Threading.Tasks.Task NavigateAsync()
+    private void NavigateToInstance()
     {
         ShowStatus("正在连接 DSH…", "端口 " + _inst.Port, retry: false);
         _baseUrl = "http://127.0.0.1:" + _inst.Port + "/";
-        _viaBridge = false;
-
-        // 桥的上游固定是 3080（桥自己按 --target / DSH_BRIDGE_TARGET 定，默认 3080），
-        // 所以只有 3080 上的实例能通过桥看；别的实例直连，手机侧功能不受影响。
-        var direct = Environment.GetEnvironmentVariable("DSH_MANAGER_DIRECT") == "1";
-        if (!direct && _inst.Port == 3080 && await ProbeBridgeAsync() == 200)
-        {
-            _baseUrl = "http://127.0.0.1:" + BridgePort + "/";
-            _viaBridge = true;
-        }
-
         UpdateTitleText();
-        Diag("navigate " + _baseUrl + " bridge=" + _viaBridge);
+        Diag("navigate " + _baseUrl);
         if (_ready) Web.CoreWebView2.Navigate(_baseUrl);
-    }
-
-    /// <summary>桥的 /__selftest：会真的向上游取一次首页并跑完注入管线，ok=true 才算桥可用。</summary>
-    private static async System.Threading.Tasks.Task<int> ProbeBridgeAsync()
-    {
-        // 先花 300ms 看端口在不在：桥没跑时别让窗口白等 HTTP 超时
-        if (!PortOpen(BridgePort)) return 0;
-        try
-        {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(6) };
-            using var resp = await http.GetAsync("http://127.0.0.1:" + BridgePort + "/__selftest");
-            if (resp.StatusCode != System.Net.HttpStatusCode.OK) return 0;
-            var text = await resp.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(text);
-            if (doc.RootElement.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True) return 200;
-            return 0;
-        }
-        catch
-        {
-            return 0;
-        }
-    }
-
-    private static bool PortOpen(int port)
-    {
-        try
-        {
-            using var client = new System.Net.Sockets.TcpClient();
-            var task = client.ConnectAsync("127.0.0.1", port);
-            return task.Wait(300) && client.Connected;
-        }
-        catch { return false; }
     }
 
     private void UpdateTitleText()
     {
-        var text = _inst.Label + " · 端口 " + _inst.Port + (_viaBridge ? " · 手机端桥" : "");
+        var text = _inst.Label + " · 端口 " + _inst.Port;
         if (TitleText != null) TitleText.Text = text;
     }
 
@@ -276,7 +225,7 @@ public partial class DshWebWindow : Window
 
     private void OnRetry(object sender, RoutedEventArgs e)
     {
-        _ = NavigateAsync();
+        NavigateToInstance();
     }
 
     // ---------------------------------------------------------------- 工具栏
