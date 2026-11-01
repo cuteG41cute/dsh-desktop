@@ -231,11 +231,22 @@ def ensure_extra_css():
             border-radius: 12px;
             border: 1px solid rgba(0, 0, 0, 0.10);
         }
+        .plugin-tree { font-size: 11px; }
+        .plugin-thead { min-height: 22px; }
+        .plugin-th { font-size: 10px; font-weight: bold; opacity: 0.7; }
+        .foot-note { font-size: 10px; opacity: 0.75; }
+        .foot-btn {
+            font-size: 10px;
+            min-height: 32px;
+            padding: 0 14px;
+            border-radius: 16px;
+        }
         """)
         screen = Gdk.Screen.get_default()
         if screen is not None:
+            # 用 USER 优先级：预览/主题 CSS 也是 USER，后加的生效，才盖得住按钮内边距
             Gtk.StyleContext.add_provider_for_screen(
-                screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+                screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER)
         _EXTRA_CSS['provider'] = provider
     except Exception as exc:
         sys.stderr.write('[dsh-manager] 额外样式未加载：%s\n' % exc)
@@ -2201,6 +2212,24 @@ class ManagerWindow(Gtk.Window):
         dlg.set_default_size(w, h)
         area = dlg.get_content_area()
         area.set_border_width(14)
+        # 表头卡片（对齐 Windows：CardSolid + 1px 内边 + 圆角 10 + padding 12,8）
+        thead = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        thead.get_style_context().add_class('plugin-thead')
+        thead.set_margin_top(10)
+        thead.set_margin_bottom(2)
+        thead.set_margin_start(12)
+        thead.set_margin_end(12)
+        for title, width, expand in (('插件', 190, False), ('仓库 / 说明', 0, True),
+                                     ('状态', 110, False), ('版本', 90, False)):
+            lbl = Gtk.Label(xalign=0.0, label=title)
+            lbl.get_style_context().add_class('plugin-th')
+            if expand:
+                thead.pack_start(lbl, True, True, 0)
+            else:
+                lbl.set_size_request(width, -1)
+                thead.pack_start(lbl, False, False, 0)
+        area.pack_start(thead, False, False, 0)
+
         sw = Gtk.ScrolledWindow()
         sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         sw.get_style_context().add_class('panel')
@@ -2469,7 +2498,6 @@ class ManagerWindow(Gtk.Window):
         if not inst:
             return
         dlg = Gtk.Dialog(title='插件 · %s' % inst.label, transient_for=self, modal=True)
-        dlg.add_buttons('关闭', Gtk.ResponseType.CLOSE)
         self._style_dialog(dlg, '插件 · %s' % inst.label,
                            '装在 <tt>%s</tt>'
                            % GLib.markup_escape_text(plug.profile_dir(inst)))
@@ -2477,11 +2505,6 @@ class ManagerWindow(Gtk.Window):
         area = dlg.get_content_area()
         area.set_border_width(14)
         area.set_spacing(10)
-
-        intro = Gtk.Label(xalign=0, wrap=True)
-        intro.set_markup('从我们自己的 GitHub 仓库安装 / 卸载；装在这个实例自己的 profile 里。')
-        intro.get_style_context().add_class('dialog-sub')
-        area.pack_start(intro, False, False, 0)
 
         src_lbl = Gtk.Label(xalign=0)
         src_lbl.get_style_context().add_class('dim-label')
@@ -2495,17 +2518,26 @@ class ManagerWindow(Gtk.Window):
 
         store = Gtk.ListStore(str, str, str, str)      # id, 说明, 状态, 版本
         tree = Gtk.TreeView(model=store)
+        tree.set_headers_visible(False)      # 表头自己做一张卡（对齐 Windows）
+        tree.get_style_context().add_class('plugin-tree')
         renderers = []
         for idx, (title, width) in enumerate((('插件', 210), ('仓库 / 说明', 420),
                                               ('状态', 100), ('版本', 80))):
             renderer = Gtk.CellRendererText()
             renderer.set_property('ellipsize', 3)
+            renderer.set_property('ypad', 9)      # 行高对齐 Windows 的 46px
             col = Gtk.TreeViewColumn(title, renderer)
             col.add_attribute(renderer, 'text', idx)
             col.set_min_width(width)
             col.set_resizable(True)
+            if idx == 1:
+                col.set_expand(True)            # 说明列吃掉剩余宽度
             tree.append_column(col)
             renderers.append(renderer)
+        try:
+            renderers[1].set_property('font', 'Italic 9.5')   # 说明列弱化一档
+        except Exception:
+            pass
 
         # 状态列上色（对齐 Windows：已安装=绿、半装=红、其余=灰）
         def _status_color(_col, cell, model, it, _data):
@@ -2528,22 +2560,32 @@ class ManagerWindow(Gtk.Window):
         sw.add(tree)
         area.pack_start(sw, True, True, 0)
 
-        note = Gtk.Label(xalign=0, wrap=True)
-        note.get_style_context().add_class('dim-label')
-        area.pack_start(note, False, False, 0)
+        # 底部条：一条细线 + 左状态、右操作（对齐 Windows 版）
+        sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        sep.set_margin_top(10)
+        area.pack_start(sep, False, False, 0)
 
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        foot = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        foot.set_margin_top(12)
+        note = Gtk.Label(xalign=0.0)
+        note.set_ellipsize(3)
+        note.set_max_width_chars(56)
+        note.get_style_context().add_class('foot-note')
+        foot.pack_start(note, True, True, 0)
+
+        btn_refresh = Gtk.Button(label='刷新状态')
         btn_install = Gtk.Button(label='安装 / 更新')
         btn_install.get_style_context().add_class('primary')
         btn_uninstall = Gtk.Button(label='卸载')
         btn_uninstall.get_style_context().add_class('danger')
-        btn_refresh = Gtk.Button(label='刷新状态')
-        btn_repo = Gtk.Button(label='打开仓库')
         btn_import = Gtk.Button(label='导入本地包…')
+        btn_repo = Gtk.Button(label='打开仓库')
         btn_gh = Gtk.Button(label='刷新 GitHub 列表')
-        for btn in (btn_install, btn_uninstall, btn_import, btn_refresh, btn_repo, btn_gh):
-            row.pack_start(btn, False, False, 0)
-        area.pack_start(row, False, False, 0)
+        for btn in (btn_gh, btn_repo, btn_import, btn_uninstall, btn_install, btn_refresh):
+            btn.get_style_context().add_class('foot-btn')
+            btn.set_size_request(-1, 32)
+            foot.pack_end(btn, False, False, 0)
+        area.pack_start(foot, False, False, 0)
 
         state = {'busy': False}
 
@@ -2685,7 +2727,7 @@ class ManagerWindow(Gtk.Window):
         btn_gh.connect('clicked', refresh_github)
 
         fill()
-        note.set_text('安装后需要重启该实例的服务才会加载：先「停止服务」再「启动服务」。')
+        note.set_text('共 %d 个插件' % len(plug.all_entries(inst)))
         # 打开时自动拉一次（不阻塞界面）：没缓存时列表会先用内置目录，拉到后自动刷新
         GLib.timeout_add(200, lambda: (refresh_github(), False)[1])
         dlg.show_all()
