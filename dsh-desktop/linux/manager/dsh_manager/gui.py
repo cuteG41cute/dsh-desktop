@@ -631,7 +631,7 @@ class ManagerWindow(Gtk.Window):
         self._maximized = False
         self._rgba = False
         if not self._frameless:
-            self.set_decorated(True)
+            self.set_decorated(True)    # 走 CSD：KWin 不画兜底应用图标
             return
         # 走 CSD：保留 decorated=True 但提供一个零高度自绘标题栏，
         # Wayland 会协商成 client-side，KWin 不画标题栏也不画兜底图标。

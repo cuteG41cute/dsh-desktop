@@ -772,3 +772,15 @@ button:disabled, .btn:disabled, .side-link:disabled, .quick-action:disabled {
 
 /* 最大化时窗口圆角与外壳圆角都要归零（否则四角会露出桌面） */
 .maximized, .maximized.dsh-shell { border-radius: 0; }
+
+/* GTK 的 CSD 装饰节点：阴影/边框/外边距全部清零。
+   我们自己在 draw 里画圆角与背景（含阴影），GTK 再画一圈就会变成"双层边"。 */
+decoration {
+  box-shadow: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  background-color: transparent;
+  border-radius: 0;
+}
+decoration:backdrop { box-shadow: none; border: none; }
