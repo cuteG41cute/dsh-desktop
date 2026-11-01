@@ -1138,15 +1138,33 @@ public partial class MainWindow : Window
 
     private async System.Threading.Tasks.Task CheckUpdateAsync()
     {
-        if (_current == null) return;
-        Toast("正在检查更新…");
-        var (ok, msg) = await InstanceActions.UpdateAsync(_current, l => Diag(l));
-        if (ok)
+        if (_current == null) { Toast("先选一个实例"); return; }
+        Toast("正在查询 npm 上的最新版本…");
+        var latest = await VersionCatalog.LatestDshAsync();
+        Diag("check-update cur=" + _current.DshVersion + " latest=" + latest);
+
+        if (InstanceActions.IsManaged(_current))
         {
-            ReloadInstances();
+            // 管理器自己创建的实例：直接升级（npm install @deepseek-ai/dsh@latest）
+            var (ok, msg) = await InstanceActions.UpdateAsync(_current, l => Diag(l));
+            if (ok) { ReloadInstances(); if (Quick3Sub != null) Quick3Sub.Text = "已更新到 dsh " + (latest ?? ""); }
             Toast(msg);
+            return;
         }
-        else Toast(msg);
+
+        // 系统安装（npx / pi-node / 全局）：只报告，不动用户的 npm 环境
+        var cur = _current.DshVersion ?? "?";
+        if (string.IsNullOrEmpty(latest))
+        {
+            Toast("查不到最新版本（网络或 npm 不可用）");
+            return;
+        }
+        var same = string.Equals(cur.Trim(), latest.Trim(), StringComparison.OrdinalIgnoreCase);
+        var text = same
+            ? "已是最新（dsh " + cur + "）"
+            : "有新版本：dsh " + latest + "（当前 " + cur + "）· 系统安装请执行 npm i -g @deepseek-ai/dsh@latest";
+        if (Quick3Sub != null) Quick3Sub.Text = same ? "当前已是最新版本" : "可更新到 dsh " + latest;
+        Toast(text);
     }
 
     private async System.Threading.Tasks.Task RepairAsync()

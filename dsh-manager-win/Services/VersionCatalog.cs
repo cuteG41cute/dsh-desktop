@@ -71,6 +71,17 @@ public static class VersionCatalog
         }
     }
 
+    /// <summary>npm 上 dsh 的最新版本号（查不到返回空串）。</summary>
+    public static async Task<string> LatestDshAsync()
+    {
+        try
+        {
+            var list = await DshVersionsAsync();
+            return list.FirstOrDefault(v => v != "latest") ?? "";
+        }
+        catch { return ""; }
+    }
+
     /// <summary>nodejs.org 上能用于 Windows x64 的 Node 版本（newest 在前）。</summary>
     public static async Task<List<string>> NodeVersionsAsync(Action<string> log = null)
     {
