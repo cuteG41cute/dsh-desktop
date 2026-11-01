@@ -159,9 +159,8 @@ public static class DshHost
     }
 
     /// <summary>
-    /// 打开窗口 = 启动**桌面窗口**（DSH Desktop.exe）。
-    /// 启动逻辑已经内置（Services/DesktopLauncher.cs），端口由管理器下发，
-    /// 不再调用外部 launcher.ps1（那套会自己扫安装、自己挑端口）。
+    /// 打开窗口 = 管理器自己的内置会话窗口（DshWebWindow，WebView2 装在管理器进程里）。
+    /// 端口由管理器下发，认证 cookie 自己签发，不依赖任何外部启动器。
     /// </summary>
     public static bool OpenWindow(DshInstance inst, out string message)
     {

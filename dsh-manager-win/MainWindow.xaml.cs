@@ -1125,7 +1125,7 @@ public partial class MainWindow : Window
         catch { Toast("复制失败（剪贴板被占用）"); }
     }
 
-    /// <summary>重建窗口 = 重启服务 + 重新拉起桌面版启动器（窗口是它管的，不是浏览器）。</summary>
+    /// <summary>重建窗口 = 重启服务 + 重新打开内置会话窗口。</summary>
     private void OnRebuildWindow()
     {
         if (_current == null) return;
