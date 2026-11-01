@@ -2581,7 +2581,8 @@ class ManagerWindow(Gtk.Window):
 
         def refresh_source_label():
             where, when = plug.source_info()
-            src_lbl.set_text('来源：%s%s' % (where, ('　抓取于 %s' % when) if when else ''))
+            # 文案对齐 Windows：「来自 GitHub · topic: dsh-plugin · 抓取于 HH:MM:SS」
+            src_lbl.set_text('来自 %s%s' % (where, (' · 抓取于 %s' % when) if when else ''))
         plug.bootstrap_cache()
         refresh_source_label()
 
@@ -2594,7 +2595,7 @@ class ManagerWindow(Gtk.Window):
                                               ('状态', 100), ('版本', 80))):
             renderer = Gtk.CellRendererText()
             renderer.set_property('ellipsize', 3)
-            renderer.set_property('ypad', 9)      # 行高对齐 Windows 的 46px
+            renderer.set_property('ypad', 14)     # 行再高一档（用户要求）
             col = Gtk.TreeViewColumn(title, renderer)
             col.add_attribute(renderer, 'text', idx)
             col.set_min_width(width)
@@ -2603,8 +2604,11 @@ class ManagerWindow(Gtk.Window):
                 col.set_expand(True)            # 说明列吃掉剩余宽度
             tree.append_column(col)
             renderers.append(renderer)
+        # 说明列：字号与第一列一致、不斜体，只把颜色压成灰（对齐 Windows）
         try:
-            renderers[1].set_property('font', 'Italic 9.5')   # 说明列弱化一档
+            renderers[1].set_property('foreground', token_color(
+                *_CURRENT.get('theme') and (_CURRENT.get('theme'), _CURRENT.get('mode'))
+                or ('frost', 'day'), 'muted'))
         except Exception:
             pass
 
