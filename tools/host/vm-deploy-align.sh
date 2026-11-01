@@ -15,6 +15,8 @@ tar -xzf /tmp/manager-dev.tgz -C "$HOME/dsh-dev" || { echo "unpack failed"; exit
 
 echo "== sync source of truth: $SRC"
 cp -a "$HOME/dsh-dev/dsh_manager/." "$SRC/dsh_manager/"
+# build-deb.sh 也要同步：包里要带 icons/*.png（鲸鱼图），只拷 dsh_manager 会漏
+if [ -f "$HOME/dsh-dev/build-deb.sh" ]; then cp -a "$HOME/dsh-dev/build-deb.sh" "$SRC/build-deb.sh"; fi
 V=$(grep -o "MANAGER_VERSION = '[^']*'" "$SRC/dsh_manager/core.py" | head -1 | cut -d"'" -f2)
 echo "   version now: $V"
 

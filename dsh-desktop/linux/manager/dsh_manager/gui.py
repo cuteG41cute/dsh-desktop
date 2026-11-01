@@ -211,6 +211,38 @@ def load_css(theme='frost', mode='day'):
     return True, theme, mode
 
 
+
+_EXTRA_CSS = {'provider': None}
+
+
+def ensure_extra_css():
+    """补几条主题文件里没有的规则（鲸鱼品牌块、对话框卡片头）。
+
+    主题 CSS 由 tools/build-gtk-theme.py 从设计稿生成，14 个文件；
+    只为一两个新控件去改生成器不划算，这里挂一份独立的小皮肤（和主题不冲突）。
+    """
+    if _EXTRA_CSS['provider'] is not None:
+        return _EXTRA_CSS['provider']
+    try:
+        provider = Gtk.CssProvider()
+        provider.load_from_data(b"""
+        .brand-logo {
+            background-color: #ffffff;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 0, 0, 0.10);
+        }
+        """)
+        screen = Gdk.Screen.get_default()
+        if screen is not None:
+            Gtk.StyleContext.add_provider_for_screen(
+                screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        _EXTRA_CSS['provider'] = provider
+    except Exception as exc:
+        sys.stderr.write('[dsh-manager] 额外样式未加载：%s\n' % exc)
+        _EXTRA_CSS['provider'] = False
+    return _EXTRA_CSS['provider']
+
+
 class VersionPicker(Gtk.Box):
     """版本选择器 = 原生下拉框（ComboBoxText）+ 手动输入 + 「更新」按钮。
 
@@ -886,6 +918,21 @@ class ManagerWindow(Gtk.Window):
         GLib.timeout_add(300, lambda: (self._apply_breakpoints(force=True), False)[1])
         self.set_buttons_sensitive(False)
 
+    def _whale_mark(self, px=38):
+        """品牌标：白底圆角方 + 黑色鲸鱼（和 Windows 版侧栏、程序图标同一只）。"""
+        ensure_extra_css()
+        box = Gtk.EventBox()
+        box.set_visible_window(True)
+        box.get_style_context().add_class('brand-logo')
+        box.set_size_request(px, px)
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons', 'whale.png')
+        try:
+            pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, px - 12, px - 12, True)
+            box.add(Gtk.Image.new_from_pixbuf(pb))
+        except Exception:
+            box.add(self._label('D', 'brand-mark-text'))
+        return box
+
     # ---- 侧栏 ----
     def _build_sidebar(self):
         side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -898,7 +945,7 @@ class ManagerWindow(Gtk.Window):
         brand.set_margin_bottom(28)
         brand.set_margin_start(8)
         brand.set_margin_end(8)
-        brand.pack_start(self._chip('D', 'brand-mark', width=38, height=38), False, False, 0)
+        brand.pack_start(self._whale_mark(38), False, False, 0)
         brand_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
         brand_text.pack_start(self._label('DeepSeek Harness', 'brand-title'), False, False, 0)
         brand_text.pack_start(self._label('管理器 v%s' % MANAGER_VERSION, 'brand-sub'),
@@ -2432,6 +2479,7 @@ class ManagerWindow(Gtk.Window):
 
         store = Gtk.ListStore(str, str, str, str)      # id, 说明, 状态, 版本
         tree = Gtk.TreeView(model=store)
+        renderers = []
         for idx, (title, width) in enumerate((('插件', 210), ('仓库 / 说明', 420),
                                               ('状态', 100), ('版本', 80))):
             renderer = Gtk.CellRendererText()
@@ -2441,6 +2489,23 @@ class ManagerWindow(Gtk.Window):
             col.set_min_width(width)
             col.set_resizable(True)
             tree.append_column(col)
+            renderers.append(renderer)
+
+        # 状态列上色（对齐 Windows：已安装=绿、半装=红、其余=灰）
+        def _status_color(_col, cell, model, it, _data):
+            label = model[it][2]
+            theme, mode = self._theme_state()
+            if label == '已安装':
+                cell.set_property('foreground', token_color(theme, mode, 'success'))
+            elif label.startswith('半装'):
+                cell.set_property('foreground', token_color(theme, mode, 'danger'))
+            else:
+                cell.set_property('foreground', token_color(theme, mode, 'muted'))
+
+        try:
+            tree.get_column(2).set_cell_data_func(renderers[2], _status_color)
+        except Exception:
+            pass
         sw = Gtk.ScrolledWindow()
         sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         sw.get_style_context().add_class('panel')
