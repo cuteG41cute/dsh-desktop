@@ -1554,6 +1554,18 @@ class ManagerWindow(Gtk.Window):
         except Exception:
             pass
 
+    @staticmethod
+    def _row_sub(inst):
+        """实例行第二行：dsh 版本 · 端口 · PID（对齐 Windows 版的信息密度）。"""
+        parts = ['dsh %s' % (inst.dsh_version or '?')]
+        pid = 0
+        try:
+            pid = int(inst.running_pid() or 0)
+        except Exception:
+            pid = 0
+        parts.append(('PID %d' % pid) if pid else '已停止')
+        return ' · '.join(parts)
+
     def _instance_row(self, inst):
         row = Gtk.ListBoxRow()
         row.inst = inst
@@ -1570,7 +1582,8 @@ class ManagerWindow(Gtk.Window):
         name = self._label(inst.label or inst.prefix, 'instance-name')
         name.set_ellipsize(3)
         text.pack_start(name, False, False, 0)
-        sub = self._label('v%s' % (inst.dsh_version or '?'), 'instance-sub')
+        sub = self._label(self._row_sub(inst), 'instance-sub')
+        sub.set_ellipsize(3)
         text.pack_start(sub, False, False, 0)
         box.pack_start(text, True, True, 0)
         dot = self._chip('', 'status-dot', width=6, height=6, valign=Gtk.Align.CENTER)
@@ -1650,7 +1663,7 @@ class ManagerWindow(Gtk.Window):
                 ctx.add_class('stopped')
             else:
                 ctx.remove_class('stopped')
-            child.sub.set_text('v%s' % (inst.dsh_version or '?'))
+            child.sub.set_text(self._row_sub(inst))
         if self.selected is not None:
             fresh = self.manager.instance_at(self.selected.prefix)
             self.selected = fresh
