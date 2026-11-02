@@ -31,24 +31,13 @@
                                Foreground="{DynamicResource Text}" />
                     <Grid x:Name="Spinner" Width="18" Height="18" Margin="12,0,0,0"
                           VerticalAlignment="Center" Visibility="Collapsed">
-                        <Path Data="M 9,1 A 8,8 0 1 1 8.99,1"
-                              Stroke="{DynamicResource Accent}" StrokeThickness="2"
+                        <Path Data="M 9,2 A 7,7 0 1 1 2.2,11.8"
+                              Stroke="{DynamicResource Accent}" StrokeThickness="2.2"
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                               RenderTransformOrigin="0.5,0.5">
                             <Path.RenderTransform>
                                 <RotateTransform x:Name="SpinnerRotate" />
                             </Path.RenderTransform>
-                            <Path.Triggers>
-                                <EventTrigger RoutedEvent="Loaded">
-                                    <BeginStoryboard>
-                                        <Storyboard RepeatBehavior="Forever">
-                                            <DoubleAnimation Storyboard.TargetName="SpinnerRotate"
-                                                             Storyboard.TargetProperty="Angle"
-                                                             From="0" To="360" Duration="0:0:0.9" />
-                                        </Storyboard>
-                                    </BeginStoryboard>
-                                </EventTrigger>
-                            </Path.Triggers>
                         </Path>
                     </Grid>
                     <TextBlock x:Name="LoadingText" Text="正在获取版本列表…" FontSize="10"

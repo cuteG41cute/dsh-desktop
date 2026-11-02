@@ -6,6 +6,8 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
 
 namespace DshManager
 {
@@ -82,6 +84,56 @@ namespace DshManager
             catch { }
         }
 
+        /// <summary>
+        /// 转圈：用 DispatcherTimer 每 30ms 给 RotateTransform.Angle 加一点。
+        /// （试过 XAML EventTrigger + Storyboard、也试过代码 Storyboard.Begin()，
+        ///   在这台机器上 GetCurrentState 一直是 Stopped、界面不动 —— 定时器最可靠。）
+        /// </summary>
+        private DispatcherTimer _spinTimer;
+        private double _spinAngle;
+
+        private void StartSpin()
+        {
+            try
+            {
+                if (_spinTimer == null)
+                {
+                    _spinTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
+                    _spinTimer.Tick += (_, _) =>
+                    {
+                        _spinAngle = (_spinAngle + 12) % 360;
+                        if (SpinnerRotate != null) SpinnerRotate.Angle = _spinAngle;
+                    };
+                }
+                if (!_spinTimer.IsEnabled) _spinTimer.Start();
+                LogSpin("timer start");
+            }
+            catch (Exception ex) { LogSpin("start failed: " + ex.Message); }
+        }
+
+        private void StopSpin()
+        {
+            try
+            {
+                if (_spinTimer != null && _spinTimer.IsEnabled) _spinTimer.Stop();
+                LogSpin("timer stop angle=" + Math.Round(_spinAngle));
+            }
+            catch { }
+        }
+
+        private static void LogSpin(string msg)
+        {
+            try
+            {
+                var dir = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "dsh-manager");
+                System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "ui.log"),
+                    DateTime.Now.ToString("HH:mm:ss.fff ") + "spin " + msg + Environment.NewLine);
+            }
+            catch { }
+        }
+
         private void SetLoading(bool on, string text = null)
         {
             _loading = on;
@@ -89,8 +141,10 @@ namespace DshManager
             LoadingText.Text = on ? (text ?? "正在获取版本列表…") : "";
             LoadingText.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
             RefreshBtn.IsEnabled = !on;
+            if (!on) StopSpin();
             if (on)
             {
+                StartSpin();
                 DshBox.IsEnabled = false;
                 NodeBox.IsEnabled = false;
                 ApplyBtn.IsEnabled = false;
