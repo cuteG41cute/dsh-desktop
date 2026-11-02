@@ -938,14 +938,18 @@ public partial class MainWindow : Window
         // 0x0231 = WM_ENTERSIZEMOVE, 0x0232 = WM_EXITSIZEMOVE
         if (msg == 0x0231)   // WM_ENTERSIZEMOVE
         {
+            if (_resizing) return WndProcCore(hwnd, msg, wParam, lParam, ref handled);  // 自绘拖边已在处理
             _inLiveResize = true;
+            Diag("ENTER_SIZEMOVE");
             SuspendHeavyVisuals(true);
             BeginFrozenResize();
             StartFrameProbe();
         }
         else if (msg == 0x0232)   // WM_EXITSIZEMOVE
         {
+            if (_resizing || !_inLiveResize) return WndProcCore(hwnd, msg, wParam, lParam, ref handled);
             _inLiveResize = false;
+            Diag("EXIT_SIZEMOVE");
             StopFrameProbe();
             EndFrozenResize();
             UpdateShellClip();
@@ -1171,6 +1175,15 @@ public partial class MainWindow : Window
         if (!_resizing) return;
         _resizing = false;
         _dragZone = EdgeZone.None;
+        if (_inLiveResize)
+        {
+            _inLiveResize = false;
+            StopFrameProbe();
+            EndFrozenResize();
+            UpdateShellClip();
+            ApplyResponsive();
+            SuspendHeavyVisuals(false);
+        }
         if (IsMouseCaptured) ReleaseMouseCapture();
         Cursor = Cursors.Arrow;
     }
@@ -1188,6 +1201,12 @@ public partial class MainWindow : Window
         Diag($"begin-resize zone={zone}");
         _resizing = true;
         _dragZone = zone;
+        // 这个管理器用的是**自己写的拖边缩放**（不走系统的 WM_ENTERSIZEMOVE），
+        // 所以冻结/降级必须挂在这里，否则真实拖拽时根本不会触发（之前就是这样漏的）。
+        _inLiveResize = true;
+        SuspendHeavyVisuals(true);
+        BeginFrozenResize();
+        StartFrameProbe();
         _resizeStartScreen = PointToScreen(Mouse.GetPosition(this));
         _resizeStartRect = new Rect(Left, Top, ActualWidth, ActualHeight);
         CaptureMouse();
