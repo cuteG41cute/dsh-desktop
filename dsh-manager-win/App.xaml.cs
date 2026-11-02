@@ -76,16 +76,9 @@ public partial class App : Application
             {
                 DispatcherUnhandledException += (_, ev) =>
                 {
+                    // 只记日志、不弹窗、不退出：界面错误不该干扰用户，也不该带走进程。
                     Log("ui-dispatcher: " + ev.Exception);
-                    ev.Handled = true;   // 不退出，让用户还能操作/导出日志
-                    try
-                    {
-                        System.Windows.MessageBox.Show(
-                            "界面层出了个异常（管理器没有退出）：\n\n" + ev.Exception.Message,
-                            "DSH Manager", System.Windows.MessageBoxButton.OK,
-                            System.Windows.MessageBoxImage.Warning);
-                    }
-                    catch { }
+                    ev.Handled = true;
                 };
             }
             catch { }
@@ -96,8 +89,12 @@ public partial class App : Application
             {
                 System.Windows.Forms.Application.ThreadException +=
                     (_, ev) => Log("ui-thread: " + ev.Exception);
-                System.Threading.Tasks.TaskScheduler.UnobservedTaskException +=
-                    (_, ev) => Log("unobserved-task: " + ev.Exception);
+                System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, ev) =>
+                {
+                    // 端口探测的 TcpClient 被取消会抛 SocketException(995)，纯噪音
+                    if (ev.Exception.ToString().Contains("995") || ev.Exception.ToString().Contains("SocketException")) return;
+                    Log("unobserved-task: " + ev.Exception);
+                };
             }
             catch { }
 

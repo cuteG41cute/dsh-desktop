@@ -1272,8 +1272,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             Diag("restart failed: " + ex);
-            Toast("重启失败：" + ex.Message);
-            try { MessageBox.Show(this, ex.ToString(), "重启失败", MessageBoxButton.OK, MessageBoxImage.Warning); } catch { }
+            Toast("重启失败：" + ex.Message);   // 不弹窗，只写状态行
         }
     }
 
@@ -1324,8 +1323,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             Diag("stop/start failed: " + ex);
-            Toast("操作失败：" + ex.Message);
-            try { MessageBox.Show(this, ex.ToString(), "停止/启动失败", MessageBoxButton.OK, MessageBoxImage.Warning); } catch { }
+            Toast("操作失败：" + ex.Message);   // 不弹窗，只写状态行
         }
     }
 
