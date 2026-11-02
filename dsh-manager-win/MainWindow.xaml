@@ -1,4 +1,4 @@
-<Window x:Class="DshManager.MainWindow"
+﻿<Window x:Class="DshManager.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
@@ -42,6 +42,7 @@
                 </Border>
                 <Border CornerRadius="{DynamicResource AppRadius}" Background="{DynamicResource App}" />
 
+                <Canvas x:Name="ContentHost" ClipToBounds="True">
                 <Grid x:Name="ShellContent">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition x:Name="SidebarCol" Width="248" />
@@ -817,6 +818,7 @@
                     </ScrollViewer>
                 </Grid>
                 </Grid>
+                </Canvas>
             </Grid>
         </Border>
     </Border>

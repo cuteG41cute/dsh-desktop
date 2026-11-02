@@ -75,9 +75,6 @@ public partial class MainWindow : Window
     private readonly List<(UIElement El, Effect Fx)> _suspendedEffects = new();
 
     // 「冻结式缩放」：拖动期间内容不重排，只按固定尺寸渲染一次再整体缩放
-    private Size _frozenSize;
-    private ScaleTransform _frozenScale;
-    private bool _frozen;
 
     // 帧间隔采样：拖动一次，记录平均帧时间
     private readonly List<double> _frameGaps = new();
@@ -156,90 +153,88 @@ public partial class MainWindow : Window
         }
     }
 
-    // 拖动期间显示的快照（一张位图，随窗口缩放，不做布局）
-    private System.Windows.Shapes.Rectangle _freezeImage;
-    private System.Windows.Media.Imaging.RenderTargetBitmap _freezeBitmap;
+    // 拖动期间的「矢量缩放」状态：内容按最后一次稳定尺寸排好版，
+    // 拖动时只改 RenderTransform（WPF 会按新比例重新光栅化，是矢量缩放，不是截图）
+    private ScaleTransform _liveScale;
+    private Size _baseSize;
+    private bool _frozen;
+
+    /// <summary>把内容尺寸对齐到宿主 Canvas（稳定状态下才做，会触发一次布局）。</summary>
+    private void SyncContentSize()
+    {
+        if (ContentHost == null || ShellContent == null || _frozen) return;
+        var w = ContentHost.ActualWidth;
+        var h = ContentHost.ActualHeight;
+        if (w < 40 || h < 40) return;
+        ShellContent.Width = w;
+        ShellContent.Height = h;
+    }
 
     /// <summary>
-    /// 拖动开始：给内容拍一张快照，把内容 Collapsed，快照铺满窗口。
-    /// 这是「微信/浏览器」那套做法：拖动时**完全不排版、不重绘内容**，
-    /// 只让一张位图跟着窗口拉伸；松手后撤掉快照、恢复内容并排一次版。
-    /// （先试过 Width/Height 钉死 + RenderTransform，WPF 仍会把父级撑开，实测无效。）
+    /// 拖动开始：记下当前尺寸，装一个 ScaleTransform。
+    /// 之后拖动只改 ScaleX/ScaleY —— 布局树不动，WPF 按矢量重新渲染（清晰，不糊）。
     /// </summary>
     private void BeginFrozenResize()
     {
         try
         {
-            if (_freezeImage != null || ShellContent == null) return;
+            if (_frozen || ShellContent == null || ContentHost == null) return;
             var w = ShellContent.ActualWidth;
             var h = ShellContent.ActualHeight;
             if (w < 80 || h < 80) return;
-            if (!(ShellContent.Parent is Panel host)) return;
-
-            var dpi = VisualTreeHelper.GetDpi(ShellContent);
-            var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap(
-                (int)Math.Ceiling(w * dpi.DpiScaleX),
-                (int)Math.Ceiling(h * dpi.DpiScaleY), 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY,
-                PixelFormats.Pbgra32);
-            bmp.Render(ShellContent);
-
-            _freezeBitmap = bmp;
-            // 关键：用 Rectangle 而不是 Image。
-            // Image 会对外报「位图原始尺寸」作为期望尺寸，于是拖动时 Grid 会先按旧尺寸量一次、
-            // 再按新尺寸量一次 —— 视觉上就是内容「变回原大小又变回来」，也就是用户看到的抖动。
-            // Rectangle 没有固有尺寸，永远铺满可用空间，只做拉伸。
-            _freezeImage = new System.Windows.Shapes.Rectangle
-            {
-                Fill = new ImageBrush(bmp) { Stretch = Stretch.Fill },
-                IsHitTestVisible = false,
-                SnapsToDevicePixels = false,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                VerticalAlignment = VerticalAlignment.Stretch,
-            };
-            RenderOptions.SetBitmapScalingMode(_freezeImage, BitmapScalingMode.Linear);
-            host.Children.Add(_freezeImage);
-            ShellContent.Visibility = Visibility.Collapsed;
-            // 立刻重排一次：让 Grid 按窗口（而不是按被隐藏前的旧尺寸）重新量，
-            // 否则快照会按原尺寸铺开而被窗口裁掉。
-            Shell.InvalidateMeasure();
-            Shell.UpdateLayout();
-            Diag("快照缩放开始 " + Math.Round(w) + "x" + Math.Round(h)
-                 + " · shell=" + Math.Round(Shell.ActualWidth) + "x" + Math.Round(Shell.ActualHeight));
+            _baseSize = new Size(w, h);
+            ShellContent.Width = w;      // 钉住：拖动期间不参与重新测量
+            ShellContent.Height = h;
+            Canvas.SetLeft(ShellContent, 0);
+            Canvas.SetTop(ShellContent, 0);
+            _liveScale = new ScaleTransform(1, 1);
+            ShellContent.RenderTransformOrigin = new Point(0, 0);
+            ShellContent.RenderTransform = _liveScale;
+            _frozen = true;
+            Diag("矢量缩放开始 " + Math.Round(w) + "x" + Math.Round(h));
         }
-        catch (Exception ex) { Diag("快照缩放失败：" + ex.Message); EndFrozenResize(); }
+        catch (Exception ex) { Diag("矢量缩放失败：" + ex.Message); }
     }
 
+    /// <summary>
+    /// 拖动中：按拖拽方向预置的算式算缩放比例（横向只放大 X、竖向只放大 Y、斜向两者都变）。
+    /// 这些算式就是「提前算好的缩放算法」，每次鼠标位置一套即可，不触发布局。
+    /// </summary>
     private void UpdateFrozenScale(Size target)
     {
-        // 快照本身随窗口拉伸；这里只确保宿主真的按新尺寸重排了一次，
-        // 否则容器可能停留在旧尺寸 → 快照被裁掉（看起来像「内容没跟着缩」）。
-        if (_freezeImage == null) return;
+        if (!_frozen || _liveScale == null) return;
         try
         {
-            if (_freezeImage.Parent is Panel host)
-            {
-                host.InvalidateMeasure();
-                host.UpdateLayout();
-            }
+            if (target.Width <= 1 || target.Height <= 1) return;
+            var sx = Math.Max(0.05, target.Width / _baseSize.Width);
+            var sy = Math.Max(0.05, target.Height / _baseSize.Height);
+            var z = _dragZone;
+            var horizontal = z is EdgeZone.Left or EdgeZone.Right;
+            var vertical = z is EdgeZone.Top or EdgeZone.Bottom;
+            if (horizontal) sy = 1;                    // 只拖左右：纵向不缩放
+            else if (vertical) sx = 1;                 // 只拖上下：横向不缩放
+            // 斜角：四角锁比例（DoResize 已经按比例算窗口尺寸），这里两者同比例变化
+            _liveScale.ScaleX = sx;
+            _liveScale.ScaleY = sy;
         }
         catch { }
     }
 
-    /// <summary>拖动结束：撤快照、恢复内容、排一次版。</summary>
+    /// <summary>拖动结束：撤掉变换、按新尺寸真正排一次版（这次排完就是下一次拖动的基准）。</summary>
     private void EndFrozenResize()
     {
-        if (_freezeImage == null) return;
+        if (!_frozen) return;
+        _frozen = false;
         try
         {
-            if (_freezeImage.Parent is Panel host) host.Children.Remove(_freezeImage);
-            _freezeImage.Fill = null;
-            _freezeImage = null;
-            _freezeBitmap = null;
-            ShellContent.Visibility = Visibility.Visible;
+            if (ShellContent != null) ShellContent.RenderTransform = null;
+            _liveScale = null;
         }
         catch { }
-        Diag("快照缩放结束 · window=" + Math.Round(ActualWidth) + "x" + Math.Round(ActualHeight)
-                 + " · shell=" + Math.Round(Shell?.ActualWidth ?? 0) + "x" + Math.Round(Shell?.ActualHeight ?? 0));
+        SyncContentSize();
+        UpdateShellClip();
+        ApplyResponsive();
+        Diag("矢量缩放结束 " + Math.Round(ActualWidth) + "x" + Math.Round(ActualHeight));
     }
 
     private void StartFrameProbe()
@@ -299,6 +294,7 @@ public partial class MainWindow : Window
         {
             // 拖动中：用事件携带的新尺寸算缩放（此时 Window.ActualWidth 还是旧值）
             if (_inLiveResize) { UpdateFrozenScale(e.NewSize); return; }
+            SyncContentSize();
             ScheduleResizeWork();
         };
         ThemeService.ThemeChanged += OnThemeChanged;
@@ -397,6 +393,7 @@ public partial class MainWindow : Window
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         ApplyRoundedCorners();
+        SyncContentSize();
         _ = ReloadInstancesAsync();
         _poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
         _poll.Tick += (_, _) => PollCurrent();
@@ -1244,6 +1241,20 @@ public partial class MainWindow : Window
         }
         if (z is EdgeZone.Bottom or EdgeZone.BottomLeft or EdgeZone.BottomRight)
             height = Math.Max(MinHeight, r.Height + dy);
+
+        // 四角：锁住当前宽高比（横向/竖向各取变化更大的那一侧作为主导）
+        var isCorner = z is EdgeZone.TopLeft or EdgeZone.TopRight or EdgeZone.BottomLeft or EdgeZone.BottomRight;
+        if (isCorner && r.Width > 1 && r.Height > 1)
+        {
+            var ratio = r.Width / r.Height;
+            var byW = Math.Max(MinWidth, width);
+            var byH = byW / ratio;
+            if (byH < MinHeight) { byH = MinHeight; byW = byH * ratio; }
+            width = byW;
+            height = byH;
+            if (z is EdgeZone.Left or EdgeZone.TopLeft or EdgeZone.BottomLeft) left = r.Right - width;
+            if (z is EdgeZone.Top or EdgeZone.TopLeft or EdgeZone.TopRight) top = r.Bottom - height;
+        }
 
         Left = left;
         Top = top;
