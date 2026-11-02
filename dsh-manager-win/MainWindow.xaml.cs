@@ -1439,39 +1439,49 @@ public partial class MainWindow : Window
         return tmpl;
     }
 
-    /// <summary>查看 Token：弹一个**可选中、可复制**的窗口，同时把内容写进实例日志。</summary>
+    /// <summary>
+    /// 查看 Token：弹一个可选中、可复制的窗口，并把内容写进实例日志。
+    /// token 只认日志里**最后一次启动**那一行，并且当场发一次真实请求校验，
+    /// 避免给出「上一次运行留下的旧 token」（那是打不开的头号原因）。
+    /// </summary>
     private void OnShowToken()
     {
         if (_current == null) { Toast("先选一个实例"); return; }
         var baseUrl = "http://127.0.0.1:" + _current.Port + "/";
-        var token = "";
-        var m = System.Text.RegularExpressions.Regex.Match(
-            DshHost.Tail(_current, 120), @"127\.0\.0\.1:\d+/\?token=([A-Za-z0-9_\-\.]+)");
-        if (m.Success) token = m.Groups[1].Value;
+        var token = DshHost.FindStartupToken(_current);
+        var probe = token == null ? "（日志里没有启动行，实例可能不是管理器启动的）"
+            : DshHost.ProbeTokenUrl(baseUrl + "?token=" + token);
+
         var cookie = AuthCookie.Mint(_current.Port, _current.Home);
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("实例：" + _current.Label);
         sb.AppendLine("端口：" + _current.Port + "（PID " + (_current.Pid > 0 ? _current.Pid.ToString() : "—") + "）");
         sb.AppendLine("数据目录：" + _current.Home);
         sb.AppendLine();
-        sb.AppendLine("访问地址：");
+        sb.AppendLine("访问地址（无 token 会 401，这是正常的）：");
         sb.AppendLine(baseUrl);
         if (!string.IsNullOrEmpty(token))
         {
             sb.AppendLine();
-            sb.AppendLine("一次性 token：");
+            sb.AppendLine("本次启动的 token：");
             sb.AppendLine(token);
             sb.AppendLine();
-            sb.AppendLine("带 token 的地址：");
+            sb.AppendLine("带 token 的地址（复制这条）：");
             sb.AppendLine(baseUrl + "?token=" + token);
+            sb.AppendLine();
+            sb.AppendLine("校验结果：" + probe);
         }
+        else sb.AppendLine("校验结果：" + probe);
         sb.AppendLine();
         sb.AppendLine(cookie == null
             ? "认证 cookie：无法签发（实例没有可用的 credentials）"
             : "认证 cookie：" + cookie.Value.Name + " = " + cookie.Value.Value);
-        var text = sb.ToString();
+        sb.AppendLine();
+        sb.AppendLine("提示：如果浏览器里还留着旧的 dsh-auth cookie，会顶掉 token 登录，");
+        sb.AppendLine("      用「无痕窗口」打开这条地址即可（或者清掉该站点 cookie）。");
 
-        DshHost.AppendNote(_current, text);   // 同时落进实例日志，最近日志里也能看/选
+        var text = sb.ToString();
+        DshHost.AppendNote(_current, text);
         RefreshLogs(_current);
         ShowTextWindow("查看 Token · " + _current.Label, text);
     }

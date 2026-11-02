@@ -184,6 +184,48 @@ public static class DshHost
         return Path.Combine(LogDir, safe + ".log");
     }
 
+    /// <summary>
+    /// 从实例日志里找**最后一次启动**打印的 token（只认最后一条 "dsh web: http://…?token=…"）。
+    /// 之前是按「最后 120 行里最后一个匹配」取的，实例重启后可能拿到上一轮的旧 token。
+    /// </summary>
+    public static string FindStartupToken(DshInstance inst)
+    {
+        try
+        {
+            var path = LogPathFor(inst);
+            if (!File.Exists(path)) return null;
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(fs, Encoding.UTF8);
+            var text = reader.ReadToEnd();
+            var ms = System.Text.RegularExpressions.Regex.Matches(
+                text, @"dsh web:\s*(http://127\.0\.0\.1:\d+/\?token=([A-Za-z0-9_\-\.]+))");
+            if (ms.Count == 0) return null;
+            return ms[ms.Count - 1].Groups[2].Value;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>当场请求一次带 token 的地址，返回可读的校验结论（200 / 401 / 连不上）。</summary>
+    public static string ProbeTokenUrl(string url)
+    {
+        try
+        {
+            using var handler = new System.Net.Http.HttpClientHandler
+            {
+                AllowAutoRedirect = true,
+                UseCookies = true,
+                CookieContainer = new System.Net.CookieContainer(),
+            };
+            using var http = new System.Net.Http.HttpClient(handler) { Timeout = TimeSpan.FromSeconds(8) };
+            var resp = http.GetAsync(url).GetAwaiter().GetResult();
+            var code = (int)resp.StatusCode;
+            if (code == 200) return "可打开（200）";
+            if (code == 401 || code == 403) return "打不开（" + code + "）—— token 已失效，重启服务后再看";
+            return code + "（跟着重定向后的状态码）";
+        }
+        catch (Exception ex) { return "连不上：" + ex.Message; }
+    }
+
     /// <summary>往实例日志里写一段备注（管理器自己产生的内容，例如 Token 信息）。</summary>
     public static void AppendNote(DshInstance inst, string text)
     {
