@@ -109,6 +109,7 @@ public static class InstanceInstaller
             if (!File.Exists(entry)) return (false, "装完了但找不到 bin.js（目录结构变了？）");
             log("完成：" + entry);
 
+            SeedIsolatedHome(dir, log);
             var versionText = ReadVersion(Path.Combine(dir, "node_modules", "@deepseek-ai", "dsh", "package.json"));
             var id = "own@" + DshDiscovery.StableHash(dir);
             InstanceRegistry.Add(new RegistryEntry
@@ -127,6 +128,46 @@ public static class InstanceInstaller
         {
             return (false, "安装失败：" + ex.Message);
         }
+    }
+
+    /// <summary>
+    /// 给新实例建独立的 DSH_HOME，并从全局家目录只搬「能跑起来所需」的东西：
+    /// 凭据 / 设置 / 技能 / agent 预设。
+    /// **不搬** sessions、storages、profiles —— 那样新实例就会看到别的实例的工作区和插件。
+    /// </summary>
+    private static void SeedIsolatedHome(string dir, Action<string> log)
+    {
+        try
+        {
+            var home = Path.Combine(dir, "dsh-home");
+            Directory.CreateDirectory(home);
+            var global = DshDiscovery.HomeDir;
+            if (string.IsNullOrEmpty(global) || !Directory.Exists(global)) return;
+            foreach (var name in new[] { ".credentials.yaml", "settings.yaml" })
+            {
+                var src = Path.Combine(global, name);
+                if (File.Exists(src)) File.Copy(src, Path.Combine(home, name), true);
+            }
+            foreach (var sub in new[] { "skills", ".agent-presets" })
+            {
+                var src = Path.Combine(global, sub);
+                if (Directory.Exists(src)) CopyDir(src, Path.Combine(home, sub));
+            }
+            log("已建独立数据目录：" + home + "（凭据/设置/技能已从全局复制，会话与插件不共享）");
+        }
+        catch (Exception ex)
+        {
+            log("创建独立数据目录失败（将沿用全局 .dsh）：" + ex.Message);
+        }
+    }
+
+    private static void CopyDir(string src, string dst)
+    {
+        Directory.CreateDirectory(dst);
+        foreach (var f in Directory.GetFiles(src))
+            File.Copy(f, Path.Combine(dst, Path.GetFileName(f)), true);
+        foreach (var d in Directory.GetDirectories(src))
+            CopyDir(d, Path.Combine(dst, Path.GetFileName(d)));
     }
 
     private static string LastLines(string text, int n)

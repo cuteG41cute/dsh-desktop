@@ -72,7 +72,7 @@ public static class DshDiscovery
                           ?? PortableNodeOf(InstallRootOf(root))
                           ?? FindNodeOnPath(),
                 Source = source,
-                Home = HomeDir,
+                Home = DshHomeOf(InstallRootOf(root)),
                 Dir = InstallRootOf(root),
                 LogPath = Path.Combine(LocalAppData, "dsh-manager", "logs", MakeId(root, source) + ".log"),
                 SortKey = sort,
@@ -142,6 +142,25 @@ public static class DshDiscovery
         }
         catch { }
         return "DeepSeek Harness";
+    }
+
+    /// <summary>
+    /// 实例自己的 DSH_HOME：&lt;安装根&gt;\dsh-home。
+    /// 存在就用它（会话/工作区/插件/凭据都在里面，实例之间互不可见）；
+    /// 不存在就沿用全局 %USERPROFILE%\.dsh（老实例的兼容路径）。
+    /// </summary>
+    private static string DshHomeOf(string installRoot)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(installRoot))
+            {
+                var home = Path.Combine(installRoot, "dsh-home");
+                if (Directory.Exists(home)) return home;
+            }
+        }
+        catch { }
+        return HomeDir;
     }
 
     /// <summary>管理器给实例装的便携 Node（&lt;安装根&gt;\node\node.exe）。</summary>
