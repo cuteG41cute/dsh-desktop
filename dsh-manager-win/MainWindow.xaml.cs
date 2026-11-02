@@ -299,6 +299,12 @@ public partial class MainWindow : Window
             ScheduleResizeWork();
         };
         ThemeService.ThemeChanged += OnThemeChanged;
+        // 最小化 / 还原 / 最大化 都会让系统丢掉窗口 Region → 补裁一次圆角
+        StateChanged += (_, _) =>
+        {
+            Diag("state -> " + WindowState);
+            ReapplyWindowRegionSoon();
+        };
     }
 
     /// <summary>
@@ -347,6 +353,30 @@ public partial class MainWindow : Window
     /// 用窗口 Region 把整窗裁成圆角：半径用**设计值**（AppRadiusValue），
     /// 这样外缘圆角与内部内容圆角完全一致；DWM 自己的圆角已经关掉，不会再出现「一大一小两个弧度」。
     /// </summary>
+    /// <summary>
+    /// 最小化 → 还原、最大化 → 还原之后，窗口的 Region 会被系统丢掉（方角又回来了）。
+    /// 状态变化后补两次：立刻一次 + 稍后一次（系统可能在我们之后才重置）。
+    /// </summary>
+    private void ReapplyWindowRegionSoon()
+    {
+        try
+        {
+            var r = 26.0;
+            try { if (TryFindResource("AppRadiusValue") is double d) r = d; } catch { }
+            ApplyWindowRegion(r);
+            var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+            t.Tick += (_, _) =>
+            {
+                t.Stop();
+                var rr = 26.0;
+                try { if (TryFindResource("AppRadiusValue") is double d2) rr = d2; } catch { }
+                ApplyWindowRegion(rr);
+            };
+            t.Start();
+        }
+        catch { }
+    }
+
     private void ApplyWindowRegion(double radiusDip)
     {
         try
@@ -502,7 +532,7 @@ public partial class MainWindow : Window
     // ---------------------------------------------------------------- 主题
     private void OnThemeChanged()
     {
-        Dispatcher.BeginInvoke(new Action(RefreshThemeUi));
+        Dispatcher.BeginInvoke(new Action(() => { RefreshThemeUi(); ReapplyWindowRegionSoon(); }));
     }
 
     private void RefreshThemeUi()
@@ -1362,12 +1392,16 @@ public partial class MainWindow : Window
             Height = wa.Height;
             Shell.Margin = new Thickness(0);
             Shell.CornerRadius = new CornerRadius(0);
+            Dispatcher.BeginInvoke(new Action(ReapplyWindowRegionSoon),
+                System.Windows.Threading.DispatcherPriority.Loaded);
         }
         else
         {
             _isMaximized = false;
             Shell.Margin = new Thickness(0);
             Shell.CornerRadius = (CornerRadius)FindResource("AppRadius");
+            Dispatcher.BeginInvoke(new Action(ReapplyWindowRegionSoon),
+                System.Windows.Threading.DispatcherPriority.Loaded);
             Left = _restoreBounds.Left;
             Top = _restoreBounds.Top;
             Width = _restoreBounds.Width;
