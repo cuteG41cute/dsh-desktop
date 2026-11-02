@@ -36,17 +36,17 @@ public partial class NewInstanceWindow : Window
     {
         try
         {
-            var dsh = await VersionCatalog.DshVersionsAsync(AppendLog);
-            DshVersionBox.ItemsSource = dsh;
-            if (string.IsNullOrWhiteSpace(DshVersionBox.Text)) DshVersionBox.Text = "latest";
-            AppendLog("dsh 版本候选 " + dsh.Count + " 个（" + dsh[0] + " … " + dsh[dsh.Count - 1] + "）");
+            var refs = await VersionCatalog.GitRefsAsync(AppendLog);
+            DshVersionBox.ItemsSource = refs;
+            DshVersionBox.Text = "master";
+            AppendLog("仓库版本候选 " + refs.Count + " 个（默认 master）");
         }
         catch (Exception ex) { AppendLog("dsh 版本列表失败：" + ex.Message); }
         try
         {
             var node = await VersionCatalog.NodeVersionsAsync(AppendLog);
             NodeVersionBox.ItemsSource = node;
-            if (string.IsNullOrWhiteSpace(NodeVersionBox.Text)) NodeVersionBox.Text = VersionCatalog.SystemNode;
+            if (string.IsNullOrWhiteSpace(NodeVersionBox.Text)) NodeVersionBox.Text = "latest";
             AppendLog("Node 版本候选 " + node.Count + " 个（默认 system = 用系统的 node）");
         }
         catch (Exception ex) { AppendLog("Node 版本列表失败：" + ex.Message); }
@@ -153,29 +153,16 @@ public partial class NewInstanceWindow : Window
         AppendLog("=== 开始安装 ===");
 
         var nodeVer = (NodeVersionBox.Text ?? "").Trim();
-        var wantSource = InstallKindBox != null && InstallKindBox.SelectedIndex == 1;
-        bool ok; string msg;
-        if (wantSource)
+        // 只保留「官方仓库源码」这一条路：实例必须自带 portable Node。
+        if (string.IsNullOrWhiteSpace(nodeVer) || nodeVer == VersionCatalog.SystemNode)
         {
-            // 源码实例：必须自带 portable Node（engines >= 24.9，且 pnpm 要用它跑）
-            if (string.IsNullOrWhiteSpace(nodeVer) || nodeVer == VersionCatalog.SystemNode)
-            {
-                _busy = false; CreateBtn.IsEnabled = true; CancelBtn.IsEnabled = true;
-                StatusText.Text = "源码实例需要指定 Node 版本（不能用“system”）";
-                AppendLog("✘ 源码实例需要自带 Node，请在上面的 Node 版本里选一个具体版本（例如 latest）");
-                return;
-            }
-            StatusText.Text = "正在克隆官方仓库并构建…（这一步很慢）";
-            var r = await InstanceInstaller.InstallSourceAsync(dir, nodeVer, AppendLog, port);
-            ok = r.Ok; msg = r.Message;
+            nodeVer = "latest";
+            AppendLog("Node 版本留空/选了 system → 自动使用 latest（源码实例必须自带 Node）");
         }
-        else
-        {
-            var r = await InstanceInstaller.InstallAsync(
-                dir, DshVersionBox.Text ?? "latest", AppendLog, port,
-                string.IsNullOrWhiteSpace(nodeVer) ? VersionCatalog.SystemNode : nodeVer);
-            ok = r.Ok; msg = r.Message;
-        }
+        StatusText.Text = "正在克隆官方仓库并构建…（pnpm install + build，通常十几分钟）";
+        var gitRef = (DshVersionBox.Text ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(gitRef)) gitRef = "master";
+        var (ok, msg) = await InstanceInstaller.InstallSourceAsync(dir, nodeVer, AppendLog, port, gitRef);
         _busy = false;
         CreateBtn.IsEnabled = true;
         CancelBtn.IsEnabled = true;
@@ -187,13 +174,6 @@ public partial class NewInstanceWindow : Window
             Created?.Invoke(dir);
             Close();
         }
-    }
-
-    private void OnInstallKindChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (SourceHint == null) return;
-        SourceHint.Visibility = (InstallKindBox != null && InstallKindBox.SelectedIndex == 1)
-            ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnClose(object sender, RoutedEventArgs e)

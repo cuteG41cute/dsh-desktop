@@ -142,7 +142,7 @@ public static class InstanceInstaller
     /// 全程只用实例目录里的 portable Node，不碰系统的 npm/pnpm 全局状态。
     /// </summary>
     public static async Task<(bool Ok, string Message)> InstallSourceAsync(
-        string dir, string nodeVersion, Action<string> log, int port)
+        string dir, string nodeVersion, Action<string> log, int port, string gitRef = "master")
     {
         try
         {
@@ -158,10 +158,22 @@ public static class InstanceInstaller
             {
                 if (Directory.Exists(app)) Directory.Delete(app, true);
                 log("克隆官方仓库：" + SourceRepo);
+                var reference = string.IsNullOrWhiteSpace(gitRef) ? "master" : gitRef.Trim();
+                log("使用仓库版本：" + reference);
                 var (cok, cmsg) = await RunAsync("git", new[]
                 {
-                    "clone", "--depth", "1", SourceRepo, app,
+                    "clone", "--depth", "1", "--branch", reference, SourceRepo, app,
                 }, dir, log, TimeSpan.FromMinutes(30));
+                if (!cok && reference != "master")
+                {
+                    log("版本 " + reference + " 拉不下来，改用默认分支 …");
+                    if (Directory.Exists(app)) Directory.Delete(app, true);
+                    var again = await RunAsync("git", new[]
+                    {
+                        "clone", "--depth", "1", SourceRepo, app,
+                    }, dir, log, TimeSpan.FromMinutes(30));
+                    cok = again.Ok; cmsg = again.Message;
+                }
                 if (!cok) return (false, "git clone 失败：" + cmsg);
             }
             else log("仓库已存在，跳过 clone：" + app);

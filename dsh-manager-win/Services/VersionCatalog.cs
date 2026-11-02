@@ -75,6 +75,28 @@ public static class VersionCatalog
         }
     }
 
+    /// <summary>官方仓库可用的 git ref（master + 最近的 tag），供源码实例选版本。</summary>
+    public static async Task<List<string>> GitRefsAsync(Action<string> log = null)
+    {
+        var list = new List<string> { "master" };
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("dsh-manager");
+            var json = await http.GetStringAsync(
+                "https://api.github.com/repos/deepseek-ai/deepseek-harness/tags?per_page=40");
+            foreach (System.Text.RegularExpressions.Match m in
+                     System.Text.RegularExpressions.Regex.Matches(json, "\"name\"\\s*:\\s*\"([^\"]+)\""))
+            {
+                var name = m.Groups[1].Value;
+                if (!list.Contains(name)) list.Add(name);
+            }
+            log?.Invoke("GitHub tag 候选 " + (list.Count - 1) + " 个");
+        }
+        catch (Exception ex) { log?.Invoke("GitHub tag 列表失败（只用 master）：" + ex.Message); }
+        return list;
+    }
+
     /// <summary>npm 上 dsh 的最新版本号（查不到返回空串）。</summary>
     public static async Task<string> LatestDshAsync()
     {
