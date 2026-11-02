@@ -157,7 +157,7 @@ public partial class MainWindow : Window
     }
 
     // 拖动期间显示的快照（一张位图，随窗口缩放，不做布局）
-    private System.Windows.Controls.Image _freezeImage;
+    private System.Windows.Shapes.Rectangle _freezeImage;
     private System.Windows.Media.Imaging.RenderTargetBitmap _freezeBitmap;
 
     /// <summary>
@@ -184,12 +184,17 @@ public partial class MainWindow : Window
             bmp.Render(ShellContent);
 
             _freezeBitmap = bmp;
-            _freezeImage = new System.Windows.Controls.Image
+            // 关键：用 Rectangle 而不是 Image。
+            // Image 会对外报「位图原始尺寸」作为期望尺寸，于是拖动时 Grid 会先按旧尺寸量一次、
+            // 再按新尺寸量一次 —— 视觉上就是内容「变回原大小又变回来」，也就是用户看到的抖动。
+            // Rectangle 没有固有尺寸，永远铺满可用空间，只做拉伸。
+            _freezeImage = new System.Windows.Shapes.Rectangle
             {
-                Source = bmp,
-                Stretch = Stretch.Fill,
+                Fill = new ImageBrush(bmp) { Stretch = Stretch.Fill },
                 IsHitTestVisible = false,
                 SnapsToDevicePixels = false,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
             };
             RenderOptions.SetBitmapScalingMode(_freezeImage, BitmapScalingMode.Linear);
             host.Children.Add(_freezeImage);
@@ -204,7 +209,21 @@ public partial class MainWindow : Window
         catch (Exception ex) { Diag("快照缩放失败：" + ex.Message); EndFrozenResize(); }
     }
 
-    private void UpdateFrozenScale(Size target) { /* 快照随窗口自动拉伸，这里什么都不用做 */ }
+    private void UpdateFrozenScale(Size target)
+    {
+        // 快照本身随窗口拉伸；这里只确保宿主真的按新尺寸重排了一次，
+        // 否则容器可能停留在旧尺寸 → 快照被裁掉（看起来像「内容没跟着缩」）。
+        if (_freezeImage == null) return;
+        try
+        {
+            if (_freezeImage.Parent is Panel host)
+            {
+                host.InvalidateMeasure();
+                host.UpdateLayout();
+            }
+        }
+        catch { }
+    }
 
     /// <summary>拖动结束：撤快照、恢复内容、排一次版。</summary>
     private void EndFrozenResize()
@@ -213,7 +232,7 @@ public partial class MainWindow : Window
         try
         {
             if (_freezeImage.Parent is Panel host) host.Children.Remove(_freezeImage);
-            _freezeImage.Source = null;
+            _freezeImage.Fill = null;
             _freezeImage = null;
             _freezeBitmap = null;
             ShellContent.Visibility = Visibility.Visible;
