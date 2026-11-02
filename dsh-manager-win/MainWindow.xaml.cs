@@ -64,6 +64,124 @@ public partial class MainWindow : Window
     /// <summary>是否正处于「拖动边缘缩放」过程中（WM_ENTERSIZEMOVE ~ WM_EXITSIZEMOVE）。</summary>
     private bool _inLiveResize;
 
+    // 每帧都要做的重活合并到 ~16ms 一次（拖动时 WM_SIZE 可能 100+/秒，多余的丢掉）
+    private DispatcherTimer _resizeThrottle;
+    private bool _resizePending;
+    private RectangleGeometry _shellClipGeo;
+    private RectangleGeometry _contentClipGeo;
+    private double _clipRadius;
+
+    // 拖动期间暂时摘掉的软件位图效果（DropShadowEffect 每帧都要重新模糊，很贵）
+    private readonly List<(UIElement El, Effect Fx)> _suspendedEffects = new();
+
+    // 帧间隔采样：拖动一次，记录平均帧时间
+    private readonly List<double> _frameGaps = new();
+    private long _lastFrameTicks;
+
+    private void ScheduleResizeWork()
+    {
+        _resizePending = true;
+        if (_resizeThrottle == null)
+        {
+            _resizeThrottle = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+            _resizeThrottle.Tick += (_, _) =>
+            {
+                if (!_resizePending) { _resizeThrottle.Stop(); return; }
+                _resizePending = false;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                // 拖动中两件事都不做：
+                //  - Clip 会让整棵视觉树重绘（比布局还贵）；
+                //  - ApplyResponsive 会重排（卡片列数/侧栏宽度/换行）。
+                // 松手时统一算一次。窗口本身是 DWM 圆角，拖动中不会露出方角。
+                if (_inLiveResize) return;
+                UpdateShellClip();
+                ApplyResponsive();
+                if (sw.ElapsedMilliseconds >= 8)
+                    Diag("sizechange 慢 " + sw.ElapsedMilliseconds + " ms (resizing=" + _inLiveResize + ")");
+            };
+        }
+        if (!_resizeThrottle.IsEnabled) _resizeThrottle.Start();
+    }
+
+    /// <summary>
+    /// 拖动缩放开始/结束时调用：
+    ///  True  → 临时摘掉视觉树里所有 Effect（阴影是软件渲染，每帧重算），图片降采样质量；
+    ///  False → 原样恢复。
+    /// </summary>
+    private void SuspendHeavyVisuals(bool suspend)
+    {
+        try
+        {
+            if (suspend)
+            {
+                if (_suspendedEffects.Count > 0) return;
+                SuspendEffectsRecursive(this);
+                RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.Linear);
+                TextOptions.SetTextRenderingMode(this, TextRenderingMode.Grayscale);
+                TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
+                Diag("suspend 效果 " + _suspendedEffects.Count + " 个（拖动缩放期间）");
+            }
+            else
+            {
+                foreach (var (el, fx) in _suspendedEffects)
+                {
+                    try { el.Effect = fx; } catch { }
+                }
+                _suspendedEffects.Clear();
+                RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.HighQuality);
+                TextOptions.SetTextRenderingMode(this, TextRenderingMode.ClearType);
+                TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
+            }
+        }
+        catch (Exception ex) { Diag("suspend 失败：" + ex.Message); }
+    }
+
+    private void SuspendEffectsRecursive(DependencyObject node)
+    {
+        var count = VisualTreeHelper.GetChildrenCount(node);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(node, i);
+            if (child is UIElement el && el.Effect != null)
+            {
+                _suspendedEffects.Add((el, el.Effect));
+                el.Effect = null;
+            }
+            SuspendEffectsRecursive(child);
+        }
+    }
+
+    private void StartFrameProbe()
+    {
+        _frameGaps.Clear();
+        _lastFrameTicks = 0;
+        CompositionTarget.Rendering -= OnFrameProbe;
+        CompositionTarget.Rendering += OnFrameProbe;
+    }
+
+    private void OnFrameProbe(object sender, EventArgs e)
+    {
+        var now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (_lastFrameTicks != 0)
+        {
+            var ms = (now - _lastFrameTicks) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            if (ms > 0 && ms < 500) _frameGaps.Add(ms);
+        }
+        _lastFrameTicks = now;
+    }
+
+    private void StopFrameProbe()
+    {
+        CompositionTarget.Rendering -= OnFrameProbe;
+        if (_frameGaps.Count < 5) { Diag("拖拽帧采样：帧数太少（" + _frameGaps.Count + "）"); return; }
+        var avg = _frameGaps.Average();
+        var sorted = _frameGaps.OrderBy(x => x).ToList();
+        var p95 = sorted[(int)Math.Min(sorted.Count - 1, Math.Floor(sorted.Count * 0.95))];
+        var max = sorted[sorted.Count - 1];
+        Diag(string.Format("拖拽帧: {0} 帧 · 平均 {1:N1} ms · p95 {2:N1} ms · 最差 {3:N1} ms · 估算 {4:N0} fps",
+            _frameGaps.Count, avg, p95, max, 1000.0 / avg));
+    }
+
     private static void Diag(string msg)
     {
         if (!_diagOn) return;
@@ -86,13 +204,7 @@ public partial class MainWindow : Window
         Loaded += OnLoaded;
         // 拖动边缘缩放时，每个 WM_SIZE 都会触发 SizeChanged；这里只做最便宜的裁剪，
         // 重排（ApplyResponsive）等到松手（WM_EXITSIZEMOVE）再算一次，避免拖动时掉帧。
-        SizeChanged += (_, _) =>
-        {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            UpdateShellClip();
-            if (!_inLiveResize) ApplyResponsive();
-            if (sw.ElapsedMilliseconds >= 8) Diag("sizechange 慢 " + sw.ElapsedMilliseconds + " ms (resizing=" + _inLiveResize + ")");
-        };
+        SizeChanged += (_, _) => ScheduleResizeWork();
         ThemeService.ThemeChanged += OnThemeChanged;
     }
 
@@ -104,24 +216,12 @@ public partial class MainWindow : Window
     /// </summary>
     private void UpdateShellClip()
     {
-        if (ShellContent == null) return;
-        var r = 26.0;
-        try
-        {
-            if (TryFindResource("AppRadiusValue") is double d) r = d;
-        }
-        catch { }
-        var w = ShellContent.ActualWidth;
-        var h = ShellContent.ActualHeight;
-        if (w <= 0 || h <= 0) return;
-        ShellContent.Clip = new RectangleGeometry(new Rect(0, 0, w, h), r, r);
-        // 整个外壳也裁一次圆角：只靠 Border.CornerRadius 时，里面那层半透明底色
-        // 仍会在四角画出方的半透明三角（用户看到的「半透明尖角」）。
-        if (Shell != null && Shell.ActualWidth > 0 && Shell.ActualHeight > 0)
-            Shell.Clip = new RectangleGeometry(
-                new Rect(0, 0, Shell.ActualWidth, Shell.ActualHeight), r, r);
+        // 实测：给整棵内容设圆角 Clip（非矩形裁剪）会让 WPF 每帧走中间表面合成，
+        // 拖动缩放时帧率掉到 13fps。窗口现在是不透明 + DWM 圆角，
+        // 圆角已经由系统负责裁，所以这里不再画蛇添足。
+        if (ShellContent != null && ShellContent.Clip != null) ShellContent.Clip = null;
+        if (Shell != null && Shell.Clip != null) Shell.Clip = null;
     }
-
 
     /// <summary>
     /// 响应式布局：窗口可以缩到 1/4 屏（720×450）。
@@ -212,6 +312,7 @@ public partial class MainWindow : Window
         }
         UpdateShellClip();
         RuntimeLine.Text = ".NET " + Environment.Version.Major + " · WPF";
+        try { Diag("WPF 渲染层 Tier=" + (RenderCapability.Tier >> 16)); } catch { }
         FooterPath.Text = "实例根目录 · " + RootDir;
         ApplyResponsive();
     }
@@ -739,12 +840,19 @@ public partial class MainWindow : Window
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         // 0x0231 = WM_ENTERSIZEMOVE, 0x0232 = WM_EXITSIZEMOVE
-        if (msg == 0x0231) _inLiveResize = true;
-        else if (msg == 0x0232)
+        if (msg == 0x0231)   // WM_ENTERSIZEMOVE
+        {
+            _inLiveResize = true;
+            SuspendHeavyVisuals(true);
+            StartFrameProbe();
+        }
+        else if (msg == 0x0232)   // WM_EXITSIZEMOVE
         {
             _inLiveResize = false;
+            StopFrameProbe();
             UpdateShellClip();
             ApplyResponsive();
+            SuspendHeavyVisuals(false);
         }
         return WndProcCore(hwnd, msg, wParam, lParam, ref handled);
     }
