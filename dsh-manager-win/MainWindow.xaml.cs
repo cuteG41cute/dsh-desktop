@@ -1500,19 +1500,19 @@ public partial class MainWindow : Window
     /// token 只认日志里**最后一次启动**那一行，并且当场发一次真实请求校验，
     /// 避免给出「上一次运行留下的旧 token」（那是打不开的头号原因）。
     /// </summary>
-    private void OnShowToken()
+    /// <summary>拼出「查看 Token」的正文（地址 / token / cookie / 校验结果）。</summary>
+    private string BuildTokenText(DshInstance inst)
     {
-        if (_current == null) { Toast("先选一个实例"); return; }
-        var baseUrl = "http://127.0.0.1:" + _current.Port + "/";
-        var token = DshHost.FindStartupToken(_current);
+        var baseUrl = "http://127.0.0.1:" + inst.Port + "/";
+        var token = DshHost.FindStartupToken(inst);
         var probe = token == null ? "（日志里没有启动行，实例可能不是管理器启动的）"
             : DshHost.ProbeTokenUrl(baseUrl + "?token=" + token);
+        var cookie = AuthCookie.Mint(inst.Port, inst.Home);
 
-        var cookie = AuthCookie.Mint(_current.Port, _current.Home);
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("实例：" + _current.Label);
-        sb.AppendLine("端口：" + _current.Port + "（PID " + (_current.Pid > 0 ? _current.Pid.ToString() : "—") + "）");
-        sb.AppendLine("数据目录：" + _current.Home);
+        sb.AppendLine("实例：" + inst.Label);
+        sb.AppendLine("端口：" + inst.Port + "（PID " + (inst.Pid > 0 ? inst.Pid.ToString() : "—") + "）");
+        sb.AppendLine("数据目录：" + inst.Home);
         sb.AppendLine();
         sb.AppendLine("访问地址（无 token 会 401，这是正常的）：");
         sb.AppendLine(baseUrl);
@@ -1535,17 +1535,30 @@ public partial class MainWindow : Window
         sb.AppendLine();
         sb.AppendLine("提示：如果浏览器里还留着旧的 dsh-auth cookie，会顶掉 token 登录，");
         sb.AppendLine("      用「无痕窗口」打开这条地址即可（或者清掉该站点 cookie）。");
+        return sb.ToString();
+    }
 
-        var text = sb.ToString();
-        DshHost.AppendNote(_current, text);
-        RefreshLogs(_current);
-        ShowTextWindow("查看 Token · " + _current.Label, text);
+    /// <summary>查看 Token：打开主题窗口，并允许在窗口里「重新获取 token」。</summary>
+    private void OnShowToken()
+    {
+        if (_current == null) { Toast("先选一个实例"); return; }
+        var inst = _current;
+        var text = BuildTokenText(inst);
+        DshHost.AppendNote(inst, text);
+        RefreshLogs(inst);
+        ShowTextWindow("查看 Token · " + inst.Label, text, () =>
+        {
+            var fresh = BuildTokenText(inst);
+            DshHost.AppendNote(inst, fresh);
+            RefreshLogs(inst);
+            return fresh;
+        });
     }
 
     /// <summary>打开「查看 Token」窗口（外观与主题跟随主窗口）。</summary>
-    private void ShowTextWindow(string title, string text)
+    private void ShowTextWindow(string title, string text, Func<string> refresher = null)
     {
-        var win = new TokenWindow(title, text) { Owner = this };
+        var win = new TokenWindow(title, text, refresher) { Owner = this };
         win.Show();
     }
 
