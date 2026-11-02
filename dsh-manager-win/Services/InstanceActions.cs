@@ -18,7 +18,7 @@ public static class InstanceActions
     }
 
     /// <summary>更新：管理器创建的实例直接用 npm 重装最新版；其它安装给出手动命令。</summary>
-    public static async Task<(bool Ok, string Message)> UpdateAsync(DshInstance inst, Action<string> log)
+    public static async Task<(bool Ok, string Message)> UpdateAsync(DshInstance inst, Action<string> log, string version = "latest")
     {
         if (!IsManaged(inst))
         {
@@ -26,8 +26,9 @@ public static class InstanceActions
                            + " 更新请在命令行执行：npm install -g @deepseek-ai/dsh@latest");
         }
         if (inst.Running) DshHost.Stop(inst, out _);
-        var (ok, msg) = await InstanceInstaller.InstallAsync(inst.Dir, "latest", log, inst.Port);
-        return (ok, ok ? "已更新到最新版；重启服务后生效" : msg);
+        var target = string.IsNullOrWhiteSpace(version) ? "latest" : version;
+        var (ok, msg) = await InstanceInstaller.InstallAsync(inst.Dir, target, log, inst.Port);
+        return (ok, ok ? "已切到 dsh " + target + "；重启服务后生效" : msg);
     }
 
     /// <summary>修复：检查入口/Node，缺什么补什么（管理器创建的会重装依赖）。</summary>

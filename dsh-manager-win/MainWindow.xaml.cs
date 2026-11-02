@@ -459,6 +459,21 @@ public partial class MainWindow : Window
         try { Diag("WPF 渲染层 Tier=" + (RenderCapability.Tier >> 16)); } catch { }
         FooterPath.Text = "实例根目录 · " + RootDir;
         ApplyResponsive();
+        // 调试用：直接打开「更新 dsh」窗口（方便截图验收）
+        if (Environment.GetCommandLineArgs().Any(a => a == "--shot-update"))
+        {
+            // 等实例扫描完成（_current 有值）再打开，否则会直接提示"先选一个实例"
+            var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+            var tries = 0;
+            t.Tick += (_, _) =>
+            {
+                if (++tries > 30) { t.Stop(); return; }
+                if (_current == null) return;
+                t.Stop();
+                _ = CheckUpdateAsync();
+            };
+            t.Start();
+        }
     }
 
     private static string RootDir =>
@@ -1600,53 +1615,39 @@ public partial class MainWindow : Window
 
     private async System.Threading.Tasks.Task CheckUpdateAsync()
     {
-        if (_current == null) { MessageBox.Show(this, "先选一个实例", "检查更新"); return; }
+        if (_current == null) { Toast("先选一个实例"); return; }
         try
         {
-            Toast("正在查询最新版本…");
-            var latest = await VersionCatalog.LatestDshAsync();
-            var latestNode = await VersionCatalog.LatestNodeAsync();
-            var cur = _current.DshVersion ?? "?";
-            var curNode = _current.NodeVersion ?? "?";
-            var sameDsh = string.Equals(cur.Trim(), latest.Trim(), StringComparison.OrdinalIgnoreCase);
-            var sameNode = !string.IsNullOrEmpty(latestNode) &&
-                           string.Equals(curNode.Trim(), latestNode.Trim(), StringComparison.OrdinalIgnoreCase);
+            Toast("正在获取可用版本…");
+            var versions = await VersionCatalog.DshVersionsAsync(l => Diag(l));
+            // 去掉 'latest' 这种别名，按「新→旧」展示（npm 返回的是旧→新，这里反过来）
+            var list = versions.Where(v => !string.IsNullOrWhiteSpace(v) && v != "latest").Reverse().ToList();
+            if (list.Count == 0) { Toast("没拿到版本列表（网络或 npm 不可用）"); return; }
+            Diag("可用版本 " + list.Count + " 个（" + list[0] + " … " + list[list.Count - 1] + "）");
 
-            // 卡片副标题按真实比对结果写，不能是固定文案
-            if (Quick3Sub != null)
-                Quick3Sub.Text = sameDsh ? "当前已是最新版本" : "可更新到 dsh " + latest;
-
-            var managed = InstanceActions.IsManaged(_current);
-            var text = "dsh ：" + (sameDsh ? "已是最新（" + cur + "）" : "有新版本 " + latest + "（当前 " + cur + "）")
-                       + "\nNode：" + (string.IsNullOrEmpty(latestNode) ? "查不到最新版"
-                                       : (sameNode ? "已是最新（" + curNode + "）"
-                                                   : "有新版本 " + latestNode + "（当前 " + curNode + "）"))
-                       + "\n\n来源：" + _current.Source + (managed ? "（管理器创建，可直接更新）" : "（系统安装，管理器不改它）");
-            if (sameDsh && (sameNode || string.IsNullOrEmpty(latestNode)))
+            var win = new UpdateWindow(_current, list) { Owner = this };
+            if (win.ShowDialog() != true || string.IsNullOrWhiteSpace(win.SelectedVersion))
             {
-                MessageBox.Show(this, text, "检查更新");
+                Toast("已取消");
                 return;
             }
+            var target = win.SelectedVersion;
+            var managed = InstanceActions.IsManaged(_current);
             if (!managed)
             {
-                text += "\n\n请自行执行：\n" + (sameDsh ? "" : "npm install -g @deepseek-ai/dsh@latest\n")
-                        + (sameNode || string.IsNullOrEmpty(latestNode) ? "" : "（Node 请装新版安装包 / 用 nvm-windows 切换）");
-                MessageBox.Show(this, text, "检查更新");
+                Toast("系统安装（" + _current.Source + "）不受管理器改动；请自行 npm i -g @deepseek-ai/dsh@" + target);
                 return;
             }
-            // 管理器创建的实例：先问，再更新（不直接改）
-            var ask = MessageBox.Show(this, text + "\n\n现在更新到最新版吗？", "检查更新",
-                MessageBoxButton.OKCancel, MessageBoxImage.Question);
-            if (ask != MessageBoxResult.OK) { Toast("已取消更新"); return; }
-            var (ok, msg) = await InstanceActions.UpdateAsync(_current, l => Diag(l));
-            if (ok) { ReloadInstances(); if (Quick3Sub != null) Quick3Sub.Text = "已更新到 dsh " + (latest ?? ""); }
-            Toast(msg);
-            MessageBox.Show(this, msg, "检查更新");
+            Toast("正在切换到 dsh " + target + "…");
+            var (ok, msg) = await InstanceActions.UpdateAsync(_current, l => Diag(l), target);
+            ReloadInstances();
+            if (Quick3Sub != null) Quick3Sub.Text = ok ? "当前版本 dsh " + target : Quick3Sub.Text;
+            Toast((ok ? "✔ " : "✘ ") + msg);
         }
         catch (Exception ex)
         {
             Diag("check-update failed: " + ex);
-            MessageBox.Show(this, "检查更新失败：" + ex.Message, "检查更新");
+            Toast("检查更新失败：" + ex.Message);
         }
     }
 
