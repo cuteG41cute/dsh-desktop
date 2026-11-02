@@ -470,7 +470,7 @@ public partial class MainWindow : Window
                 if (++tries > 30) { t.Stop(); return; }
                 if (_current == null) return;
                 t.Stop();
-                _ = CheckUpdateAsync();
+                CheckUpdateAsync();
             };
             t.Start();
         }
@@ -1447,7 +1447,7 @@ public partial class MainWindow : Window
             () => DshHost.OpenFolder(System.IO.Path.GetDirectoryName(_current.Entry) ?? ""));
         panel.Children.Add(new Border { Height = 1, Margin = new Thickness(6, 5, 6, 5),
             Background = (Brush)(TryFindResource("InnerBorder") ?? Brushes.Gainsboro) });
-        Item("检查更新", "Icon.update", () => _ = CheckUpdateAsync());
+        Item("检查更新", "Icon.update", () => CheckUpdateAsync());
         Item("修复实例", "Icon.wrench", () => _ = RepairAsync());
         var danger = (Brush)(TryFindResource("Danger") ?? Brushes.IndianRed);
         Item("卸载实例", "Icon.trash", OnUninstallInstance, danger);
@@ -1613,59 +1613,61 @@ public partial class MainWindow : Window
         Toast(ok ? "窗口已重建（" + openMsg + "）" : startMsg);
     }
 
-    private async System.Threading.Tasks.Task CheckUpdateAsync()
+    /// <summary>
+    /// 检查更新：**先把窗口打开**，列表由窗口自己异步拉（顶部转圈），
+    /// 用户在窗口里点「检查更新」也能重拉；选好版本点「应用」才真正动手。
+    /// </summary>
+    private void CheckUpdateAsync()
     {
         if (_current == null) { Toast("先选一个实例"); return; }
         try
         {
-            Toast("正在获取可用版本…");
-            var dshAll = await VersionCatalog.DshVersionsAsync(l => Diag(l));
-            // npm 返回「旧→新」，窗口里展示成「新→旧」
-            var dshList = dshAll.Where(v => !string.IsNullOrWhiteSpace(v) && v != "latest").Reverse().ToList();
-            var nodeAll = await VersionCatalog.NodeVersionsAsync(l => Diag(l));
-            var nodeList = nodeAll.Where(v => !string.IsNullOrWhiteSpace(v)
-                                              && v != VersionCatalog.SystemNode && v != "latest").ToList();
-            if (dshList.Count == 0 && nodeList.Count == 0)
-            {
-                Toast("没拿到版本列表（网络或 npm 不可用）");
-                return;
-            }
-            Diag("可用版本 dsh=" + dshList.Count + " node=" + nodeList.Count);
-
-            var win = new UpdateWindow(_current, dshList, nodeList) { Owner = this };
+            var inst = _current;
+            var win = new UpdateWindow(inst) { Owner = this };
             if (win.ShowDialog() != true) { Toast("已取消"); return; }
 
-            var managed = InstanceActions.IsManaged(_current);
-            if (!managed)
-            {
-                Toast("系统安装（" + _current.Source + "）不受管理器改动");
-                return;
-            }
-
-            // 1) 先换 Node（如果有便携 Node）
-            if (!string.IsNullOrWhiteSpace(win.SelectedNode))
-            {
-                Toast("正在切换便携 Node 到 " + win.SelectedNode + "…");
-                var (nok, nmsg) = await VersionCatalog.InstallPortableNodeAsync(
-                    _current.Dir, win.SelectedNode, l => Diag(l));
-                Toast((nok ? "✔ " : "✘ ") + nmsg);
-                if (!nok) return;
-            }
-            // 2) 再换 dsh 版本
-            if (!string.IsNullOrWhiteSpace(win.SelectedDsh))
-            {
-                Toast("正在切换到 dsh " + win.SelectedDsh + "…");
-                var (ok, msg) = await InstanceActions.UpdateAsync(_current, l => Diag(l), win.SelectedDsh);
-                ReloadInstances();
-                if (Quick3Sub != null && ok) Quick3Sub.Text = "当前版本 dsh " + win.SelectedDsh;
-                Toast((ok ? "✔ " : "✘ ") + msg);
-            }
-            else Toast("已应用（未改变 dsh 版本）");
+            _ = ApplySelectedVersionsAsync(inst, win.SelectedDsh, win.SelectedNode);
         }
         catch (Exception ex)
         {
             Diag("check-update failed: " + ex);
             Toast("检查更新失败：" + ex.Message);
+        }
+    }
+
+    private async System.Threading.Tasks.Task ApplySelectedVersionsAsync(
+        DshInstance inst, string dshVersion, string nodeVersion)
+    {
+        try
+        {
+            if (!InstanceActions.IsManaged(inst))
+            {
+                Toast("系统安装（" + inst.Source + "）不受管理器改动");
+                return;
+            }
+            if (!string.IsNullOrWhiteSpace(nodeVersion))
+            {
+                Toast("正在切换便携 Node 到 " + nodeVersion + "…");
+                var (nok, nmsg) = await VersionCatalog.InstallPortableNodeAsync(inst.Dir, nodeVersion, l => Diag(l));
+                Toast((nok ? "✔ " : "✘ ") + nmsg);
+                if (!nok) return;
+            }
+            if (!string.IsNullOrWhiteSpace(dshVersion))
+            {
+                Toast("正在切换到 dsh " + dshVersion + "…");
+                var (ok, msg) = await InstanceActions.UpdateAsync(inst, l => Diag(l), dshVersion);
+                ReloadInstances();
+                if (Quick3Sub != null && ok) Quick3Sub.Text = "当前版本 dsh " + dshVersion;
+                Toast((ok ? "✔ " : "✘ ") + msg);
+            }
+            else if (!string.IsNullOrWhiteSpace(nodeVersion))
+                Toast("Node 已切换；重启服务后生效");
+            else Toast("未选择要变更的版本");
+        }
+        catch (Exception ex)
+        {
+            Diag("apply versions failed: " + ex);
+            Toast("应用失败：" + ex.Message);
         }
     }
 
@@ -1937,7 +1939,7 @@ public partial class MainWindow : Window
 
     // ---------------------------------------------------------------- 快捷动作 / 帮助 / 关于
     private void OnQuickToken(object sender, MouseButtonEventArgs e) => OnShowToken();
-    private void OnQuickUpdate(object sender, MouseButtonEventArgs e) => _ = CheckUpdateAsync();
+    private void OnQuickUpdate(object sender, MouseButtonEventArgs e) => CheckUpdateAsync();
     private void OnQuickFolder(object sender, MouseButtonEventArgs e)
     {
         if (_current == null) return;

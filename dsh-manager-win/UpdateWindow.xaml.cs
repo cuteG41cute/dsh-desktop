@@ -10,57 +10,42 @@ using System.Windows.Media;
 namespace DshManager
 {
     /// <summary>
-    /// 更新 dsh / Node：两个抽屉式下拉，风格与主题跟随主窗口（全部 DynamicResource）。
+    /// 更新 dsh / Node：窗口先弹出，版本列表在窗口里异步拉取（顶部转圈），
+    /// 底部「检查更新」可随时重拉。风格随主窗口主题。
     /// </summary>
     public partial class UpdateWindow : Window
     {
         private readonly Services.DshInstance _inst;
-        private readonly List<string> _dshVersions;
-        private readonly List<string> _nodeVersions;
+        private readonly string _currentDsh;
         private readonly string _currentNode;
+        private List<string> _dshVersions = new();
+        private List<string> _nodeVersions = new();
+        private bool _loading;
 
         public string SelectedDsh { get; private set; }
         public string SelectedNode { get; private set; }
 
-        public UpdateWindow(Services.DshInstance inst, IEnumerable<string> dshVersions,
-                            IEnumerable<string> nodeVersions)
+        public UpdateWindow(Services.DshInstance inst)
         {
             InitializeComponent();
             _inst = inst;
-            var cur = inst.DshVersion ?? "";
+            _currentDsh = inst.DshVersion ?? "";
             _currentNode = inst.NodeVersion ?? "";
-            _dshVersions = dshVersions?.Where(v => !string.IsNullOrWhiteSpace(v)).Distinct().ToList()
-                           ?? new List<string>();
-            _nodeVersions = nodeVersions?.Where(v => !string.IsNullOrWhiteSpace(v)).Distinct().ToList()
-                            ?? new List<string>();
-
-            SubtitleText.Text = "实例 " + inst.Label + " · 当前 dsh " + (string.IsNullOrWhiteSpace(cur) ? "未知" : cur)
+            SubtitleText.Text = "实例 " + inst.Label
+                                + " · 当前 dsh " + (string.IsNullOrWhiteSpace(_currentDsh) ? "未知" : _currentDsh)
                                 + " · Node " + (string.IsNullOrWhiteSpace(_currentNode) ? "未知" : _currentNode)
                                 + " · 来源 " + inst.Source;
 
-            // 下拉里第一项永远显示「不动」；其余是候选版本（新→旧）
-            var dshItems = new List<string> { "保持当前（" + (string.IsNullOrWhiteSpace(cur) ? "未知" : cur) + "）" };
-            dshItems.AddRange(_dshVersions);
-            DshBox.ItemsSource = dshItems;
-            DshBox.SelectedIndex = 0;
-            DshHint.Text = "当前版本：" + (string.IsNullOrWhiteSpace(cur) ? "未知" : cur)
-                           + "；想升级或降级就选一个版本，默认「保持当前」。";
-
-            var nodeItems = new List<string> { "保持当前（" + (string.IsNullOrWhiteSpace(_currentNode) ? "未知" : _currentNode) + "）" };
-            nodeItems.AddRange(_nodeVersions);
-            NodeBox.ItemsSource = nodeItems;
-            NodeBox.SelectedIndex = 0;
-
-            Loaded += (_, _) =>
+            Loaded += async (_, _) =>
             {
-                bool hasPortable = System.IO.File.Exists(
-                    System.IO.Path.Combine(inst.Dir ?? "", "node", "node.exe"));
-                NodeBox.IsEnabled = hasPortable && _nodeVersions.Count > 0;
-                NodeHint.Text = hasPortable
-                    ? "实例自带便携 Node；选中某版本会把 <实例目录>\\node 换成该版本。"
-                    : "这个实例用的是系统 Node（或没有便携 Node），管理器不改它。";
                 try
                 {
+                    bool hasPortable = System.IO.File.Exists(
+                        System.IO.Path.Combine(inst.Dir ?? "", "node", "node.exe"));
+                    NodeBox.IsEnabled = false;
+                    NodeHint.Text = hasPortable
+                        ? "实例自带便携 Node；选中某版本会把 <实例目录>\\node 换成该版本。"
+                        : "这个实例用的是系统 Node（或没有便携 Node），管理器不改它。";
                     if (!Services.InstanceActions.IsManaged(inst))
                     {
                         HintText.Text = "系统安装（" + inst.Source + "）：管理器不会改动它，只列出可用版本。";
@@ -70,6 +55,7 @@ namespace DshManager
                 }
                 catch { }
                 ApplyWindowRegion();
+                await LoadVersionsAsync();
             };
             SizeChanged += (_, _) => ApplyWindowRegion();
         }
@@ -79,7 +65,6 @@ namespace DshManager
         [DllImport("gdi32.dll")]
         private static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int w, int h);
 
-        /// <summary>窗口圆角：和主窗口一样用 Region 裁，避免外面露出灰色直角。</summary>
         private void ApplyWindowRegion()
         {
             try
@@ -97,6 +82,71 @@ namespace DshManager
             catch { }
         }
 
+        private void SetLoading(bool on, string text = null)
+        {
+            _loading = on;
+            Spinner.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            LoadingText.Text = on ? (text ?? "正在获取版本列表…") : "";
+            LoadingText.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            RefreshBtn.IsEnabled = !on;
+            if (on)
+            {
+                DshBox.IsEnabled = false;
+                NodeBox.IsEnabled = false;
+                ApplyBtn.IsEnabled = false;
+            }
+        }
+
+        private async System.Threading.Tasks.Task LoadVersionsAsync()
+        {
+            if (_loading) return;
+            SetLoading(true);
+            try
+            {
+                var dsh = await Services.VersionCatalog.DshVersionsAsync();
+                _dshVersions = dsh.Where(v => !string.IsNullOrWhiteSpace(v) && v != "latest")
+                                  .Reverse().ToList();
+                var node = await Services.VersionCatalog.NodeVersionsAsync();
+                _nodeVersions = node.Where(v => !string.IsNullOrWhiteSpace(v)
+                                                && v != Services.VersionCatalog.SystemNode && v != "latest")
+                                    .ToList();
+                FillCombos();
+                LoadingText.Text = "";
+                SetLoading(false);
+                DshHint.Text = "当前版本：" + (string.IsNullOrWhiteSpace(_currentDsh) ? "未知" : _currentDsh)
+                               + "（共 " + _dshVersions.Count + " 个可选版本）";
+                var portable = System.IO.File.Exists(
+                    System.IO.Path.Combine(_inst.Dir ?? "", "node", "node.exe"));
+                NodeHint.Text = portable
+                    ? "当前 Node：" + (string.IsNullOrWhiteSpace(_currentNode) ? "未知" : _currentNode)
+                      + "（共 " + _nodeVersions.Count + " 个可选版本）"
+                    : "这个实例用的是系统 Node，管理器不改它。";
+                DshBox.IsEnabled = _dshVersions.Count > 0;
+                NodeBox.IsEnabled = portable && _nodeVersions.Count > 0;
+                ApplyBtn.IsEnabled = Services.InstanceActions.IsManaged(_inst);
+            }
+            catch (Exception ex)
+            {
+                SetLoading(false);
+                DshHint.Text = "获取失败：" + ex.Message;
+                NodeHint.Text = "";
+            }
+        }
+
+        private void FillCombos()
+        {
+            var dshItems = new List<string> { "保持当前（" + (string.IsNullOrWhiteSpace(_currentDsh) ? "未知" : _currentDsh) + "）" };
+            dshItems.AddRange(_dshVersions);
+            DshBox.ItemsSource = dshItems;
+            DshBox.SelectedIndex = 0;
+            var nodeItems = new List<string> { "保持当前（" + (string.IsNullOrWhiteSpace(_currentNode) ? "未知" : _currentNode) + "）" };
+            nodeItems.AddRange(_nodeVersions);
+            NodeBox.ItemsSource = nodeItems;
+            NodeBox.SelectedIndex = 0;
+        }
+
+        private async void OnRefresh(object sender, RoutedEventArgs e) => await LoadVersionsAsync();
+
         private void OnDrag(object sender, MouseButtonEventArgs e)
         {
             if (e.LeftButton == MouseButtonState.Pressed) DragMove();
@@ -108,6 +158,11 @@ namespace DshManager
         {
             if (DshBox.SelectedIndex > 0) SelectedDsh = DshBox.SelectedItem as string;
             if (NodeBox.SelectedIndex > 0) SelectedNode = NodeBox.SelectedItem as string;
+            if (string.IsNullOrWhiteSpace(SelectedDsh) && string.IsNullOrWhiteSpace(SelectedNode))
+            {
+                Close();
+                return;
+            }
             DialogResult = true;
             Close();
         }
