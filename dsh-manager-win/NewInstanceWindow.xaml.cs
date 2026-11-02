@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -121,6 +122,28 @@ public partial class NewInstanceWindow : Window
         if (!string.IsNullOrWhiteSpace(PortBox.Text) && !int.TryParse(PortBox.Text, out port))
         {
             StatusText.Text = "端口要是数字"; return;
+        }
+        if (port > 0)
+        {
+            // 端口不能被别的实例占着，也不能已被系统监听
+            var busy = DshDiscovery.Scan().FirstOrDefault(i => i.Port == port);
+            if (busy != null)
+            {
+                StatusText.Text = "端口 " + port + " 已被实例「" + busy.Label + "」使用，请换一个";
+                AppendLog("✘ 端口 " + port + " 已被「" + busy.Label + "」占用");
+                return;
+            }
+            try
+            {
+                var l = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, port);
+                l.Start(); l.Stop();
+            }
+            catch
+            {
+                StatusText.Text = "端口 " + port + " 已被占用（系统里别的程序在监听）";
+                AppendLog("✘ 端口 " + port + " 已被别的程序监听");
+                return;
+            }
         }
 
         _busy = true;
