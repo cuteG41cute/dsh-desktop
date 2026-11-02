@@ -389,9 +389,17 @@ public static class DshDiscovery
         if (inst.Port <= 0) return;
         try
         {
+            // 优先查监听表（一次 netstat 全端口共用）；查不到再做一次很短的连接探测。
+            var pid = FindPidByPort(inst.Port);
+            if (pid > 0)
+            {
+                inst.Running = true;
+                inst.Pid = pid;
+                return;
+            }
             using var c = new TcpClient();
             var task = c.ConnectAsync("127.0.0.1", inst.Port);
-            if (task.Wait(600) && c.Connected)
+            if (task.Wait(150) && c.Connected)
             {
                 inst.Running = true;
                 inst.Pid = FindPidByPort(inst.Port);
@@ -412,11 +420,10 @@ public static class DshDiscovery
             inst.Pid = 0;
             inst.Running = false;
         }
+        var listeners = Listeners();
         for (var port = 3080; port <= 3099; port++)
         {
-            if (!PortListening(port)) continue;
-            var pid = FindPidByPort(port);
-            if (pid <= 0) continue;
+            if (!listeners.TryGetValue(port, out var pid) || pid <= 0) continue;
             var cmd = CommandLineOf(pid);
             var entry = ExtractEntry(cmd);
             if (string.IsNullOrEmpty(entry)) continue;
@@ -484,12 +491,35 @@ public static class DshDiscovery
     /// 一次取回所有 node.exe 的 (PID, 命令行)，而不是每个端口起一次 PowerShell。
     /// 之前扫描 20 个端口要起 20 次 powershell（每次几百毫秒），界面打开明显卡。
     /// </summary>
-    private static Dictionary<int, string> _cmdCache;
+    private static Dictionary<int, string> _cmdCache = new();
     private static DateTime _cmdCacheAt = DateTime.MinValue;
+    private static int _cmdRefreshing;
 
+    /// <summary>
+    /// 取 node 进程命令行：**先返回上一次的结果**，同时在后台刷新。
+    /// 以前这里同步等 powershell 冷启动（0.7–1.5 秒），界面跟着一起卡。
+    /// </summary>
     private static Dictionary<int, string> NodeCommandLines()
     {
-        if (_cmdCache != null && (DateTime.Now - _cmdCacheAt).TotalSeconds < 5) return _cmdCache;
+        if ((DateTime.Now - _cmdCacheAt).TotalSeconds >= 15
+            && System.Threading.Interlocked.Exchange(ref _cmdRefreshing, 1) == 0)
+        {
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    var map = ReadNodeCommandLinesBlocking();
+                    lock (_cmdCache) { _cmdCache = map; _cmdCacheAt = DateTime.Now; }
+                }
+                catch { }
+                finally { System.Threading.Interlocked.Exchange(ref _cmdRefreshing, 0); }
+            });
+        }
+        lock (_cmdCache) return _cmdCache;
+    }
+
+    private static Dictionary<int, string> ReadNodeCommandLinesBlocking()
+    {
         var map = new Dictionary<int, string>();
         try
         {
@@ -501,9 +531,9 @@ public static class DshDiscovery
                 UseShellExecute = false, CreateNoWindow = true,
             };
             using var p = Process.Start(psi);
-            var text = p.StandardOutput.ReadToEnd();
+            var output = p.StandardOutput.ReadToEnd();
             p.WaitForExit(8000);
-            foreach (var line in text.Split('\n'))
+            foreach (var line in output.Split('\n'))
             {
                 var t = line.Trim();
                 var bar = t.IndexOf('|');
@@ -513,17 +543,30 @@ public static class DshDiscovery
             }
         }
         catch { }
-        _cmdCache = map;
-        _cmdCacheAt = DateTime.Now;
         return map;
     }
 
     private static string CommandLineOf(int pid) =>
         NodeCommandLines().TryGetValue(pid, out var cmd) ? cmd : "";
 
-    /// <summary>用 netstat -ano 找监听该端口的 PID（不引入 WMI 依赖）。</summary>
-    public static int FindPidByPort(int port)
+    private static Dictionary<int, int> _listenCache = new();
+    private static DateTime _listenCacheAt = DateTime.MinValue;
+    private static readonly object _listenGate = new();
+
+    /// <summary>
+    /// 一次 netstat 拿到「本地端口 → PID」整张表（缓存 2 秒）。
+    /// 以前是**对 20 个端口逐个 TCP 连一次**（每次最多等 300ms），
+    /// 在有网络驱动拦回环的机器上每次都要等超时 → 一次扫描 6 秒，这就是启动慢的真凶。
+    /// </summary>
+    public static Dictionary<int, int> Listeners()
     {
+        lock (_listenGate)
+        {
+            if (_listenCacheAt != DateTime.MinValue &&
+                (DateTime.Now - _listenCacheAt).TotalSeconds < 2)
+                return _listenCache;
+        }
+        var map = new Dictionary<int, int>();
         try
         {
             var psi = new ProcessStartInfo("netstat", "-ano -p tcp")
@@ -531,19 +574,34 @@ public static class DshDiscovery
                 RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true,
             };
             using var p = Process.Start(psi);
-            var text = p.StandardOutput.ReadToEnd();
+            var output = p.StandardOutput.ReadToEnd();
             p.WaitForExit(4000);
-            foreach (var line in text.Split('\n'))
+            foreach (var line in output.Split('\n'))
             {
                 var t = line.Trim();
                 if (!t.StartsWith("TCP")) continue;
-                if (!t.Contains(":" + port + " ")) continue;
                 if (!t.Contains("LISTENING")) continue;
                 var parts = t.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length >= 5 && int.TryParse(parts[^1], out var pid)) return pid;
+                if (parts.Length < 5) continue;
+                var local = parts[1];
+                var colon = local.LastIndexOf(':');
+                if (colon <= 0) continue;
+                if (!int.TryParse(local.Substring(colon + 1), out var lp)) continue;
+                if (!int.TryParse(parts[parts.Length - 1], out var pid)) continue;
+                map[lp] = pid;
             }
         }
         catch { }
-        return 0;
+        lock (_listenGate) { _listenCache = map; _listenCacheAt = DateTime.Now; }
+        return map;
+    }
+
+    public static int FindPidByPort(int port) =>
+        Listeners().TryGetValue(port, out var pid) ? pid : 0;
+
+    /// <summary>强制刷新监听表（停止/启动之后用，别读到 2 秒内的旧状态）。</summary>
+    public static void InvalidateListeners()
+    {
+        lock (_listenGate) _listenCacheAt = DateTime.MinValue;
     }
 }

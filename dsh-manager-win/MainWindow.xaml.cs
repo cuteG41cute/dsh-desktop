@@ -194,7 +194,7 @@ public partial class MainWindow : Window
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         ApplyRoundedCorners();
-        ReloadInstances();
+        _ = ReloadInstancesAsync();
         _poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
         _poll.Tick += (_, _) => PollCurrent();
         _poll.Start();
@@ -344,15 +344,22 @@ public partial class MainWindow : Window
 
     // ---------------------------------------------------------------- 实例
     /// <summary>重新扫描本机 DSH 安装。</summary>
-    private void ReloadInstances()
+    /// <summary>扫描 + 反查运行状态（纯数据，可在后台线程跑）。</summary>
+    private static List<DshInstance> ScanInstances()
     {
         var scanned = DshDiscovery.Scan().ToList();
         DshDiscovery.AttachRunning(scanned);      // 反查「现在真正在跑的是哪个」
         DshDiscovery.ApplyRegistryPorts(scanned); // 管理器创建的实例用登记过的端口
-        _instances = scanned
+        return scanned
             .OrderByDescending(i => i.Running)
             .ThenBy(i => i.SortKey)
             .ToList();
+    }
+
+    /// <summary>把结果贴到界面上（必须在 UI 线程调用）。</summary>
+    private void ApplyInstances(List<DshInstance> instances)
+    {
+        _instances = instances;
         _current = _instances.FirstOrDefault();
         BuildInstanceList();
         if (_current != null)
@@ -361,6 +368,25 @@ public partial class MainWindow : Window
             RefreshLogs(_current);
         }
         else ShowEmptyState();
+    }
+
+    private void ReloadInstances() => ApplyInstances(ScanInstances());
+
+    /// <summary>
+    /// 首次加载：窗口先画出来，扫描丢到后台线程再回填。
+    /// 之前是在 Loaded 里同步扫（要起 powershell + netstat），窗口出来但几秒内点不动。
+    /// </summary>
+    private async System.Threading.Tasks.Task ReloadInstancesAsync()
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var list = await System.Threading.Tasks.Task.Run(() => ScanInstances());
+            Diag("scan " + sw.ElapsedMilliseconds + " ms, " + list.Count + " 个实例");
+            ApplyInstances(list);
+            Diag("apply 完成 " + sw.ElapsedMilliseconds + " ms");
+        }
+        catch (Exception ex) { Diag("首次扫描失败：" + ex); }
     }
 
     private void ShowEmptyState()

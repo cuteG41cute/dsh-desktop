@@ -38,6 +38,7 @@ public static class DshHost
             return false;
         }
 
+        DshDiscovery.InvalidateListeners();
         DshDiscovery.Probe(inst);
         if (inst.Running)
         {
@@ -107,6 +108,7 @@ public static class DshHost
             for (var i = 0; i < 40; i++)
             {
                 Thread.Sleep(500);
+                DshDiscovery.InvalidateListeners();
                 DshDiscovery.Probe(inst);
                 if (inst.Running) break;
                 if (proc.HasExited) break;
@@ -130,6 +132,7 @@ public static class DshHost
     public static bool Stop(DshInstance inst, out string message)
     {
         message = "";
+        DshDiscovery.InvalidateListeners();
         var pid = inst.Pid;
         if (pid <= 0) DshDiscovery.Probe(inst);
         pid = inst.Pid;
@@ -151,6 +154,7 @@ public static class DshHost
             for (var i = 0; i < 20; i++)
             {
                 Thread.Sleep(300);
+                DshDiscovery.InvalidateListeners();
                 DshDiscovery.Probe(inst);
                 if (!inst.Running) break;
             }
