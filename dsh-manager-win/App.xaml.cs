@@ -14,6 +14,7 @@ public partial class App : Application
 {
     private static System.Threading.Mutex _single;
     private static System.Windows.Forms.NotifyIcon _tray;
+    private static System.Drawing.Icon _trayIconKeepAlive;
     private bool _quitting;
 
     /// <summary>真正退出（托盘菜单走这里），否则关窗口只是收进托盘。</summary>
@@ -68,6 +69,17 @@ public partial class App : Application
             }
 
             base.OnStartup(e);
+            // 兜底诊断：托盘/UI 线程上的异常与未观测的 Task 异常也要进 crash.log，
+            // 否则进程静默退出时完全无法排查。
+            try
+            {
+                System.Windows.Forms.Application.ThreadException +=
+                    (_, ev) => Log("ui-thread: " + ev.Exception);
+                System.Threading.Tasks.TaskScheduler.UnobservedTaskException +=
+                    (_, ev) => Log("unobserved-task: " + ev.Exception);
+            }
+            catch { }
+
             ThemeService.Init();
             CreateTray();
 
@@ -416,9 +428,11 @@ public partial class App : Application
                 var small = System.Drawing.Icon.ExtractAssociatedIcon(exe);
                 if (small != null)
                 {
-                    var bmp = small.ToBitmap();
-                    var scaled = new System.Drawing.Bitmap(bmp, 32, 32);
-                    return System.Drawing.Icon.FromHandle(scaled.GetHicon());
+                    // 用 Icon(icon, size) 复制一份：新 Icon **自己拥有** 句柄，
+                    // 不会因为临时 Bitmap 被 GC 而让托盘拿到失效 HICON（那是会崩进程的）。
+                    var scaled = new System.Drawing.Icon(small, 32, 32);
+                    _trayIconKeepAlive = scaled;
+                    return scaled;
                 }
             }
         }
