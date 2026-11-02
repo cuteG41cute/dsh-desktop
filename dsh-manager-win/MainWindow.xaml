@@ -6,8 +6,8 @@
         Icon="/app.ico"
         Width="1308" Height="840" MinWidth="720" MinHeight="450"
         WindowStartupLocation="CenterScreen"
-        WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="True"
-        Background="Transparent" UseLayoutRounding="True"
+        WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="False"
+        Background="{DynamicResource App}" UseLayoutRounding="True"
         TextOptions.TextFormattingMode="Display"
         TextOptions.TextRenderingMode="ClearType"
         FontFamily="{StaticResource UiFont}"
@@ -15,7 +15,7 @@
         LostMouseCapture="OnLostCapture">
 
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="8"
+        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6"
                             GlassFrameThickness="0" CornerRadius="0"
                             UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
@@ -25,7 +25,7 @@
       以前是 body 那层渐变页 + 里面再套一圈外壳，于是屏幕上出现两层可见边线（用户指出的双边框）。
       现在外壳铺满窗口（只留透明外沿给投影），渐变底挪到外壳内部当玻璃底，外缘只剩一条边。
     -->
-    <Border MouseLeftButtonDown="OnWindowDrag" Background="Transparent">
+    <Border MouseLeftButtonDown="OnWindowDrag" Background="{DynamicResource App}">
         <!-- 圆角应用外壳：这就是窗口唯一的边缘 -->
         <Border x:Name="Shell" Margin="0" CornerRadius="{DynamicResource AppRadius}"
                 Background="{DynamicResource App}" BorderBrush="{DynamicResource Border}"

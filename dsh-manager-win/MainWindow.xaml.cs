@@ -61,6 +61,9 @@ public partial class MainWindow : Window
     private static readonly bool _diagOn =
         Environment.GetEnvironmentVariable("DSH_MANAGER_DEBUG") == "1";
 
+    /// <summary>是否正处于「拖动边缘缩放」过程中（WM_ENTERSIZEMOVE ~ WM_EXITSIZEMOVE）。</summary>
+    private bool _inLiveResize;
+
     private static void Diag(string msg)
     {
         if (!_diagOn) return;
@@ -81,10 +84,14 @@ public partial class MainWindow : Window
         if (BrandVersion != null) BrandVersion.Text = "v" + AppVersion;
         // 实例在 OnLoaded 里扫描（构造时还没有扫描结果，不能索引）
         Loaded += OnLoaded;
+        // 拖动边缘缩放时，每个 WM_SIZE 都会触发 SizeChanged；这里只做最便宜的裁剪，
+        // 重排（ApplyResponsive）等到松手（WM_EXITSIZEMOVE）再算一次，避免拖动时掉帧。
         SizeChanged += (_, _) =>
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             UpdateShellClip();
-            ApplyResponsive();
+            if (!_inLiveResize) ApplyResponsive();
+            if (sw.ElapsedMilliseconds >= 8) Diag("sizechange 慢 " + sw.ElapsedMilliseconds + " ms (resizing=" + _inLiveResize + ")");
         };
         ThemeService.ThemeChanged += OnThemeChanged;
     }
@@ -730,6 +737,19 @@ public partial class MainWindow : Window
     private const uint SWP_NOZORDER = 0x0004, SWP_NOACTIVATE = 0x0010;
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        // 0x0231 = WM_ENTERSIZEMOVE, 0x0232 = WM_EXITSIZEMOVE
+        if (msg == 0x0231) _inLiveResize = true;
+        else if (msg == 0x0232)
+        {
+            _inLiveResize = false;
+            UpdateShellClip();
+            ApplyResponsive();
+        }
+        return WndProcCore(hwnd, msg, wParam, lParam, ref handled);
+    }
+
+    private IntPtr WndProcCore(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         _winHwnd = hwnd;
 
