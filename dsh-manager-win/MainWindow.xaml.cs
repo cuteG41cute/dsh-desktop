@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -74,6 +74,11 @@ public partial class MainWindow : Window
     // 拖动期间暂时摘掉的软件位图效果（DropShadowEffect 每帧都要重新模糊，很贵）
     private readonly List<(UIElement El, Effect Fx)> _suspendedEffects = new();
 
+    // 「冻结式缩放」：拖动期间内容不重排，只按固定尺寸渲染一次再整体缩放
+    private Size _frozenSize;
+    private ScaleTransform _frozenScale;
+    private bool _frozen;
+
     // 帧间隔采样：拖动一次，记录平均帧时间
     private readonly List<double> _frameGaps = new();
     private long _lastFrameTicks;
@@ -93,7 +98,7 @@ public partial class MainWindow : Window
                 //  - Clip 会让整棵视觉树重绘（比布局还贵）；
                 //  - ApplyResponsive 会重排（卡片列数/侧栏宽度/换行）。
                 // 松手时统一算一次。窗口本身是 DWM 圆角，拖动中不会露出方角。
-                if (_inLiveResize) return;
+                if (_inLiveResize) return;   // 缩放已在 SizeChanged 里按事件尺寸更新
                 UpdateShellClip();
                 ApplyResponsive();
                 if (sw.ElapsedMilliseconds >= 8)
@@ -151,6 +156,73 @@ public partial class MainWindow : Window
         }
     }
 
+    // 拖动期间显示的快照（一张位图，随窗口缩放，不做布局）
+    private System.Windows.Controls.Image _freezeImage;
+    private System.Windows.Media.Imaging.RenderTargetBitmap _freezeBitmap;
+
+    /// <summary>
+    /// 拖动开始：给内容拍一张快照，把内容 Collapsed，快照铺满窗口。
+    /// 这是「微信/浏览器」那套做法：拖动时**完全不排版、不重绘内容**，
+    /// 只让一张位图跟着窗口拉伸；松手后撤掉快照、恢复内容并排一次版。
+    /// （先试过 Width/Height 钉死 + RenderTransform，WPF 仍会把父级撑开，实测无效。）
+    /// </summary>
+    private void BeginFrozenResize()
+    {
+        try
+        {
+            if (_freezeImage != null || ShellContent == null) return;
+            var w = ShellContent.ActualWidth;
+            var h = ShellContent.ActualHeight;
+            if (w < 80 || h < 80) return;
+            if (!(ShellContent.Parent is Panel host)) return;
+
+            var dpi = VisualTreeHelper.GetDpi(ShellContent);
+            var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap(
+                (int)Math.Ceiling(w * dpi.DpiScaleX),
+                (int)Math.Ceiling(h * dpi.DpiScaleY), 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY,
+                PixelFormats.Pbgra32);
+            bmp.Render(ShellContent);
+
+            _freezeBitmap = bmp;
+            _freezeImage = new System.Windows.Controls.Image
+            {
+                Source = bmp,
+                Stretch = Stretch.Fill,
+                IsHitTestVisible = false,
+                SnapsToDevicePixels = false,
+            };
+            RenderOptions.SetBitmapScalingMode(_freezeImage, BitmapScalingMode.Linear);
+            host.Children.Add(_freezeImage);
+            ShellContent.Visibility = Visibility.Collapsed;
+            // 立刻重排一次：让 Grid 按窗口（而不是按被隐藏前的旧尺寸）重新量，
+            // 否则快照会按原尺寸铺开而被窗口裁掉。
+            Shell.InvalidateMeasure();
+            Shell.UpdateLayout();
+            Diag("快照缩放开始 " + Math.Round(w) + "x" + Math.Round(h)
+                 + " · shell=" + Math.Round(Shell.ActualWidth) + "x" + Math.Round(Shell.ActualHeight));
+        }
+        catch (Exception ex) { Diag("快照缩放失败：" + ex.Message); EndFrozenResize(); }
+    }
+
+    private void UpdateFrozenScale(Size target) { /* 快照随窗口自动拉伸，这里什么都不用做 */ }
+
+    /// <summary>拖动结束：撤快照、恢复内容、排一次版。</summary>
+    private void EndFrozenResize()
+    {
+        if (_freezeImage == null) return;
+        try
+        {
+            if (_freezeImage.Parent is Panel host) host.Children.Remove(_freezeImage);
+            _freezeImage.Source = null;
+            _freezeImage = null;
+            _freezeBitmap = null;
+            ShellContent.Visibility = Visibility.Visible;
+        }
+        catch { }
+        Diag("快照缩放结束 · window=" + Math.Round(ActualWidth) + "x" + Math.Round(ActualHeight)
+                 + " · shell=" + Math.Round(Shell?.ActualWidth ?? 0) + "x" + Math.Round(Shell?.ActualHeight ?? 0));
+    }
+
     private void StartFrameProbe()
     {
         _frameGaps.Clear();
@@ -204,7 +276,12 @@ public partial class MainWindow : Window
         Loaded += OnLoaded;
         // 拖动边缘缩放时，每个 WM_SIZE 都会触发 SizeChanged；这里只做最便宜的裁剪，
         // 重排（ApplyResponsive）等到松手（WM_EXITSIZEMOVE）再算一次，避免拖动时掉帧。
-        SizeChanged += (_, _) => ScheduleResizeWork();
+        SizeChanged += (_, e) =>
+        {
+            // 拖动中：用事件携带的新尺寸算缩放（此时 Window.ActualWidth 还是旧值）
+            if (_inLiveResize) { UpdateFrozenScale(e.NewSize); return; }
+            ScheduleResizeWork();
+        };
         ThemeService.ThemeChanged += OnThemeChanged;
     }
 
@@ -844,12 +921,14 @@ public partial class MainWindow : Window
         {
             _inLiveResize = true;
             SuspendHeavyVisuals(true);
+            BeginFrozenResize();
             StartFrameProbe();
         }
         else if (msg == 0x0232)   // WM_EXITSIZEMOVE
         {
             _inLiveResize = false;
             StopFrameProbe();
+            EndFrozenResize();
             UpdateShellClip();
             ApplyResponsive();
             SuspendHeavyVisuals(false);
