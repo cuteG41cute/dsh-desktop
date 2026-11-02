@@ -498,7 +498,7 @@
                                 <TextBlock Text="管理实例的扩展与文件" FontSize="9" Margin="80,1,0,0"
                                            Foreground="{DynamicResource Muted}" />
                             </Grid>
-                            <WrapPanel x:Name="QuickGrid">
+                            <UniformGrid x:Name="QuickGrid" Rows="1" Columns="4">
                                 <Border x:Name="Quick1" Style="{StaticResource CardStyle}" Height="82" Cursor="Hand"
                                         MouseLeftButtonDown="OnQuickToken"
                                         Padding="13" Margin="0,0,11,11">
@@ -567,7 +567,7 @@
                                         </StackPanel>
                                     </StackPanel>
                                 </Border>
-                            </WrapPanel>
+                            </UniformGrid>
 
                             <!-- 最近日志 -->
                             <Border Style="{StaticResource CardStyle}" Margin="0,20,0,0" ClipToBounds="True">

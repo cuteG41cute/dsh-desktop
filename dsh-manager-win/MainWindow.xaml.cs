@@ -397,15 +397,16 @@ public partial class MainWindow : Window
             var side = tight ? 180 : (narrow ? 220 : 248);
             var pad = tight ? 36 : 60;
             var avail = Math.Max(300, w - side - pad);
-            // 只允许 4 / 2 / 1 列：行数 = 1 / 2 / 4，且每行必然被填满（不留右侧空白）
-            // avail 是 DIP。三档：4 列 / 2 列 / 1 列（对应 1 行 / 2 行 / 4 行，每行都填满）
+            // 用 UniformGrid：只设列数，卡片宽度由 Grid 均分，**每行必然填满整行**。
             var cols = avail >= 900 ? 4 : (avail >= 480 ? 2 : 1);
             var gap = 11.0;
-            var cardW = Math.Max(120, Math.Floor((avail - gap * (cols - 1)) / cols));
+            if (QuickGrid != null) { QuickGrid.Columns = cols; QuickGrid.Rows = (int)Math.Ceiling(4.0 / cols); }
             var cards = new[] { Quick1, Quick2, Quick3, Quick4 };
             for (var i = 0; i < cards.Length; i++)
             {
-                cards[i].Width = cardW;
+                if (cards[i] == null) continue;
+                cards[i].Width = double.NaN;
+                cards[i].HorizontalAlignment = HorizontalAlignment.Stretch;
                 cards[i].Margin = new Thickness(0, 0, (i % cols == cols - 1) ? 0 : gap, gap);
             }
         }
@@ -1352,7 +1353,7 @@ public partial class MainWindow : Window
             var hwnd = new WindowInteropHelper(this).Handle;
             // 窗口自己已经用 26px 圆角 + 1px 边框画了唯一一条边缘，这里必须让 DWM 不要再圆一次，
             // 否则会出现「系统圆角 + 自绘圆角」两条边（用户截图里看到的就是边缘发虚的双线）。
-            var preference = 1; // DWMWCP_DONOTROUND
+            var preference = 2; // DWMWCP_ROUND：让 DWM 把整个窗口裁成圆角（方形尖角就是它没开时露出来的）
             DwmSetWindowAttribute(hwnd, 33, ref preference, sizeof(int));
         }
         catch { }
@@ -1438,7 +1439,7 @@ public partial class MainWindow : Window
         return tmpl;
     }
 
-    /// <summary>查看 Token：把实例的访问地址、会话 token（若日志里有）与认证 cookie 一起列出来。</summary>
+    /// <summary>查看 Token：弹一个**可选中、可复制**的窗口，同时把内容写进实例日志。</summary>
     private void OnShowToken()
     {
         if (_current == null) { Toast("先选一个实例"); return; }
@@ -1458,7 +1459,7 @@ public partial class MainWindow : Window
         if (!string.IsNullOrEmpty(token))
         {
             sb.AppendLine();
-            sb.AppendLine("一次性 token（来自启动日志）：");
+            sb.AppendLine("一次性 token：");
             sb.AppendLine(token);
             sb.AppendLine();
             sb.AppendLine("带 token 的地址：");
@@ -1469,13 +1470,75 @@ public partial class MainWindow : Window
             ? "认证 cookie：无法签发（实例没有可用的 credentials）"
             : "认证 cookie：" + cookie.Value.Name + " = " + cookie.Value.Value);
         var text = sb.ToString();
-        try
+
+        DshHost.AppendNote(_current, text);   // 同时落进实例日志，最近日志里也能看/选
+        RefreshLogs(_current);
+        ShowTextWindow("查看 Token · " + _current.Label, text);
+    }
+
+    /// <summary>一个只读但可选中、可复制的文本框窗口。</summary>
+    private void ShowTextWindow(string title, string text)
+    {
+        var win = new Window
         {
-            Clipboard.SetText(string.IsNullOrEmpty(token) ? baseUrl : baseUrl + "?token=" + token);
-            Toast("访问地址已复制到剪贴板");
+            Title = title,
+            Owner = this,
+            Width = 720,
+            Height = 460,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = (Brush)FindResource("App"),
+            ResizeMode = ResizeMode.CanResize,
+        };
+        var root = new Grid { Margin = new Thickness(16) };
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var box = new TextBox
+        {
+            Text = text,
+            IsReadOnly = true,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.NoWrap,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            FontFamily = new FontFamily("Consolas, Microsoft YaHei UI"),
+            FontSize = 12,
+            Padding = new Thickness(10),
+            Background = (Brush)FindResource("CardSolid"),
+            Foreground = (Brush)FindResource("Text"),
+            BorderBrush = (Brush)FindResource("InnerBorder"),
+            BorderThickness = new Thickness(1),
+        };
+        Grid.SetRow(box, 0);
+        root.Children.Add(box);
+        var bar = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 12, 0, 0),
+        };
+        Button Make(string label, bool primary, RoutedEventHandler onClick)
+        {
+            var b = new Button
+            {
+                Content = label,
+                Height = 32,
+                Padding = new Thickness(16, 0, 16, 0),
+                Margin = new Thickness(8, 0, 0, 0),
+                Style = (Style)FindResource(primary ? "BtnPrimary" : "BtnSecondary"),
+            };
+            b.Click += onClick;
+            return b;
         }
-        catch { }
-        MessageBox.Show(this, text, "查看 Token", MessageBoxButton.OK, MessageBoxImage.Information);
+        bar.Children.Add(Make("复制全部", false, (_, _) =>
+        {
+            try { Clipboard.SetText(box.Text); Toast("已复制到剪贴板"); } catch { }
+        }));
+        bar.Children.Add(Make("全选", false, (_, _) => { box.Focus(); box.SelectAll(); }));
+        bar.Children.Add(Make("关闭", true, (_, _) => win.Close()));
+        Grid.SetRow(bar, 1);
+        root.Children.Add(bar);
+        win.Content = root;
+        win.Show();
     }
 
     /// <summary>刷新实例列表（扫一遍本机 + 重新探测运行状态）。</summary>

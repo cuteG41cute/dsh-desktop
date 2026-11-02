@@ -184,6 +184,20 @@ public static class DshHost
         return Path.Combine(LogDir, safe + ".log");
     }
 
+    /// <summary>往实例日志里写一段备注（管理器自己产生的内容，例如 Token 信息）。</summary>
+    public static void AppendNote(DshInstance inst, string text)
+    {
+        try
+        {
+            var path = LogPathFor(inst);
+            var stamp = DateTime.Now.ToString("HH:mm:ss");
+            var block = string.Join("\n",
+                (text ?? "").TrimEnd().Split('\n').Select(l => stamp + "     note | " + l));
+            File.AppendAllText(path, block + Environment.NewLine, new UTF8Encoding(false));
+        }
+        catch { }
+    }
+
     public static string Tail(DshInstance inst, int lines)
     {
         var path = LogPathFor(inst);
