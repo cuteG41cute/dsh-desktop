@@ -55,23 +55,35 @@ public static class DshHost
         var log = LogPathFor(inst);
         try
         {
-            // 用 cmd.exe 把服务输出**重定向到日志文件**（不走管道）：
-            //   1) 管道在管理器崩溃后会变成 EPIPE，node 一写就退出 —— 这就是
-            //      「管理器崩了，实例也跟着崩」的原因；改成文件句柄后父进程死了也不影响；
-            //   2) chcp 65001 让 node 按 UTF-8 输出，日志里不再有乱码。
-            var cmdLine = "chcp 65001>nul & \"" + inst.NodeExe + "\" \"" + inst.Entry
-                          + "\" web --no-open --port " + inst.Port + " >> \"" + log + "\" 2>&1";
-            var psi = new ProcessStartInfo("cmd.exe")
+            // 直接起 node.exe（不再套 cmd.exe：/c 里带引号重定向会和 .NET 的参数转义打架，
+            // 实测会把管理器一起带崩）。日志编码用 UTF-8 读，中文不再乱码。
+            var psi = new ProcessStartInfo(inst.NodeExe)
             {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = new UTF8Encoding(false),
+                StandardErrorEncoding = new UTF8Encoding(false),
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 WorkingDirectory = Path.GetDirectoryName(inst.Entry) ?? Environment.CurrentDirectory,
             };
-            psi.ArgumentList.Add("/c");
-            psi.ArgumentList.Add(cmdLine);
+            psi.ArgumentList.Add(inst.Entry);
+            psi.ArgumentList.Add("web");
+            psi.ArgumentList.Add("--no-open");
+            psi.ArgumentList.Add("--port");
+            psi.ArgumentList.Add(inst.Port.ToString());
+            // 手机端桥：把局域网来源登记进 DSH 的信任栅栏
+            foreach (var addr in LanAddresses())
+            {
+                psi.ArgumentList.Add("--trusted-host");
+                psi.ArgumentList.Add(addr + ":" + BridgePort);
+            }
             psi.Environment["DSH_HOME"] = inst.Home;
 
             var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+            var running = new Running { Process = proc };
+            proc.OutputDataReceived += (_, e) => Append(running, log, e.Data);
+            proc.ErrorDataReceived += (_, e) => Append(running, log, e.Data);
             proc.Exited += (_, _) =>
             {
                 AppendRaw(log, "[dsh-manager] 进程已退出（code " + SafeExitCode(proc) + "）");
@@ -85,7 +97,9 @@ public static class DshHost
                 message = "进程没有启动起来";
                 return false;
             }
-            lock (Gate) Started[inst.Id] = new Running { Process = proc };
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+            lock (Gate) Started[inst.Id] = running;
 
             // 等端口起来（最多 20 秒）
             for (var i = 0; i < 40; i++)
