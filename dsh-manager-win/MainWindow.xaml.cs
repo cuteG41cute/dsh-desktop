@@ -168,6 +168,7 @@ public partial class MainWindow : Window
         if (w < 40 || h < 40) return;
         ShellContent.Width = w;
         ShellContent.Height = h;
+        UpdateShellClip();   // 顺带把窗口 Region（圆角）也重新裁一次
     }
 
     /// <summary>
@@ -358,7 +359,11 @@ public partial class MainWindow : Window
             if (w <= 1 || h <= 1) return;
             var r = (int)Math.Round(radiusDip * dpi * 2);   // CreateRoundRectRgn 的椭圆宽高 = 直径
             var hRgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, r, r);
-            if (hRgn != IntPtr.Zero) SetWindowRgn(hwnd, hRgn, true);   // 成功后区域归系统所有，不要删
+            if (hRgn != IntPtr.Zero)
+            {
+                var ok = SetWindowRgn(hwnd, hRgn, true);
+                Diag("window region " + w + "x" + h + " r=" + (r / 2) + " ok=" + ok);
+            }   // 成功后区域归系统所有，不要删
         }
         catch { }
     }
@@ -445,6 +450,7 @@ public partial class MainWindow : Window
     {
         ApplyRoundedCorners();
         SyncContentSize();
+        UpdateShellClip();
         _ = ReloadInstancesAsync();
         _poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
         _poll.Tick += (_, _) => PollCurrent();
