@@ -571,6 +571,14 @@ public partial class MainWindow : Window
         }
         if (SvcDot != null)
             SvcDot.Background = (Brush)FindResource(inst.Running ? "Success" : "Subtle");
+        // 未运行时那颗按钮应该是「启动」而不是「停止」
+        if (StopBtn != null)
+        {
+            StopLabel.Text = inst.Running ? "停止" : "启动";
+            StopBtn.Background = (Brush)FindResource(inst.Running ? "DangerSoft" : "SuccessSoft");
+            StopBtn.Foreground = (Brush)FindResource(inst.Running ? "Danger" : "Success");
+            if (StopIcon != null) StopIcon.Stroke = (Brush)FindResource(inst.Running ? "Danger" : "Success");
+        }
         StatusBadgeText.Text = inst.Running ? "运行中" : "未运行";
         if (StatusBadgeDot != null)
             StatusBadgeDot.Background = (Brush)FindResource(inst.Running ? "Success" : "Subtle");
@@ -1258,9 +1266,42 @@ public partial class MainWindow : Window
         Toast(msg);
     }
 
+    /// <summary>删除实例：停服务 → 删目录 → 移出登记表（只对管理器创建的实例）。</summary>
+    private void OnDeleteInstance(object sender, RoutedEventArgs e)
+    {
+        if (_current == null) { Toast("先选一个实例"); return; }
+        var managed = InstanceActions.IsManaged(_current);
+        if (!managed)
+        {
+            MessageBox.Show(this,
+                "「" + _current.Label + "」是系统安装（" + _current.Source + "），管理器不会删除它。\n\n" +
+                "需要清理请在文件管理器中手动操作：" + _current.Dir,
+                "无法删除", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var ask = MessageBox.Show(this,
+            "删除实例「" + _current.Label + "」？\n\n目录：" + _current.Dir +
+            "\n\n会先停止服务，然后删除整个目录并从登记表移除，不可恢复。",
+            "删除实例", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+        if (ask != MessageBoxResult.OK) return;
+        if (_current.Running) DshHost.Stop(_current, out _);
+        var (ok, msg) = InstanceActions.Uninstall(_current, deleteDir: true);
+        ReloadInstances();
+        Toast((ok ? "✔ " : "✘ ") + msg);
+        if (!ok) MessageBox.Show(this, msg, "删除实例", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
     private void OnStopService(object sender, RoutedEventArgs e)
     {
         if (_current == null) return;
+        if (!_current.Running)
+        {
+            // 未运行 → 这颗按钮是「启动」
+            DshHost.Start(_current, out var startMsg);
+            PollCurrent();
+            Toast(startMsg);
+            return;
+        }
         DshHost.Stop(_current, out var msg);
         PollCurrent();
         Toast(msg);
