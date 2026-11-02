@@ -1259,11 +1259,22 @@ public partial class MainWindow : Window
 
     private void OnRestartService(object sender, RoutedEventArgs e)
     {
-        if (_current == null) return;
-        DshHost.Stop(_current, out _);
-        DshHost.Start(_current, out var msg);
-        PollCurrent();
-        Toast(msg);
+        if (_current == null) { Toast("先选一个实例"); return; }
+        try
+        {
+            DshHost.Stop(_current, out var stopMsg);
+            Diag("restart stop -> " + stopMsg);
+            DshHost.Start(_current, out var msg);
+            Diag("restart start -> " + msg);
+            PollCurrent();
+            Toast(msg);
+        }
+        catch (Exception ex)
+        {
+            Diag("restart failed: " + ex);
+            Toast("重启失败：" + ex.Message);
+            try { MessageBox.Show(this, ex.ToString(), "重启失败", MessageBoxButton.OK, MessageBoxImage.Warning); } catch { }
+        }
     }
 
     /// <summary>删除实例：停服务 → 删目录 → 移出登记表（只对管理器创建的实例）。</summary>
@@ -1293,18 +1304,29 @@ public partial class MainWindow : Window
 
     private void OnStopService(object sender, RoutedEventArgs e)
     {
-        if (_current == null) return;
-        if (!_current.Running)
+        if (_current == null) { Toast("先选一个实例"); return; }
+        try
         {
-            // 未运行 → 这颗按钮是「启动」
-            DshHost.Start(_current, out var startMsg);
+            if (!_current.Running)
+            {
+                // 未运行 → 这颗按钮是「启动」
+                DshHost.Start(_current, out var startMsg);
+                Diag("start -> " + startMsg);
+                PollCurrent();
+                Toast(startMsg);
+                return;
+            }
+            DshHost.Stop(_current, out var msg);
+            Diag("stop -> " + msg);
             PollCurrent();
-            Toast(startMsg);
-            return;
+            Toast(msg);
         }
-        DshHost.Stop(_current, out var msg);
-        PollCurrent();
-        Toast(msg);
+        catch (Exception ex)
+        {
+            Diag("stop/start failed: " + ex);
+            Toast("操作失败：" + ex.Message);
+            try { MessageBox.Show(this, ex.ToString(), "停止/启动失败", MessageBoxButton.OK, MessageBoxImage.Warning); } catch { }
+        }
     }
 
     /// <summary>启动/停止服务（左侧快捷控制里的「重启/停止」之外，列表双击也能起停）。</summary>

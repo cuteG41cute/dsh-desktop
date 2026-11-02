@@ -69,6 +69,27 @@ public partial class App : Application
             }
 
             base.OnStartup(e);
+            // WPF 的 UI 线程异常默认会**直接结束进程**，而且不走 AppDomain 处理器 →
+            // 之前「点停止，管理器自己没了」就是这条通道，崩溃日志里一个字都没有。
+            // 现在：记日志 + 保持运行，界面里给出提示，不再静默退出。
+            try
+            {
+                DispatcherUnhandledException += (_, ev) =>
+                {
+                    Log("ui-dispatcher: " + ev.Exception);
+                    ev.Handled = true;   // 不退出，让用户还能操作/导出日志
+                    try
+                    {
+                        System.Windows.MessageBox.Show(
+                            "界面层出了个异常（管理器没有退出）：\n\n" + ev.Exception.Message,
+                            "DSH Manager", System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    }
+                    catch { }
+                };
+            }
+            catch { }
+
             // 兜底诊断：托盘/UI 线程上的异常与未观测的 Task 异常也要进 crash.log，
             // 否则进程静默退出时完全无法排查。
             try
