@@ -17,10 +17,10 @@ public static class AuthCookie
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
 
-    public static (string Name, string Value, int Days)? Mint(int port)
+    public static (string Name, string Value, int Days)? Mint(int port, string homeDir = null)
     {
         var authority = "127.0.0.1:" + port;
-        var secret = ReadSecret();
+        var secret = ReadSecret(homeDir);
         if (string.IsNullOrEmpty(secret)) return null;
         foreach (var days in new[] { 30, 7, 1 })
         {
@@ -66,11 +66,13 @@ public static class AuthCookie
         catch { return false; }
     }
 
-    private static string ReadSecret()
+    private static string ReadSecret(string homeDir = null)
     {
         try
         {
-            var file = Path.Combine(DshDiscovery.HomeDir, ".credentials.yaml");
+            // 实例可能有自己的 DSH_HOME（密钥在那份 .credentials.yaml 里），先看它
+            var file = Path.Combine(string.IsNullOrEmpty(homeDir) ? DshDiscovery.HomeDir : homeDir, ".credentials.yaml");
+            if (!File.Exists(file)) file = Path.Combine(DshDiscovery.HomeDir, ".credentials.yaml");
             if (!File.Exists(file)) return "";
             var m = Regex.Match(File.ReadAllText(file),
                 @"client-connection/browser-session:.*?secret:\s*([A-Za-z0-9_\-]+)", RegexOptions.Singleline);

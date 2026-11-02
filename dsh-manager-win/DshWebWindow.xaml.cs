@@ -24,6 +24,7 @@ public partial class DshWebWindow : Window
     private readonly DshInstance _inst;
     private bool _ready;
     private string _baseUrl;
+    private string _token;
 
     /// <summary>同一个端口只开一个窗口（多点几次只是提回前台）。</summary>
     private static readonly Dictionary<int, DshWebWindow> Open = new();
@@ -96,7 +97,7 @@ public partial class DshWebWindow : Window
             core.Settings.IsStatusBarEnabled = false;
 
             // 认证：自签一枚 cookie 塞进 WebView2 的 CookieManager（比环境变量更直接）
-            var cookie = AuthCookie.Mint(_inst.Port);
+            var cookie = AuthCookie.Mint(_inst.Port, _inst.Home);
             Diag("cookie " + (cookie == null ? "none" : "minted " + cookie.Value.Name));
             if (cookie != null)
             {
@@ -155,6 +156,15 @@ public partial class DshWebWindow : Window
     {
         ShowStatus("正在连接 DSH…", "端口 " + _inst.Port, retry: false);
         _baseUrl = "http://127.0.0.1:" + _inst.Port + "/";
+        // 源码实例/独立 dsh-home 会打印 http://127.0.0.1:PORT/?token=XXX，
+        // cookie 蒙不出来时就带着这个 token 进去（一次性入口，之后自己种 cookie）。
+        if (_token == null)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(
+                DshHost.Tail(_inst, 80), @"127\.0\.0\.1:\d+/\?token=([A-Za-z0-9_\-\.]+)");
+            if (m.Success) _token = m.Groups[1].Value;
+        }
+        if (!string.IsNullOrEmpty(_token)) _baseUrl += "?token=" + _token;
         UpdateTitleText();
         Diag("navigate " + _baseUrl);
         if (_ready) Web.CoreWebView2.Navigate(_baseUrl);
