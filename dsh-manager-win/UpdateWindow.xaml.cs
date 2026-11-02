@@ -98,10 +98,10 @@ namespace DshManager
             {
                 if (_spinTimer == null)
                 {
-                    _spinTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
+                    _spinTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
                     _spinTimer.Tick += (_, _) =>
                     {
-                        _spinAngle = (_spinAngle + 12) % 360;
+                        _spinAngle = (_spinAngle + 11) % 360;
                         if (SpinnerRotate != null) SpinnerRotate.Angle = _spinAngle;
                     };
                 }
