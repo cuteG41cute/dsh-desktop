@@ -131,9 +131,9 @@ public static class InstanceInstaller
     }
 
     /// <summary>
-    /// 给新实例建独立的 DSH_HOME，并从全局家目录只搬「能跑起来所需」的东西：
-    /// 凭据 / 设置 / 技能 / agent 预设。
-    /// **不搬** sessions、storages、profiles —— 那样新实例就会看到别的实例的工作区和插件。
+    /// 给新实例建**全新的** DSH_HOME：只创建空目录，不从全局家目录搬任何东西。
+    /// 新实例 = 干净环境：没有别人的工作区/会话/插件/设置，
+    /// 首次启动由 dsh 自己生成默认配置（模型凭据也在该实例里单独配）。
     /// </summary>
     private static void SeedIsolatedHome(string dir, Action<string> log)
     {
@@ -141,23 +141,11 @@ public static class InstanceInstaller
         {
             var home = Path.Combine(dir, "dsh-home");
             Directory.CreateDirectory(home);
-            var global = DshDiscovery.HomeDir;
-            if (string.IsNullOrEmpty(global) || !Directory.Exists(global)) return;
-            foreach (var name in new[] { ".credentials.yaml", "settings.yaml" })
-            {
-                var src = Path.Combine(global, name);
-                if (File.Exists(src)) File.Copy(src, Path.Combine(home, name), true);
-            }
-            foreach (var sub in new[] { "skills", ".agent-presets" })
-            {
-                var src = Path.Combine(global, sub);
-                if (Directory.Exists(src)) CopyDir(src, Path.Combine(home, sub));
-            }
-            log("已建独立数据目录：" + home + "（凭据/设置/技能已从全局复制，会话与插件不共享）");
+            log("已建全新数据目录：" + home + "（不继承任何会话/工作区/插件/设置）");
         }
         catch (Exception ex)
         {
-            log("创建独立数据目录失败（将沿用全局 .dsh）：" + ex.Message);
+            log("创建数据目录失败（将沿用全局 .dsh）：" + ex.Message);
         }
     }
 
