@@ -1563,12 +1563,69 @@ public partial class MainWindow : Window
     }
 
     /// <summary>刷新实例列表（扫一遍本机 + 重新探测运行状态）。</summary>
-    private void OnRefreshInstances(object sender, RoutedEventArgs e)
+    private DispatcherTimer _refreshSpin;
+    private double _refreshAngle;
+    private bool _refreshDone;
+
+    /// <summary>刷新按钮的转圈：像真的等待指示一样转，扫描结束后补齐整圈再停。</summary>
+    private void StartRefreshSpin()
     {
-        DshDiscovery.InvalidateListeners();
-        ReloadInstances();
-        Toast("实例列表已刷新（" + (_instances?.Count ?? 0) + " 个）");
+        _refreshDone = false;
+        _refreshAngle = 0;
+        if (_refreshSpin == null)
+        {
+            _refreshSpin = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+            _refreshSpin.Tick += (_, _) =>
+            {
+                var prev = _refreshAngle;
+                _refreshAngle = (_refreshAngle + 11) % 360;   // 约 0.52 秒一圈
+                if (_refreshAngle < prev) _spinTurns++;       // 过 0 点 = 转完一圈
+                if (RefreshRotate != null) RefreshRotate.Angle = _refreshAngle;
+                // 扫描完成且已经转过一整圈 → 停在一个完整的圈上
+                if (_refreshDone && _spinTurns >= 1)
+                {
+                    _refreshSpin.Stop();
+                    if (RefreshRotate != null) RefreshRotate.Angle = 0;
+                    _spinTurns = 0;
+                }
+            };
+        }
+        _spinTurns = 0;
+        if (!_refreshSpin.IsEnabled) _refreshSpin.Start();
     }
+
+    private int _spinTurns;
+
+    private void StopRefreshSpinWhenDone() => _refreshDone = true;
+
+    /// <summary>刷新实例列表：按钮转圈 + 状态行提示，扫描在后台线程跑。</summary>
+    private async void OnRefreshInstances(object sender, RoutedEventArgs e)
+    {
+        if (RefreshInstances != null) RefreshInstances.IsEnabled = false;
+        StartRefreshSpin();
+        Toast("实例列表正在刷新中…");
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            DshDiscovery.InvalidateListeners();
+            var list = await System.Threading.Tasks.Task.Run(() => ScanInstances());
+            ApplyInstances(list);
+            Diag("refresh scan " + sw.ElapsedMilliseconds + " ms, " + list.Count + " 个实例");
+            Toast("实例列表已刷新（" + list.Count + " 个）");
+        }
+        catch (Exception ex)
+        {
+            Diag("refresh failed: " + ex);
+            Toast("刷新失败：" + ex.Message);
+        }
+        finally
+        {
+            if (RefreshInstances != null) RefreshInstances.IsEnabled = true;
+            // 扫描结束：告诉定时器可以停，但它会等转满一整圈再停（保证至少转一圈）
+            StopRefreshSpinWhenDone();
+        }
+    }
+
 
     /// <summary>重建窗口 = 重启服务 + 重新打开内置会话窗口。</summary>
     private void OnRebuildWindow()

@@ -98,7 +98,11 @@
                             <Button x:Name="RefreshInstances" Style="{StaticResource IconBtn}" Width="25" Height="25"
                                     HorizontalAlignment="Right" ToolTip="刷新实例列表" Click="OnRefreshInstances">
                                 <Path Width="16" Height="16" Data="{StaticResource Icon.restart}"
-                                      Style="{StaticResource IconPath}" />
+                                      Style="{StaticResource IconPath}" RenderTransformOrigin="0.5,0.5">
+                                    <Path.RenderTransform>
+                                        <RotateTransform x:Name="RefreshRotate" />
+                                    </Path.RenderTransform>
+                                </Path>
                             </Button>
                         </Grid>
 
