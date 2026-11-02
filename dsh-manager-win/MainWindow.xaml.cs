@@ -308,11 +308,31 @@ public partial class MainWindow : Window
     /// </summary>
     private void UpdateShellClip()
     {
-        // 实测：给整棵内容设圆角 Clip（非矩形裁剪）会让 WPF 每帧走中间表面合成，
-        // 拖动缩放时帧率掉到 13fps。窗口现在是不透明 + DWM 圆角，
-        // 圆角已经由系统负责裁，所以这里不再画蛇添足。
-        if (ShellContent != null && ShellContent.Clip != null) ShellContent.Clip = null;
-        if (Shell != null && Shell.Clip != null) Shell.Clip = null;
+        if (ShellContent == null) return;
+        var r = 26.0;
+        try { if (TryFindResource("AppRadiusValue") is double d) r = d; } catch { }
+        var w = ShellContent.ActualWidth;
+        var h = ShellContent.ActualHeight;
+        if (w <= 0 || h <= 0) return;
+        // 窗口四角原本靠 DWM，但 DONOTROUND + 不透明背景会露出「方角黑块」，
+        // 所以这里自己裁圆角；只在稳定尺寸下更新（拖动中不动，免得每帧重绘整棵树）。
+        if (_contentClipGeo == null || Math.Abs(_clipRadius - r) > 0.01)
+        {
+            _clipRadius = r;
+            _contentClipGeo = new RectangleGeometry(new Rect(0, 0, w, h), r, r);
+            ShellContent.Clip = _contentClipGeo;
+        }
+        else _contentClipGeo.Rect = new Rect(0, 0, w, h);
+        if (Shell != null && Shell.ActualWidth > 0 && Shell.ActualHeight > 0)
+        {
+            if (_shellClipGeo == null || Math.Abs(_clipRadius - r) > 0.01)
+            {
+                _shellClipGeo = new RectangleGeometry(
+                    new Rect(0, 0, Shell.ActualWidth, Shell.ActualHeight), r, r);
+                Shell.Clip = _shellClipGeo;
+            }
+            else _shellClipGeo.Rect = new Rect(0, 0, Shell.ActualWidth, Shell.ActualHeight);
+        }
     }
 
     /// <summary>
@@ -377,9 +397,11 @@ public partial class MainWindow : Window
             var side = tight ? 180 : (narrow ? 220 : 248);
             var pad = tight ? 36 : 60;
             var avail = Math.Max(300, w - side - pad);
-            var cols = avail >= 900 ? 4 : (avail >= 620 ? 3 : 2);
+            // 只允许 4 / 2 / 1 列：行数 = 1 / 2 / 4，且每行必然被填满（不留右侧空白）
+            // avail 是 DIP。三档：4 列 / 2 列 / 1 列（对应 1 行 / 2 行 / 4 行，每行都填满）
+            var cols = avail >= 900 ? 4 : (avail >= 480 ? 2 : 1);
             var gap = 11.0;
-            var cardW = Math.Max(150, Math.Floor((avail - gap * (cols - 1)) / cols));
+            var cardW = Math.Max(120, Math.Floor((avail - gap * (cols - 1)) / cols));
             var cards = new[] { Quick1, Quick2, Quick3, Quick4 };
             for (var i = 0; i < cards.Length; i++)
             {
@@ -1416,16 +1438,52 @@ public partial class MainWindow : Window
         return tmpl;
     }
 
+    /// <summary>查看 Token：把实例的访问地址、会话 token（若日志里有）与认证 cookie 一起列出来。</summary>
     private void OnShowToken()
     {
-        if (_current == null) return;
-        var url = "http://127.0.0.1:" + _current.Port + "/";
+        if (_current == null) { Toast("先选一个实例"); return; }
+        var baseUrl = "http://127.0.0.1:" + _current.Port + "/";
+        var token = "";
+        var m = System.Text.RegularExpressions.Regex.Match(
+            DshHost.Tail(_current, 120), @"127\.0\.0\.1:\d+/\?token=([A-Za-z0-9_\-\.]+)");
+        if (m.Success) token = m.Groups[1].Value;
+        var cookie = AuthCookie.Mint(_current.Port, _current.Home);
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("实例：" + _current.Label);
+        sb.AppendLine("端口：" + _current.Port + "（PID " + (_current.Pid > 0 ? _current.Pid.ToString() : "—") + "）");
+        sb.AppendLine("数据目录：" + _current.Home);
+        sb.AppendLine();
+        sb.AppendLine("访问地址：");
+        sb.AppendLine(baseUrl);
+        if (!string.IsNullOrEmpty(token))
+        {
+            sb.AppendLine();
+            sb.AppendLine("一次性 token（来自启动日志）：");
+            sb.AppendLine(token);
+            sb.AppendLine();
+            sb.AppendLine("带 token 的地址：");
+            sb.AppendLine(baseUrl + "?token=" + token);
+        }
+        sb.AppendLine();
+        sb.AppendLine(cookie == null
+            ? "认证 cookie：无法签发（实例没有可用的 credentials）"
+            : "认证 cookie：" + cookie.Value.Name + " = " + cookie.Value.Value);
+        var text = sb.ToString();
         try
         {
-            Clipboard.SetText(url);
-            Toast("访问地址已复制：" + url);
+            Clipboard.SetText(string.IsNullOrEmpty(token) ? baseUrl : baseUrl + "?token=" + token);
+            Toast("访问地址已复制到剪贴板");
         }
-        catch { Toast("复制失败（剪贴板被占用）"); }
+        catch { }
+        MessageBox.Show(this, text, "查看 Token", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    /// <summary>刷新实例列表（扫一遍本机 + 重新探测运行状态）。</summary>
+    private void OnRefreshInstances(object sender, RoutedEventArgs e)
+    {
+        DshDiscovery.InvalidateListeners();
+        ReloadInstances();
+        Toast("实例列表已刷新（" + (_instances?.Count ?? 0) + " 个）");
     }
 
     /// <summary>重建窗口 = 重启服务 + 重新打开内置会话窗口。</summary>

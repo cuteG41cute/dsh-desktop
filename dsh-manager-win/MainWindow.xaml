@@ -95,9 +95,9 @@
                                                Foreground="{DynamicResource Accent}" />
                                 </Border>
                             </StackPanel>
-                            <Button x:Name="AddInstance" Style="{StaticResource IconBtn}" Width="25" Height="25"
-                                    HorizontalAlignment="Right" ToolTip="新建实例">
-                                <Path Width="16" Height="16" Data="{StaticResource Icon.plus}"
+                            <Button x:Name="RefreshInstances" Style="{StaticResource IconBtn}" Width="25" Height="25"
+                                    HorizontalAlignment="Right" ToolTip="刷新实例列表" Click="OnRefreshInstances">
+                                <Path Width="16" Height="16" Data="{StaticResource Icon.restart}"
                                       Style="{StaticResource IconPath}" />
                             </Button>
                         </Grid>
