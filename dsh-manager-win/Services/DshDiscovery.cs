@@ -49,12 +49,12 @@ public static class DshDiscovery
         var found = new List<DshInstance>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        void Add(string entry, string source, int sort)
+        void Add(string entry, string source, int sort, string labelOverride = null)
         {
             if (string.IsNullOrWhiteSpace(entry) || !File.Exists(entry)) return;
             var root = Path.GetFullPath(entry);
             if (!seen.Add(root)) return;
-            var label = NameFor(root);
+            var label = string.IsNullOrWhiteSpace(labelOverride) ? NameFor(root) : labelOverride;
             if (source == "npx 缓存")
             {
                 // .../_npx/<hash>/node_modules/@deepseek-ai/dsh/lib/bin.js → 往上 5 层才是 <hash>
@@ -113,7 +113,8 @@ public static class DshDiscovery
             if (string.IsNullOrWhiteSpace(reg.Dir)) continue;
             if (!Directory.Exists(reg.Dir)) continue;   // 目录被手动删了就跳过
             Add(Path.Combine(reg.Dir, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"),
-                "管理器创建", 5);
+                "管理器创建", 5, string.IsNullOrWhiteSpace(reg.Label)
+                    ? System.IO.Path.GetFileName(reg.Dir.TrimEnd('\\')) : reg.Label);
         }
 
         foreach (var inst in found)
