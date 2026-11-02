@@ -103,7 +103,19 @@ public static class VersionCatalog
         try
         {
             var list = await DshVersionsAsync();
-            return list.FirstOrDefault(v => v != "latest") ?? "";
+            // npm view versions 返回的是「按发布时间从旧到新」的数组：
+            // 取第一个会拿到 0.0.1-rc.1（最老的），必须取最后一个非 latest 的。
+            // 优先取「非 alpha」的最新版（alpha 是预览版，不该把用户的 rc 版判成"旧"）；
+            // 只有全仓都是 alpha 时才退回最后一个。
+            string fallback = "";
+            for (var i = list.Count - 1; i >= 0; i--)
+            {
+                var v = list[i];
+                if (string.IsNullOrWhiteSpace(v) || v == "latest" || v == SystemNode) continue;
+                if (string.IsNullOrEmpty(fallback)) fallback = v;
+                if (v.IndexOf("-alpha", StringComparison.OrdinalIgnoreCase) < 0) return v;
+            }
+            return fallback;
         }
         catch { return ""; }
     }

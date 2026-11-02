@@ -333,6 +333,34 @@ public partial class MainWindow : Window
             }
             else _shellClipGeo.Rect = new Rect(0, 0, Shell.ActualWidth, Shell.ActualHeight);
         }
+        ApplyWindowRegion(r);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool redraw);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int w, int h);
+
+    /// <summary>
+    /// 用窗口 Region 把整窗裁成圆角：半径用**设计值**（AppRadiusValue），
+    /// 这样外缘圆角与内部内容圆角完全一致；DWM 自己的圆角已经关掉，不会再出现「一大一小两个弧度」。
+    /// </summary>
+    private void ApplyWindowRegion(double radiusDip)
+    {
+        try
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd == IntPtr.Zero) return;
+            var dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
+            var w = (int)Math.Round(ActualWidth * dpi);
+            var h = (int)Math.Round(ActualHeight * dpi);
+            if (w <= 1 || h <= 1) return;
+            var r = (int)Math.Round(radiusDip * dpi * 2);   // CreateRoundRectRgn 的椭圆宽高 = 直径
+            var hRgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, r, r);
+            if (hRgn != IntPtr.Zero) SetWindowRgn(hwnd, hRgn, true);   // 成功后区域归系统所有，不要删
+        }
+        catch { }
     }
 
     /// <summary>
@@ -1353,7 +1381,7 @@ public partial class MainWindow : Window
             var hwnd = new WindowInteropHelper(this).Handle;
             // 窗口自己已经用 26px 圆角 + 1px 边框画了唯一一条边缘，这里必须让 DWM 不要再圆一次，
             // 否则会出现「系统圆角 + 自绘圆角」两条边（用户截图里看到的就是边缘发虚的双线）。
-            var preference = 2; // DWMWCP_ROUND：让 DWM 把整个窗口裁成圆角（方形尖角就是它没开时露出来的）
+            var preference = 1; // DWMWCP_DONOTROUND：圆角由我们自己用窗口 Region 裁，才能和设计弧度一致
             DwmSetWindowAttribute(hwnd, 33, ref preference, sizeof(int));
         }
         catch { }
