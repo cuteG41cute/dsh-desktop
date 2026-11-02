@@ -65,7 +65,11 @@ public static class DshHost
             var sb = new StringBuilder();
             sb.AppendLine("@echo off");
             sb.AppendLine("chcp 65001>nul");
+            if (inst.Entry.EndsWith(".ts", StringComparison.OrdinalIgnoreCase))
+                sb.Append("cd /d ").Append('"').Append(Path.Combine(inst.Dir ?? "", "app")).Append('"').AppendLine();
             sb.Append('"').Append(inst.NodeExe).Append('"').Append(' ');
+            var isSource = inst.Entry.EndsWith(".ts", StringComparison.OrdinalIgnoreCase);
+            if (isSource) sb.Append("--import tsx/esm ");
             sb.Append('"').Append(inst.Entry).Append('"');
             sb.Append(" web --no-open --port ").Append(inst.Port);
             foreach (var addr in LanAddresses())
@@ -77,7 +81,9 @@ public static class DshHost
             {
                 UseShellExecute = false,          // 不重定向任何流：node 的 stdout 是文件而非我们的管道
                 CreateNoWindow = true,
-                WorkingDirectory = Path.GetDirectoryName(inst.Entry) ?? Environment.CurrentDirectory,
+                WorkingDirectory = isSource
+                    ? (Path.Combine(inst.Dir ?? "", "app"))
+                    : (Path.GetDirectoryName(inst.Entry) ?? Environment.CurrentDirectory),
             };
             psi.Arguments = "/c \"" + runCmd + "\"";
             psi.Environment["DSH_HOME"] = inst.Home;

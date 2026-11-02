@@ -103,6 +103,20 @@
             </StackPanel>
 
             <!-- 日志 -->
+            <StackPanel Grid.Row="2" Margin="0,16,0,0">
+                <TextBlock Text="安装方式" FontSize="9" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Muted}" Margin="2,0,0,5" />
+                <ComboBox x:Name="InstallKindBox" FontSize="11" Height="36"
+                          VerticalContentAlignment="Center" HorizontalContentAlignment="Left" Padding="10,0"
+                          SelectionChanged="OnInstallKindChanged">
+                    <ComboBoxItem Content="npm 包（快，约 1 分钟）" IsSelected="True" />
+                    <ComboBoxItem Content="GitHub 源码（git clone + pnpm install + 构建，很慢，几个 GB）" />
+                </ComboBox>
+                <TextBlock x:Name="SourceHint" FontSize="8.5" Margin="2,6,0,0" TextWrapping="Wrap"
+                           Foreground="{DynamicResource Subtle}" Visibility="Collapsed"
+                           Text="源码实例会把官方仓库克隆到「安装目录\app」，pnpm 与依赖也只装在实例目录里；构建通常要十几分钟。" />
+            </StackPanel>
+
             <Border Grid.Row="3" Margin="0,16,0,0" CornerRadius="10" Background="{DynamicResource CardSolid}"
                     BorderBrush="{DynamicResource InnerBorder}" BorderThickness="1">
                 <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto" Padding="12,10">

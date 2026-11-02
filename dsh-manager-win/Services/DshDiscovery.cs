@@ -112,7 +112,9 @@ public static class DshDiscovery
         {
             if (string.IsNullOrWhiteSpace(reg.Dir)) continue;
             if (!Directory.Exists(reg.Dir)) continue;   // 目录被手动删了就跳过
-            Add(Path.Combine(reg.Dir, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"),
+            var srcEntry = Path.Combine(reg.Dir, "app", "apps", "cli", "src", "bin.ts");
+            Add(File.Exists(srcEntry) ? srcEntry
+                    : Path.Combine(reg.Dir, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"),
                 "管理器创建", 5, string.IsNullOrWhiteSpace(reg.Label)
                     ? System.IO.Path.GetFileName(reg.Dir.TrimEnd('\\')) : reg.Label);
         }
@@ -204,8 +206,19 @@ public static class DshDiscovery
     /// 根就是 node_modules 的上一层（npx 缓存 → …\_npx\&lt;hash&gt;，管理器创建 → 安装目录）。
     /// 管理器登记表里存的是这个根，两边必须对得上，否则「管理器创建的实例」会被当成系统安装。
     /// </summary>
+    /// <summary>源码实例（&lt;dir&gt;\app\apps\cli\src\bin.ts）的安装根 = &lt;dir&gt;。</summary>
+    private static string SourceRootOf(string entry)
+    {
+        var i = entry.IndexOf(System.IO.Path.DirectorySeparatorChar + "app" + System.IO.Path.DirectorySeparatorChar,
+                              StringComparison.OrdinalIgnoreCase);
+        if (i > 0) return entry.Substring(0, i);
+        return "";
+    }
+
     private static string InstallRootOf(string entry)
     {
+        var src = SourceRootOf(entry);
+        if (!string.IsNullOrEmpty(src)) return src;
         if (string.IsNullOrEmpty(entry)) return "";
         var marker = Path.DirectorySeparatorChar + "node_modules" + Path.DirectorySeparatorChar;
         var idx = entry.LastIndexOf(marker, StringComparison.OrdinalIgnoreCase);
@@ -289,6 +302,30 @@ public static class DshDiscovery
     }
 
     private static string ReadVersion(string entry)
+    {
+        if (entry.EndsWith(".ts", StringComparison.OrdinalIgnoreCase))
+        {
+            var root = SourceRootOf(entry);
+            foreach (var rel in new[] { "app\\package.json", "app\\apps\\cli\\package.json" })
+            {
+                try
+                {
+                    var pj = Path.Combine(root, rel);
+                    if (File.Exists(pj))
+                    {
+                        var txt = File.ReadAllText(pj);
+                        var m = System.Text.RegularExpressions.Regex.Match(txt, "\"version\"\\s*:\\s*\"([^\"]+)\"");
+                        if (m.Success) return m.Groups[1].Value;
+                    }
+                }
+                catch { }
+            }
+            return "";
+        }
+        return ReadVersionCore(entry);
+    }
+
+    private static string ReadVersionCore(string entry)
     {
         try
         {

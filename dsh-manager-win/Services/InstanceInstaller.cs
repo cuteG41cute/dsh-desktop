@@ -130,6 +130,143 @@ public static class InstanceInstaller
         }
     }
 
+    public const string SourceRepo = "https://github.com/deepseek-ai/deepseek-harness.git";
+    public const string PnpmVersion = "11.28.5";
+
+    /// <summary>源码实例的入口（repo 里的 CLI，用 tsx 直接跑 TS）。</summary>
+    public static string SourceEntry(string dir) =>
+        Path.Combine(dir, "app", "apps", "cli", "src", "bin.ts");
+
+    /// <summary>
+    /// 从官方仓库克隆一份**全新**实例：git clone → 装 pnpm 到实例目录 → pnpm install → pnpm run build。
+    /// 全程只用实例目录里的 portable Node，不碰系统的 npm/pnpm 全局状态。
+    /// </summary>
+    public static async Task<(bool Ok, string Message)> InstallSourceAsync(
+        string dir, string nodeVersion, Action<string> log, int port)
+    {
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var (nok, nmsg) = await VersionCatalog.InstallPortableNodeAsync(dir, nodeVersion, log);
+            if (!nok) return (false, nmsg);
+            var node = Path.Combine(dir, "node", "node.exe");
+            var npm = Path.Combine(dir, "node", "npm.cmd");
+            if (!File.Exists(node)) return (false, "实例里没有 node.exe（请选择具体 Node 版本，源码实例必须自带 Node）");
+
+            var app = Path.Combine(dir, "app");
+            if (!Directory.Exists(Path.Combine(app, ".git")))
+            {
+                if (Directory.Exists(app)) Directory.Delete(app, true);
+                log("克隆官方仓库：" + SourceRepo);
+                var (cok, cmsg) = await RunAsync("git", new[]
+                {
+                    "clone", "--depth", "1", SourceRepo, app,
+                }, dir, log, TimeSpan.FromMinutes(30));
+                if (!cok) return (false, "git clone 失败：" + cmsg);
+            }
+            else log("仓库已存在，跳过 clone：" + app);
+
+            var tools = Path.Combine(dir, "tools");
+            var pnpmCjs = Path.Combine(tools, "node_modules", "pnpm", "bin", "pnpm.cjs");
+            if (!File.Exists(pnpmCjs))
+            {
+                log("在实例目录里装 pnpm " + PnpmVersion + "（不装全局）…");
+                var (pok, pmsg) = await RunAsync(npm, new[]
+                {
+                    "install", "pnpm@" + PnpmVersion, "--prefix", tools,
+                    "--no-audit", "--no-fund", "--loglevel=error",
+                }, dir, log, TimeSpan.FromMinutes(20), node);
+                if (!pok) return (false, "pnpm 安装失败：" + pmsg);
+            }
+            if (!File.Exists(pnpmCjs)) return (false, "pnpm 没装上：" + pnpmCjs);
+
+            var store = Path.Combine(dir, "pnpm-store");
+            log("pnpm install（store 也在实例目录里）…");
+            var (iok, imsg) = await RunAsync(node, new[]
+            {
+                pnpmCjs, "install", "--config.store-dir=" + store,
+            }, app, log, TimeSpan.FromMinutes(60), node);
+            if (!iok) return (false, "pnpm install 失败：" + imsg);
+
+            log("pnpm run build（这一步最慢，可能要十几分钟）…");
+            var (bok, bmsg) = await RunAsync(node, new[]
+            {
+                pnpmCjs, "run", "build",
+            }, app, log, TimeSpan.FromMinutes(90), node);
+            if (!bok) return (false, "构建失败：" + bmsg);
+
+            var entry = SourceEntry(dir);
+            if (!File.Exists(entry)) return (false, "构建完成但找不到 CLI 入口：" + entry);
+            log("完成：" + entry);
+
+            var ver = ReadVersion(Path.Combine(app, "package.json"));
+            InstanceRegistry.Add(new RegistryEntry
+            {
+                Id = "own@" + DshDiscovery.StableHash(dir),
+                Label = new DirectoryInfo(dir).Name,
+                Dir = dir,
+                Port = port,
+                DshVersion = ver,
+                NodeVersion = nodeVersion ?? "",
+                CreatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+            });
+            SeedIsolatedHome(dir, log);
+            return (true, "已创建源码实例 " + new DirectoryInfo(dir).Name + "（仓库版本 " + ver + "）");
+        }
+        catch (Exception ex)
+        {
+            return (false, "源码实例安装失败：" + ex.Message);
+        }
+    }
+
+    /// <summary>跑一个子进程，把输出逐行喂给 log。nodeDir 非空时前置到 PATH（用实例自带 node）。</summary>
+    private static async Task<(bool Ok, string Message)> RunAsync(
+        string exe, string[] args, string workDir, Action<string> log,
+        TimeSpan timeout, string nodeDir = null)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(exe)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = new System.Text.UTF8Encoding(false),
+                StandardErrorEncoding = new System.Text.UTF8Encoding(false),
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = workDir,
+            };
+            foreach (var a in args) psi.ArgumentList.Add(a);
+            if (!string.IsNullOrEmpty(nodeDir))
+            {
+                psi.Environment["PATH"] = Path.GetDirectoryName(nodeDir) + ";" + Path.GetDirectoryName(exe)
+                                          + ";" + (Environment.GetEnvironmentVariable("PATH") ?? "");
+                psi.Environment["COREPACK_ENABLE_STRICT"] = "0";
+                psi.Environment["PNPM_HOME"] = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(nodeDir)) ?? "", "tools");
+            }
+            var tail = new StringBuilder();
+            var proc = new Process { StartInfo = psi };
+            proc.OutputDataReceived += (_, e) => { if (e.Data != null) { log(e.Data); lock (tail) { tail.AppendLine(e.Data); } } };
+            proc.ErrorDataReceived += (_, e) => { if (e.Data != null) { log(e.Data); lock (tail) { tail.AppendLine(e.Data); } } };
+            if (!proc.Start()) return (false, "进程没起来：" + exe);
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+            using var cts = new System.Threading.CancellationTokenSource(timeout);
+            try { await proc.WaitForExitAsync(cts.Token); }
+            catch (OperationCanceledException)
+            {
+                try { proc.Kill(true); } catch { }
+                return (false, "超时（" + (int)timeout.TotalMinutes + " 分钟）");
+            }
+            if (proc.ExitCode != 0) return (false, "退出码 " + proc.ExitCode + "：" + LastLines(tail.ToString(), 3));
+            return (true, "ok");
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
     /// <summary>
     /// 给新实例建**全新的** DSH_HOME：只创建空目录，不从全局家目录搬任何东西。
     /// 新实例 = 干净环境：没有别人的工作区/会话/插件/设置，

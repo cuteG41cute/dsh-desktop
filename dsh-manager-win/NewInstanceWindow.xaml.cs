@@ -153,9 +153,29 @@ public partial class NewInstanceWindow : Window
         AppendLog("=== 开始安装 ===");
 
         var nodeVer = (NodeVersionBox.Text ?? "").Trim();
-        var (ok, msg) = await InstanceInstaller.InstallAsync(
-            dir, DshVersionBox.Text ?? "latest", AppendLog, port,
-            string.IsNullOrWhiteSpace(nodeVer) ? VersionCatalog.SystemNode : nodeVer);
+        var wantSource = InstallKindBox != null && InstallKindBox.SelectedIndex == 1;
+        bool ok; string msg;
+        if (wantSource)
+        {
+            // 源码实例：必须自带 portable Node（engines >= 24.9，且 pnpm 要用它跑）
+            if (string.IsNullOrWhiteSpace(nodeVer) || nodeVer == VersionCatalog.SystemNode)
+            {
+                _busy = false; CreateBtn.IsEnabled = true; CancelBtn.IsEnabled = true;
+                StatusText.Text = "源码实例需要指定 Node 版本（不能用“system”）";
+                AppendLog("✘ 源码实例需要自带 Node，请在上面的 Node 版本里选一个具体版本（例如 latest）");
+                return;
+            }
+            StatusText.Text = "正在克隆官方仓库并构建…（这一步很慢）";
+            var r = await InstanceInstaller.InstallSourceAsync(dir, nodeVer, AppendLog, port);
+            ok = r.Ok; msg = r.Message;
+        }
+        else
+        {
+            var r = await InstanceInstaller.InstallAsync(
+                dir, DshVersionBox.Text ?? "latest", AppendLog, port,
+                string.IsNullOrWhiteSpace(nodeVer) ? VersionCatalog.SystemNode : nodeVer);
+            ok = r.Ok; msg = r.Message;
+        }
         _busy = false;
         CreateBtn.IsEnabled = true;
         CancelBtn.IsEnabled = true;
@@ -167,6 +187,13 @@ public partial class NewInstanceWindow : Window
             Created?.Invoke(dir);
             Close();
         }
+    }
+
+    private void OnInstallKindChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SourceHint == null) return;
+        SourceHint.Visibility = (InstallKindBox != null && InstallKindBox.SelectedIndex == 1)
+            ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnClose(object sender, RoutedEventArgs e)
