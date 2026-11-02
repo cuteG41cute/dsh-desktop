@@ -374,7 +374,10 @@ public partial class MainWindow : Window
         PidValue.Text = "—";
         RunState.Text = "未安装";
         RunState.Foreground = (Brush)FindResource("Muted");
+        if (SvcState != null) { SvcState.Text = "未安装"; SvcState.Foreground = (Brush)FindResource("Muted"); }
+        if (SvcDot != null) SvcDot.Background = (Brush)FindResource("Subtle");
         StatusBadgeText.Text = "未安装";
+        if (StatusBadgeDot != null) StatusBadgeDot.Background = (Brush)FindResource("Subtle");
         StatusBadge.Background = (Brush)FindResource("AccentSoft");
         StatusBadgeText.Foreground = (Brush)FindResource("Muted");
         LogBody.Children.Clear();
@@ -560,7 +563,17 @@ public partial class MainWindow : Window
         PidValue.Text = inst.Pid > 0 ? inst.Pid.ToString() : "—";
         RunState.Text = inst.Running ? "运行中" : "未运行";
         RunState.Foreground = (Brush)FindResource(inst.Running ? "Success" : "Muted");
+        // 右上角那颗「服务正常」也要跟着实例真实状态走（未运行时不能还显示绿色正常）
+        if (SvcState != null)
+        {
+            SvcState.Text = inst.Running ? "服务正常" : "未运行";
+            SvcState.Foreground = (Brush)FindResource(inst.Running ? "Success" : "Muted");
+        }
+        if (SvcDot != null)
+            SvcDot.Background = (Brush)FindResource(inst.Running ? "Success" : "Subtle");
         StatusBadgeText.Text = inst.Running ? "运行中" : "未运行";
+        if (StatusBadgeDot != null)
+            StatusBadgeDot.Background = (Brush)FindResource(inst.Running ? "Success" : "Subtle");
         StatusBadge.Background = (Brush)FindResource(inst.Running ? "SuccessSoft" : "AccentSoft");
         StatusBadgeText.Foreground = (Brush)FindResource(inst.Running ? "Success" : "Muted");
     }

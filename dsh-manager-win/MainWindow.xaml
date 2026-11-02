@@ -298,7 +298,7 @@
                                                 CornerRadius="12" Padding="9,4" Margin="12,0,0,0"
                                                 VerticalAlignment="Center">
                                             <StackPanel Orientation="Horizontal">
-                                                <Border Width="5" Height="5" CornerRadius="3"
+                                                <Border x:Name="StatusBadgeDot" Width="5" Height="5" CornerRadius="3"
                                                         Background="{DynamicResource Success}" VerticalAlignment="Center" />
                                                 <TextBlock x:Name="StatusBadgeText" Text="运行中" FontSize="9"
                                                            FontWeight="SemiBold" Margin="5,0,0,0"
@@ -424,9 +424,9 @@
                                             <TextBlock Text="快捷控制" FontSize="11" FontWeight="SemiBold"
                                                        Foreground="{DynamicResource Text}" />
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                                <Border Width="5" Height="5" CornerRadius="3"
+                                                <Border x:Name="SvcDot" Width="5" Height="5" CornerRadius="3"
                                                         Background="{DynamicResource Success}" VerticalAlignment="Center" />
-                                                <TextBlock Text="服务正常" FontSize="8.5" Margin="5,0,0,0"
+                                                <TextBlock x:Name="SvcState" Text="服务正常" FontSize="8.5" Margin="5,0,0,0"
                                                            Foreground="{DynamicResource Success}" />
                                             </StackPanel>
                                         </DockPanel>

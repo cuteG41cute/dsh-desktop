@@ -74,8 +74,19 @@ public partial class NewInstanceWindow : Window
 
     private void AppendLog(string line)
     {
-        LogText.Text += line + Environment.NewLine;
-        LogScroll.ScrollToEnd();
+        // npm 的输出是在**后台线程**（DataReceived）里回调进来的，直接摸 WPF 控件会抛
+        // "The calling thread cannot access this object" —— 之前就是这么崩的。
+        if (!Dispatcher.CheckAccess())
+        {
+            try { Dispatcher.BeginInvoke(new Action(() => AppendLog(line))); } catch { }
+            return;
+        }
+        try
+        {
+            LogText.Text += (line ?? "") + Environment.NewLine;
+            LogScroll.ScrollToEnd();
+        }
+        catch { }
     }
 
     private void OnBrowse(object sender, RoutedEventArgs e)
