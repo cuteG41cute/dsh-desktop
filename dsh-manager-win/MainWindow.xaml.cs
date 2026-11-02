@@ -714,7 +714,8 @@ public partial class MainWindow : Window
 
     private void RefreshLogs(DshInstance inst)
     {
-        var text = DshHost.Tail(inst, AppSettings.LogLines);
+        // 「最近日志」只显示最新 15 条（完整日志走「查看完整日志 →」）
+        var text = DshHost.Tail(inst, 15);
         LogBody.Children.Clear();
         if (string.IsNullOrWhiteSpace(text))
         {
