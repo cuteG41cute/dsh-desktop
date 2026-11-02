@@ -1138,33 +1138,51 @@ public partial class MainWindow : Window
 
     private async System.Threading.Tasks.Task CheckUpdateAsync()
     {
-        if (_current == null) { Toast("先选一个实例"); return; }
-        Toast("正在查询 npm 上的最新版本…");
-        var latest = await VersionCatalog.LatestDshAsync();
-        Diag("check-update cur=" + _current.DshVersion + " latest=" + latest);
-
-        if (InstanceActions.IsManaged(_current))
+        if (_current == null) { MessageBox.Show(this, "先选一个实例", "检查更新"); return; }
+        try
         {
-            // 管理器自己创建的实例：直接升级（npm install @deepseek-ai/dsh@latest）
-            var (ok, msg) = await InstanceActions.UpdateAsync(_current, l => Diag(l));
-            if (ok) { ReloadInstances(); if (Quick3Sub != null) Quick3Sub.Text = "已更新到 dsh " + (latest ?? ""); }
-            Toast(msg);
-            return;
-        }
+            Toast("正在查询 npm 上的最新版本…");
+            var latest = await VersionCatalog.LatestDshAsync();
+            var latestNode = await VersionCatalog.LatestNodeAsync();
+            Diag("check-update cur=" + _current.DshVersion + " latest=" + latest);
+            var cur = _current.DshVersion ?? "?";
 
-        // 系统安装（npx / pi-node / 全局）：只报告，不动用户的 npm 环境
-        var cur = _current.DshVersion ?? "?";
-        if (string.IsNullOrEmpty(latest))
-        {
-            Toast("查不到最新版本（网络或 npm 不可用）");
-            return;
+            if (InstanceActions.IsManaged(_current))
+            {
+                var (ok, msg) = await InstanceActions.UpdateAsync(_current, l => Diag(l));
+                if (ok) { ReloadInstances(); if (Quick3Sub != null) Quick3Sub.Text = "已更新到 dsh " + (latest ?? ""); }
+                Toast(msg);
+                MessageBox.Show(this, msg, "检查更新");
+                return;
+            }
+
+            if (string.IsNullOrEmpty(latest))
+            {
+                MessageBox.Show(this, "查不到最新版本（网络或 npm 不可用）", "检查更新");
+                return;
+            }
+            var same = string.Equals(cur.Trim(), latest.Trim(), StringComparison.OrdinalIgnoreCase);
+            var curNode = _current.NodeVersion ?? "?";
+            var nodeSame = !string.IsNullOrEmpty(latestNode) &&
+                           string.Equals(curNode.Trim(), latestNode.Trim(), StringComparison.OrdinalIgnoreCase);
+            var text = "dsh ：" + (same ? "已是最新（" + cur + "）"
+                                        : "有新版本 " + latest + "（当前 " + cur + "）")
+                     + "\nNode：" + (string.IsNullOrEmpty(latestNode) ? "查不到最新版"
+                                        : (nodeSame ? "已是最新（" + curNode + "）"
+                                                    : "有新版本 " + latestNode + "（当前 " + curNode + "）"));
+            if (!same || (!nodeSame && !string.IsNullOrEmpty(latestNode)))
+                text += "\n\n这是系统安装（" + _current.Source + "），管理器不替你改。请在命令行执行："
+                        + (same ? "" : "\nnpm install -g @deepseek-ai/dsh@latest")
+                        + (nodeSame || string.IsNullOrEmpty(latestNode) ? "" : "\n（Node 请装新版安装包或 nvm-windows 切换）");
+            if (Quick3Sub != null) Quick3Sub.Text = same ? "当前已是最新版本" : "可更新到 dsh " + latest;
+            Toast(text);
+            MessageBox.Show(this, text, "检查更新");
         }
-        var same = string.Equals(cur.Trim(), latest.Trim(), StringComparison.OrdinalIgnoreCase);
-        var text = same
-            ? "已是最新（dsh " + cur + "）"
-            : "有新版本：dsh " + latest + "（当前 " + cur + "）· 系统安装请执行 npm i -g @deepseek-ai/dsh@latest";
-        if (Quick3Sub != null) Quick3Sub.Text = same ? "当前已是最新版本" : "可更新到 dsh " + latest;
-        Toast(text);
+        catch (Exception ex)
+        {
+            Diag("check-update failed: " + ex);
+            MessageBox.Show(this, "检查更新失败：" + ex.Message, "检查更新");
+        }
     }
 
     private async System.Threading.Tasks.Task RepairAsync()

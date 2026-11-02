@@ -47,10 +47,21 @@ public partial class App : Application
             {
                 var other = System.Diagnostics.Process.GetProcessesByName("DshManager")
                     .FirstOrDefault(p => p.Id != System.Diagnostics.Process.GetCurrentProcess().Id);
-                if (other != null && other.MainWindowHandle != IntPtr.Zero)
+                if (other != null)
                 {
-                    SetForegroundWindow(other.MainWindowHandle);
-                    ShowWindow(other.MainWindowHandle, 9);
+                    // 已经有管理器在跑：把它的窗口弄出来。
+                    // 点过 X 收进托盘时窗口是**隐藏**的，MainWindowHandle 会返回 0，
+                    // 只看它就会「什么都没发生」——用户看到的就是「程序启动不了」。
+                    var hwnd = other.MainWindowHandle;
+                    if (hwnd == IntPtr.Zero) hwnd = FindManagerWindow(other.Id);
+                    if (hwnd != IntPtr.Zero)
+                    {
+                        ShowWindow(hwnd, 9);          // SW_RESTORE
+                        ShowWindow(hwnd, 5);          // SW_SHOW（托盘隐藏后必须显式显示）
+                        SetForegroundWindow(hwnd);
+                        SetWindowPos(hwnd, new IntPtr(-1), 0, 0, 0, 0, 0x0003); // 顶一下
+                        SetWindowPos(hwnd, new IntPtr(-2), 0, 0, 0, 0, 0x0003); // 再取消置顶
+                    }
                 }
                 Shutdown();
                 return;
@@ -344,13 +355,85 @@ public partial class App : Application
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int n);
 
+    // ---------------------------------------------------------------- 找已运行实例的窗口
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int GetWindowTextW(IntPtr hWnd, System.Text.StringBuilder text, int max);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int GetClassNameW(IntPtr hWnd, System.Text.StringBuilder text, int max);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
+    /// <summary>
+    /// 在指定进程的所有顶层窗口里找管理器主窗口（托盘隐藏时也能找到）：
+    /// 优先标题里带「管理器」的，其次任意有标题的 DshManager 窗口。
+    /// </summary>
+    private static IntPtr FindManagerWindow(int pid)
+    {
+        IntPtr fallback = IntPtr.Zero;
+        EnumWindows((h, _) =>
+        {
+            uint owner;
+            GetWindowThreadProcessId(h, out owner);
+            if (owner != (uint)pid) return true;
+            var cls = new System.Text.StringBuilder(256);
+            GetClassNameW(h, cls, 256);
+            if (cls.ToString().IndexOf("DshManager", StringComparison.OrdinalIgnoreCase) < 0) return true;
+            var text = new System.Text.StringBuilder(512);
+            GetWindowTextW(h, text, 512);
+            var title = text.ToString();
+            if (title.Contains("管理器"))
+            {
+                fallback = h;
+                return false;            // 找到主窗口，停
+            }
+            if (fallback == IntPtr.Zero && !string.IsNullOrWhiteSpace(title)) fallback = h;
+            return true;
+        }, IntPtr.Zero);
+        return fallback;
+    }
+
+    /// <summary>
+    /// 托盘图标：优先取 exe 里嵌入的应用图标（128/256 那档缩到 32 才清楚）。
+    /// 取不到就退回系统默认图标，绝不因为图标缺失而起不来。
+    /// </summary>
+    private static System.Drawing.Icon TrayIconOf()
+    {
+        try
+        {
+            var exe = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+            if (!string.IsNullOrEmpty(exe))
+            {
+                var small = System.Drawing.Icon.ExtractAssociatedIcon(exe);
+                if (small != null)
+                {
+                    var bmp = small.ToBitmap();
+                    var scaled = new System.Drawing.Bitmap(bmp, 32, 32);
+                    return System.Drawing.Icon.FromHandle(scaled.GetHicon());
+                }
+            }
+        }
+        catch { }
+        return System.Drawing.SystemIcons.Application;
+    }
+
     private void CreateTray()
     {
         try
         {
             _tray = new System.Windows.Forms.NotifyIcon
             {
-                Icon = System.Drawing.SystemIcons.Application,
+                // 托盘图标用 exe 自己的图标（黑鲸鱼），别用系统的默认程序图标
+            Icon = TrayIconOf(),
                 Text = "DeepSeek Harness 管理器",
                 Visible = true,
             };

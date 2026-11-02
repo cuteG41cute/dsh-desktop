@@ -38,11 +38,15 @@ public static class VersionCatalog
         {
             var npm = InstanceInstaller.FindNpm();
             if (string.IsNullOrEmpty(npm)) return FallbackDsh.ToList();
-            var psi = new ProcessStartInfo(npm)
+            // npm 在 Windows 上是 npm.cmd（批处理），CreateProcess 不能直接起它，
+            // 必须经 cmd.exe /c —— 否则会抛 Win32Exception，异步任务里就成了「点了没反应」。
+            var psi = new ProcessStartInfo("cmd.exe")
             {
                 RedirectStandardOutput = true, RedirectStandardError = true,
                 UseShellExecute = false, CreateNoWindow = true,
             };
+            psi.ArgumentList.Add("/c");
+            psi.ArgumentList.Add(npm);
             psi.ArgumentList.Add("view");
             psi.ArgumentList.Add("@deepseek-ai/dsh");
             psi.ArgumentList.Add("versions");
@@ -165,7 +169,8 @@ public static class VersionCatalog
         }
     }
 
-    private static async Task<string> LatestNodeAsync()
+    /// <summary>nodejs.org 上最新的 Windows x64 Node 版本号（查不到返回空串）。</summary>
+    public static async Task<string> LatestNodeAsync()
     {
         try
         {
