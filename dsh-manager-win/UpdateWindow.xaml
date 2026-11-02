@@ -2,23 +2,25 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="更新 dsh" Width="520" Height="540"
+        Title="更新 dsh" Width="520" Height="470"
         WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="False"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
-        Background="{DynamicResource App}" FontFamily="{StaticResource UiFont}">
+        Background="{DynamicResource CardSolid}" FontFamily="{StaticResource UiFont}">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="0"
                             GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
 
-    <Border Background="{DynamicResource App}" BorderBrush="{DynamicResource Border}" BorderThickness="1"
+    <Border Background="{DynamicResource CardSolid}" BorderBrush="{DynamicResource Border}" BorderThickness="1"
             CornerRadius="{DynamicResource AppRadius}">
         <Grid Margin="20,16,20,16">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
@@ -32,69 +34,41 @@
                 </Button>
             </Grid>
 
-            <TextBlock x:Name="SubtitleText" Grid.Row="1" Margin="0,8,0,12" FontSize="10"
+            <TextBlock x:Name="SubtitleText" Grid.Row="1" Margin="0,8,0,16" FontSize="10"
                        TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
 
-            <!-- 版本列表 -->
-            <Border Grid.Row="2" CornerRadius="12" Background="{DynamicResource CardSolid}"
-                    BorderBrush="{DynamicResource InnerBorder}" BorderThickness="1">
-                <ListBox x:Name="VersionList" Background="Transparent" BorderThickness="0"
-                         Margin="6" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
-                            <Setter Property="Padding" Value="10,7" />
-                            <Setter Property="Margin" Value="0,1" />
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="ListBoxItem">
-                                        <Border x:Name="bd" CornerRadius="8" Background="Transparent" Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter />
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="bd" Property="Background" Value="{DynamicResource AccentSoft}" />
-                                            </Trigger>
-                                            <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="bd" Property="Background" Value="{DynamicResource AccentSoft}" />
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </ListBox.ItemContainerStyle>
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Grid>
-                                <TextBlock Text="{Binding Text}" FontSize="11" Foreground="{DynamicResource Text}" />
-                                <Border HorizontalAlignment="Right" Background="{DynamicResource AccentSoft}"
-                                        CornerRadius="8" Padding="7,1" Visibility="Visible">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsCurrent}" Value="False">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                    <TextBlock Text="当前" FontSize="9" Foreground="{DynamicResource Accent}" />
-                                </Border>
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </Border>
+            <!-- dsh 版本：抽屉式下拉 -->
+            <StackPanel Grid.Row="2">
+                <TextBlock Text="dsh 版本" FontSize="9" FontWeight="SemiBold" Margin="2,0,0,6"
+                           Foreground="{DynamicResource Muted}" />
+                <ComboBox x:Name="DshBox" Height="36" FontSize="11" Padding="10,0"
+                          VerticalContentAlignment="Center"
+                          Background="{DynamicResource App}" Foreground="{DynamicResource Text}"
+                          BorderBrush="{DynamicResource InnerBorder}" />
+                <TextBlock x:Name="DshHint" FontSize="9" Margin="2,6,0,0" TextWrapping="Wrap"
+                           Foreground="{DynamicResource Subtle}" />
+            </StackPanel>
 
-            <TextBlock x:Name="HintText" Grid.Row="3" Margin="2,10,2,0" FontSize="9"
+            <!-- Node 版本：抽屉式下拉 -->
+            <StackPanel Grid.Row="3" Margin="0,14,0,0">
+                <TextBlock Text="Node 版本（便携，可选）" FontSize="9" FontWeight="SemiBold" Margin="2,0,0,6"
+                           Foreground="{DynamicResource Muted}" />
+                <ComboBox x:Name="NodeBox" Height="36" FontSize="11" Padding="10,0"
+                          VerticalContentAlignment="Center"
+                          Background="{DynamicResource App}" Foreground="{DynamicResource Text}"
+                          BorderBrush="{DynamicResource InnerBorder}" />
+                <TextBlock x:Name="NodeHint" FontSize="9" Margin="2,6,0,0" TextWrapping="Wrap"
+                           Foreground="{DynamicResource Subtle}" />
+            </StackPanel>
+
+            <TextBlock x:Name="HintText" Grid.Row="4" Margin="2,14,2,0" FontSize="9"
                        TextWrapping="Wrap" Foreground="{DynamicResource Subtle}" />
 
             <!-- 底部按钮 -->
-            <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
                 <Button Content="取消" Style="{StaticResource BtnSecondary}" Height="34" Padding="18,0"
                         Click="OnClose" />
-                <Button x:Name="ApplyBtn" Content="更新到此版本" Style="{StaticResource BtnPrimary}"
+                <Button x:Name="ApplyBtn" Content="应用" Style="{StaticResource BtnPrimary}"
                         Height="34" Padding="18,0" Margin="8,0,0,0" Click="OnApply" />
             </StackPanel>
         </Grid>

@@ -1619,30 +1619,48 @@ public partial class MainWindow : Window
         try
         {
             Toast("正在获取可用版本…");
-            var versions = await VersionCatalog.DshVersionsAsync(l => Diag(l));
-            // 去掉 'latest' 这种别名，按「新→旧」展示（npm 返回的是旧→新，这里反过来）
-            var list = versions.Where(v => !string.IsNullOrWhiteSpace(v) && v != "latest").Reverse().ToList();
-            if (list.Count == 0) { Toast("没拿到版本列表（网络或 npm 不可用）"); return; }
-            Diag("可用版本 " + list.Count + " 个（" + list[0] + " … " + list[list.Count - 1] + "）");
-
-            var win = new UpdateWindow(_current, list) { Owner = this };
-            if (win.ShowDialog() != true || string.IsNullOrWhiteSpace(win.SelectedVersion))
+            var dshAll = await VersionCatalog.DshVersionsAsync(l => Diag(l));
+            // npm 返回「旧→新」，窗口里展示成「新→旧」
+            var dshList = dshAll.Where(v => !string.IsNullOrWhiteSpace(v) && v != "latest").Reverse().ToList();
+            var nodeAll = await VersionCatalog.NodeVersionsAsync(l => Diag(l));
+            var nodeList = nodeAll.Where(v => !string.IsNullOrWhiteSpace(v)
+                                              && v != VersionCatalog.SystemNode && v != "latest").ToList();
+            if (dshList.Count == 0 && nodeList.Count == 0)
             {
-                Toast("已取消");
+                Toast("没拿到版本列表（网络或 npm 不可用）");
                 return;
             }
-            var target = win.SelectedVersion;
+            Diag("可用版本 dsh=" + dshList.Count + " node=" + nodeList.Count);
+
+            var win = new UpdateWindow(_current, dshList, nodeList) { Owner = this };
+            if (win.ShowDialog() != true) { Toast("已取消"); return; }
+
             var managed = InstanceActions.IsManaged(_current);
             if (!managed)
             {
-                Toast("系统安装（" + _current.Source + "）不受管理器改动；请自行 npm i -g @deepseek-ai/dsh@" + target);
+                Toast("系统安装（" + _current.Source + "）不受管理器改动");
                 return;
             }
-            Toast("正在切换到 dsh " + target + "…");
-            var (ok, msg) = await InstanceActions.UpdateAsync(_current, l => Diag(l), target);
-            ReloadInstances();
-            if (Quick3Sub != null) Quick3Sub.Text = ok ? "当前版本 dsh " + target : Quick3Sub.Text;
-            Toast((ok ? "✔ " : "✘ ") + msg);
+
+            // 1) 先换 Node（如果有便携 Node）
+            if (!string.IsNullOrWhiteSpace(win.SelectedNode))
+            {
+                Toast("正在切换便携 Node 到 " + win.SelectedNode + "…");
+                var (nok, nmsg) = await VersionCatalog.InstallPortableNodeAsync(
+                    _current.Dir, win.SelectedNode, l => Diag(l));
+                Toast((nok ? "✔ " : "✘ ") + nmsg);
+                if (!nok) return;
+            }
+            // 2) 再换 dsh 版本
+            if (!string.IsNullOrWhiteSpace(win.SelectedDsh))
+            {
+                Toast("正在切换到 dsh " + win.SelectedDsh + "…");
+                var (ok, msg) = await InstanceActions.UpdateAsync(_current, l => Diag(l), win.SelectedDsh);
+                ReloadInstances();
+                if (Quick3Sub != null && ok) Quick3Sub.Text = "当前版本 dsh " + win.SelectedDsh;
+                Toast((ok ? "✔ " : "✘ ") + msg);
+            }
+            else Toast("已应用（未改变 dsh 版本）");
         }
         catch (Exception ex)
         {
