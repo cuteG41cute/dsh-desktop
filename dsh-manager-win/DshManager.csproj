@@ -15,9 +15,9 @@
     <!-- 图标沿用旧启动器的黑色鲸鱼（exe / 快捷方式 / 任务栏都用它） -->
     <ApplicationIcon>app.ico</ApplicationIcon>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <Version>1.0.43</Version>
-    <FileVersion>1.0.43.0</FileVersion>
-    <AssemblyVersion>1.0.43.0</AssemblyVersion>
+    <Version>1.0.44</Version>
+    <FileVersion>1.0.44.0</FileVersion>
+    <AssemblyVersion>1.0.44.0</AssemblyVersion>
     <Product>DeepSeek Harness 管理器</Product>
     <AssemblyTitle>DeepSeek Harness 管理器</AssemblyTitle>
     <Company>cuteG41cute</Company>
@@ -31,7 +31,7 @@
 
   <ItemGroup>
     <!-- 桌面窗口（DSH 会话窗口）也在这个工程里：整个 Windows 版就是一个产品、一个包 -->
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4303.40" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
   </ItemGroup>
 
 </Project>

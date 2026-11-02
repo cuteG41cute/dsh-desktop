@@ -460,6 +460,19 @@ public partial class MainWindow : Window
         FooterPath.Text = "实例根目录 · " + RootDir;
         ApplyResponsive();
         // 调试用：直接打开「更新 dsh」窗口（方便截图验收）
+        if (Environment.GetCommandLineArgs().Any(a => a == "--shot-token"))
+        {
+            var tk = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+            var tn = 0;
+            tk.Tick += (_, _) =>
+            {
+                if (++tn > 30) { tk.Stop(); return; }
+                if (_current == null) return;
+                tk.Stop();
+                OnShowToken();
+            };
+            tk.Start();
+        }
         if (Environment.GetCommandLineArgs().Any(a => a == "--shot-update"))
         {
             // 等实例扫描完成（_current 有值）再打开，否则会直接提示"先选一个实例"
@@ -1529,68 +1542,10 @@ public partial class MainWindow : Window
         ShowTextWindow("查看 Token · " + _current.Label, text);
     }
 
-    /// <summary>一个只读但可选中、可复制的文本框窗口。</summary>
+    /// <summary>打开「查看 Token」窗口（外观与主题跟随主窗口）。</summary>
     private void ShowTextWindow(string title, string text)
     {
-        var win = new Window
-        {
-            Title = title,
-            Owner = this,
-            Width = 720,
-            Height = 460,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = (Brush)FindResource("App"),
-            ResizeMode = ResizeMode.CanResize,
-        };
-        var root = new Grid { Margin = new Thickness(16) };
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var box = new TextBox
-        {
-            Text = text,
-            IsReadOnly = true,
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.NoWrap,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            FontFamily = new FontFamily("Consolas, Microsoft YaHei UI"),
-            FontSize = 12,
-            Padding = new Thickness(10),
-            Background = (Brush)FindResource("CardSolid"),
-            Foreground = (Brush)FindResource("Text"),
-            BorderBrush = (Brush)FindResource("InnerBorder"),
-            BorderThickness = new Thickness(1),
-        };
-        Grid.SetRow(box, 0);
-        root.Children.Add(box);
-        var bar = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 12, 0, 0),
-        };
-        Button Make(string label, bool primary, RoutedEventHandler onClick)
-        {
-            var b = new Button
-            {
-                Content = label,
-                Height = 32,
-                Padding = new Thickness(16, 0, 16, 0),
-                Margin = new Thickness(8, 0, 0, 0),
-                Style = (Style)FindResource(primary ? "BtnPrimary" : "BtnSecondary"),
-            };
-            b.Click += onClick;
-            return b;
-        }
-        bar.Children.Add(Make("复制全部", false, (_, _) =>
-        {
-            try { Clipboard.SetText(box.Text); Toast("已复制到剪贴板"); } catch { }
-        }));
-        bar.Children.Add(Make("全选", false, (_, _) => { box.Focus(); box.SelectAll(); }));
-        bar.Children.Add(Make("关闭", true, (_, _) => win.Close()));
-        Grid.SetRow(bar, 1);
-        root.Children.Add(bar);
-        win.Content = root;
+        var win = new TokenWindow(title, text) { Owner = this };
         win.Show();
     }
 
