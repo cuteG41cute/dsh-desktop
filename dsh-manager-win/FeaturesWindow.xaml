@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="窗口功能" Width="680" Height="560"
+        Title="窗口功能" Width="680" Height="360"
         WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="False"
         WindowStartupLocation="CenterScreen" ShowInTaskbar="False"
         Background="{DynamicResource CardSolid}" FontFamily="{StaticResource UiFont}">
@@ -18,7 +18,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
@@ -68,17 +68,7 @@
                 </Border>
             </StackPanel>
 
-            <!-- 说明（固定能力） -->
-            <Border Grid.Row="3" Margin="0,12,0,0" CornerRadius="12" Background="{DynamicResource App}"
-                    BorderBrush="{DynamicResource InnerBorder}" BorderThickness="1" Padding="2">
-                <TextBox x:Name="BodyText" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         Background="Transparent" BorderThickness="0" Padding="10"
-                         FontFamily="Consolas, Microsoft YaHei UI" FontSize="11"
-                         Foreground="{DynamicResource Text}" />
-            </Border>
-
-            <Grid Grid.Row="4" Margin="0,14,0,0">
+            <Grid Grid.Row="3" Margin="0,14,0,0">
                 <TextBlock x:Name="StatusText" FontSize="9" VerticalAlignment="Center"
                            Foreground="{DynamicResource Subtle}" />
                 <Button Content="关闭" Style="{StaticResource BtnPrimary}" Height="34" Padding="18,0"

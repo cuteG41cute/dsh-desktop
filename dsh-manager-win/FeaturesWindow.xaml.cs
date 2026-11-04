@@ -19,21 +19,6 @@ namespace DshManager
             PanCheck.IsChecked = Services.AppSettings.WebPan;
             DragOutCheck.IsChecked = Services.AppSettings.WebDragOut;
             _loading = false;
-            BodyText.Text = string.Join(Environment.NewLine, new[]
-            {
-                "【官方能力（不受开关影响）】",
-                "  Ctrl + 滚轮        图片 / PDF 缩放（以光标为锚点，会带出右上角缩放工具栏）",
-                "  右键               保存到… / 复制文件路径 / 在资源管理器中显示 / 复制图片",
-                "  普通滚轮           上下滚动",
-                "",
-                "【窗口本身】",
-                "  打开窗口 / 重载 / 重建   仪表盘右上角与「快捷控制」里",
-                "  查看 Token          访问地址 / 启动 token / 认证 cookie（可复制、可重新获取）",
-                "",
-                "【排障】",
-                "  最近日志            仪表盘日志卡片（最新 15 条），或「查看完整日志 →」",
-                "  Ctrl+Shift+Alt+D    把右栏预览的 DOM 结构写进 web.log（诊断用）",
-            });
             Loaded += (_, _) => ApplyWindowRegion();
             SizeChanged += (_, _) => ApplyWindowRegion();
         }
