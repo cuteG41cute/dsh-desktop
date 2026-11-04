@@ -1,0 +1,89 @@
+﻿<Window x:Class="DshManager.FeaturesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="窗口功能" Width="680" Height="560"
+        WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="False"
+        WindowStartupLocation="CenterScreen" ShowInTaskbar="False"
+        Background="{DynamicResource CardSolid}" FontFamily="{StaticResource UiFont}">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="0"
+                            CornerRadius="0" UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+    <Border Background="{DynamicResource CardSolid}" BorderBrush="{DynamicResource Border}" BorderThickness="1"
+            CornerRadius="{DynamicResource AppRadius}">
+        <Grid Margin="20,16,20,16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" MouseLeftButtonDown="OnDrag">
+                <TextBlock Text="窗口功能" FontSize="15" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Text}" VerticalAlignment="Center" />
+                <Button HorizontalAlignment="Right" Width="28" Height="28" Cursor="Hand"
+                        Background="Transparent" BorderThickness="0" Click="OnClose">
+                    <TextBlock Text="✕" FontSize="13" Foreground="{DynamicResource Muted}" />
+                </Button>
+            </Grid>
+
+            <TextBlock Grid.Row="1" Margin="0,8,0,14" FontSize="9" TextWrapping="Wrap"
+                       Foreground="{DynamicResource Muted}"
+                       Text="下面是内置会话窗口（WebView2）的增强能力。开关只影响「管理器补的部分」；缩放、右键菜单等官方能力不受影响。" />
+
+            <!-- 可开关项 -->
+            <StackPanel Grid.Row="2">
+                <Border Background="{DynamicResource CardSolid}" BorderBrush="{DynamicResource InnerBorder}"
+                        BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,8">
+                    <Grid MouseLeftButtonUp="OnTogglePan">
+                        <StackPanel>
+                            <TextBlock Text="放大后拖动平移" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Text}" />
+                            <TextBlock Text="图片 / PDF 放大后，按住左键拖动就能看四周（官方只提供缩放，没有拖动）。"
+                                       FontSize="9" Margin="0,4,0,0" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                        <CheckBox x:Name="PanCheck" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                  IsChecked="True" Click="OnPanToggled" />
+                    </Grid>
+                </Border>
+
+                <Border Background="{DynamicResource CardSolid}" BorderBrush="{DynamicResource InnerBorder}"
+                        BorderThickness="1" CornerRadius="10" Padding="12,10">
+                    <Grid MouseLeftButtonUp="OnToggleDragOut">
+                        <StackPanel>
+                            <TextBlock Text="文件 / 目录拖出到系统" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Text}" />
+                            <TextBlock Text="右栏文件树里的文件或文件夹，拖到桌面=保存、拖到资源管理器=复制、拖到输入框=路径文本。"
+                                       FontSize="9" Margin="0,4,0,0" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                        <CheckBox x:Name="DragOutCheck" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                  IsChecked="True" Click="OnDragOutToggled" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <!-- 说明（固定能力） -->
+            <Border Grid.Row="3" Margin="0,12,0,0" CornerRadius="12" Background="{DynamicResource App}"
+                    BorderBrush="{DynamicResource InnerBorder}" BorderThickness="1" Padding="2">
+                <TextBox x:Name="BodyText" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                         Background="Transparent" BorderThickness="0" Padding="10"
+                         FontFamily="Consolas, Microsoft YaHei UI" FontSize="11"
+                         Foreground="{DynamicResource Text}" />
+            </Border>
+
+            <Grid Grid.Row="4" Margin="0,14,0,0">
+                <TextBlock x:Name="StatusText" FontSize="9" VerticalAlignment="Center"
+                           Foreground="{DynamicResource Subtle}" />
+                <Button Content="关闭" Style="{StaticResource BtnPrimary}" Height="34" Padding="18,0"
+                        HorizontalAlignment="Right" Click="OnClose" />
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

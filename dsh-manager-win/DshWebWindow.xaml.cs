@@ -21,6 +21,20 @@ namespace DshManager;
 /// </summary>
 public partial class DshWebWindow : Window
 {
+
+    /// <summary>当前打开着的会话窗口（改「窗口功能」开关后统一重载）。</summary>
+    public static readonly List<DshWebWindow> Live = new List<DshWebWindow>();
+
+    public static void ReloadAll()
+    {
+        DshWebWindow[] all;
+        lock (Live) all = Live.ToArray();
+        foreach (var w in all)
+        {
+            try { w.ReloadPage(); } catch { }
+        }
+    }
+
     private readonly DshInstance _inst;
     private bool _ready;
     private string _baseUrl;
@@ -35,8 +49,10 @@ public partial class DshWebWindow : Window
         _inst = inst;
         Title = "DeepSeek Harness · " + inst.Label;
         StateChanged += (_, _) => UpdateMaxGlyph();
+        lock (Live) Live.Add(this);
         Closed += (_, _) =>
         {
+            lock (Live) Live.Remove(this);
             lock (Open) Open.Remove(inst.Port);
             ThemeService.ThemeChanged -= ApplyThemeToWeb;
         };
@@ -246,10 +262,13 @@ public partial class DshWebWindow : Window
         if (_ready && Web.CoreWebView2.CanGoBack) Web.CoreWebView2.GoBack();
     }
 
-    private void OnReload(object sender, RoutedEventArgs e)
+    /// <summary>页面重载（改「窗口功能」开关后用它让注入脚本重新生效）。</summary>
+    public void ReloadPage()
     {
         if (_ready) Web.CoreWebView2.Reload();
     }
+
+    private void OnReload(object sender, RoutedEventArgs e) => ReloadPage();
 
     private void OnOpenExternal(object sender, RoutedEventArgs e)
     {

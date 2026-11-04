@@ -33,14 +33,14 @@ namespace DshManager
                     }
                 }
                 // 文件行拖出到系统（右侧文件树里的「文件」行）
-                var dragScript = LoadPreviewScript("file-dragout.js");
+                var dragScript = Services.AppSettings.WebDragOut ? LoadPreviewScript("file-dragout.js") : null;
                 if (!string.IsNullOrEmpty(dragScript))
                 {
                     _ = core.AddScriptToExecuteOnDocumentCreatedAsync(dragScript);
                     Diag("file-dragout injected (" + dragScript.Length + " chars)");
                 }
                 // 拖动平移（只补官方缺的那一半：官方 Ctrl+滚轮能缩放，但没有拖动）
-                var panScript = LoadPreviewScript("image-pan.js");
+                var panScript = Services.AppSettings.WebPan ? LoadPreviewScript("image-pan.js") : null;
                 if (!string.IsNullOrEmpty(panScript))
                 {
                     _ = core.AddScriptToExecuteOnDocumentCreatedAsync(panScript);
