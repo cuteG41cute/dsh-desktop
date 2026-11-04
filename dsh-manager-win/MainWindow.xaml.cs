@@ -496,6 +496,19 @@ public partial class MainWindow : Window
         FooterPath.Text = "实例根目录 · " + RootDir;
         ApplyResponsive();
         // 调试用：直接打开「更新 dsh」窗口（方便截图验收）
+        if (Environment.GetCommandLineArgs().Any(a => a == "--shot-window"))
+        {
+            var tw = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+            var tn2 = 0;
+            tw.Tick += (_, _) =>
+            {
+                if (++tn2 > 30) { tw.Stop(); return; }
+                if (_current == null) return;
+                tw.Stop();
+                OnOpenWindow(this, new RoutedEventArgs());
+            };
+            tw.Start();
+        }
         if (Environment.GetCommandLineArgs().Any(a => a == "--shot-token"))
         {
             var tk = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };

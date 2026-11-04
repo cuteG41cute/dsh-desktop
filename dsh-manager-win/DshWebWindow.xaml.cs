@@ -93,6 +93,7 @@ public partial class DshWebWindow : Window
             Diag("webview2 ready");
 
             var core = Web.CoreWebView2;
+            AttachPreviewTools(core);
             core.Settings.AreDevToolsEnabled = true;
             core.Settings.IsStatusBarEnabled = false;
 
