@@ -315,6 +315,15 @@
                                                Margin="0,7,0,0" Foreground="{DynamicResource Muted}" />
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                                    <Button Style="{StaticResource BtnSecondary}" x:Name="WindowFeaturesBtn"
+                                            Height="34" Padding="15,0" Margin="0,0,8,0" Cursor="Hand"
+                                            Click="OnWindowFeatures">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Path Width="14" Height="14" Data="{StaticResource Icon.info}"
+                                                  Style="{StaticResource IconPath}" Stroke="{DynamicResource Muted}" />
+                                            <TextBlock Text="窗口功能" Margin="6,0,0,0" />
+                                        </StackPanel>
+                                    </Button>
                                     <Button Style="{StaticResource BtnPrimary}" x:Name="OpenWindowBtn" Click="OnOpenWindow">
                                         <StackPanel Orientation="Horizontal">
                                             <Path Width="16" Height="16" Data="{StaticResource Icon.external}"

@@ -47,11 +47,11 @@
                 <TextBlock x:Name="StatusText" FontSize="9" VerticalAlignment="Center"
                            Foreground="{DynamicResource Subtle}" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="重新获取 token" Style="{StaticResource BtnSecondary}" Height="34" Padding="16,0"
+                    <Button x:Name="RefreshTokenBtn" Content="重新获取 token" Style="{StaticResource BtnSecondary}" Height="34" Padding="16,0"
                             Click="OnRefreshToken" />
-                    <Button Content="复制带 token 地址" Style="{StaticResource BtnSecondary}" Height="34" Padding="16,0"
+                    <Button x:Name="CopyTokenBtn" Content="复制带 token 地址" Style="{StaticResource BtnSecondary}" Height="34" Padding="16,0"
                             Margin="8,0,0,0" Click="OnCopyTokenUrl" />
-                    <Button Content="复制全部" Style="{StaticResource BtnSecondary}" Height="34" Padding="16,0"
+                    <Button x:Name="CopyAllBtn" Content="复制全部" Style="{StaticResource BtnSecondary}" Height="34" Padding="16,0"
                             Margin="8,0,0,0" Click="OnCopyAll" />
                     <Button Content="关闭" Style="{StaticResource BtnPrimary}" Height="34" Padding="16,0"
                             Margin="8,0,0,0" Click="OnClose" />

@@ -1609,10 +1609,45 @@ public partial class MainWindow : Window
         });
     }
 
-    /// <summary>打开「查看 Token」窗口（外观与主题跟随主窗口）。</summary>
-    private void ShowTextWindow(string title, string text, Func<string> refresher = null)
+    /// <summary>「窗口功能」：列出我们给内置会话窗口加的小能力（给用户看的速查表）。</summary>
+    private void OnWindowFeatures(object sender, RoutedEventArgs e)
     {
-        var win = new TokenWindow(title, text, refresher) { Owner = this };
+        var text = string.Join(Environment.NewLine, new[]
+        {
+            "内置会话窗口（WebView2）增强 · 速查",
+            "",
+            "【图片预览】",
+            "  Ctrl + 滚轮        以光标为锚点缩放（官方能力，10%~400%）",
+            "  按住左键拖动        放大后平移查看（我们补的）",
+            "  右键               保存到… / 复制文件路径 / 在资源管理器中显示（官方）",
+            "",
+            "【PDF 预览】",
+            "  Ctrl + 滚轮        缩放",
+            "  按住左键拖动        放大后平移查看（我们补的）",
+            "",
+            "【文件树 / 交付文件】",
+            "  拖动文件行          拖到桌面=保存，拖到资源管理器=复制，拖到输入框=路径文本（我们补的）",
+            "  拖动文件夹行        把整个目录拖出去（我们补的）",
+            "",
+            "【窗口本身】",
+            "  打开窗口 / 重载 / 重建   仪表盘右上角与「快捷控制」里",
+            "  查看 Token          访问地址 / 启动 token / 认证 cookie，可复制、可重新获取",
+            "  窗口功能            就是本说明",
+            "",
+            "【排障】",
+            "  日志                仪表盘「最近日志」看最新 15 条，或点「查看完整日志 →」",
+            "  诊断（隐藏）        Ctrl + Shift + Alt + D 会把右栏预览的 DOM 结构写进 web.log",
+            "",
+            "说明：缩放、右键菜单来自官方产品本身；平移与文件拖出是管理器补的，",
+            "      它们只补产品没有的能力，不会改动官方手势。",
+        });
+        ShowTextWindow("窗口功能", text, null, tokenActions: false);
+    }
+
+    /// <summary>打开「查看 Token」窗口（外观与主题跟随主窗口）。</summary>
+    private void ShowTextWindow(string title, string text, Func<string> refresher = null, bool tokenActions = true)
+    {
+        var win = new TokenWindow(title, text, refresher, tokenActions) { Owner = this };
         win.Show();
     }
 

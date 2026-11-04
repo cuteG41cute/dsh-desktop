@@ -15,9 +15,9 @@
     <!-- 图标沿用旧启动器的黑色鲸鱼（exe / 快捷方式 / 任务栏都用它） -->
     <ApplicationIcon>app.ico</ApplicationIcon>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <Version>2.0.2</Version>
-    <FileVersion>2.0.2.0</FileVersion>
-    <AssemblyVersion>2.0.2.0</AssemblyVersion>
+    <Version>2.0.12</Version>
+    <FileVersion>2.0.12.0</FileVersion>
+    <AssemblyVersion>2.0.12.0</AssemblyVersion>
     <Product>DeepSeek Harness 管理器</Product>
     <AssemblyTitle>DeepSeek Harness 管理器</AssemblyTitle>
     <Company>cuteG41cute</Company>
@@ -27,6 +27,9 @@
     <!-- 侧栏品牌位用的鲸鱼图；app.ico 同时给窗口 Icon 用 -->
     <Resource Include="Assets\whale.png" />
     <EmbeddedResource Include="web\preview-tools.js" />
+    <EmbeddedResource Include="web\image-zoom.js" />
+    <EmbeddedResource Include="web\image-pan.js" />
+    <EmbeddedResource Include="web\file-dragout.js" />
     <Resource Include="app.ico" />
   </ItemGroup>
 

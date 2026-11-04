@@ -14,10 +14,17 @@ namespace DshManager
     {
         private readonly Func<string> _refresher;
 
-        public TokenWindow(string title, string body, Func<string> refresher = null)
+        public TokenWindow(string title, string body, Func<string> refresher = null, bool tokenActions = true)
         {
             InitializeComponent();
             _refresher = refresher;
+            if (!tokenActions)
+            {
+                // 纯信息窗口（例如「窗口功能」说明）：不需要 token 相关的三个按钮
+                if (RefreshTokenBtn != null) RefreshTokenBtn.Visibility = Visibility.Collapsed;
+                if (CopyTokenBtn != null) CopyTokenBtn.Visibility = Visibility.Collapsed;
+                if (CopyAllBtn != null) CopyAllBtn.Visibility = Visibility.Collapsed;
+            }
             if (!string.IsNullOrWhiteSpace(title)) TitleText.Text = title;
             Title = title;
             BodyText.Text = body ?? "";

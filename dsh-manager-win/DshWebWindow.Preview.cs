@@ -20,24 +20,46 @@ namespace DshManager
             try
             {
                 core.WebMessageReceived += OnPreviewMessage;
-                var script = LoadPreviewScript();
-                if (!string.IsNullOrEmpty(script))
+                // preview-tools.js 是按**旧版产品 DOM** 写的，其中图片缩放靠改 frame.style.zoom，
+                // 在新版里会把「官方缩放」抵消掉；而且它的 wheel 处理会吃掉整页滚动。
+                // 默认**不注入**，只在调试时用 DSH_PREVIEW_TOOLS=1 打开。
+                if (Environment.GetEnvironmentVariable("DSH_PREVIEW_TOOLS") == "1")
                 {
-                    // 对之后每个文档（含刷新、跳转）都先注入
-                    _ = core.AddScriptToExecuteOnDocumentCreatedAsync(script);
-                    Diag("preview-tools injected (" + script.Length + " chars)");
+                    var script = LoadPreviewScript("preview-tools.js");
+                    if (!string.IsNullOrEmpty(script))
+                    {
+                        _ = core.AddScriptToExecuteOnDocumentCreatedAsync(script);
+                        Diag("preview-tools injected (" + script.Length + " chars)");
+                    }
                 }
+                // 文件行拖出到系统（右侧文件树里的「文件」行）
+                var dragScript = LoadPreviewScript("file-dragout.js");
+                if (!string.IsNullOrEmpty(dragScript))
+                {
+                    _ = core.AddScriptToExecuteOnDocumentCreatedAsync(dragScript);
+                    Diag("file-dragout injected (" + dragScript.Length + " chars)");
+                }
+                // 拖动平移（只补官方缺的那一半：官方 Ctrl+滚轮能缩放，但没有拖动）
+                var panScript = LoadPreviewScript("image-pan.js");
+                if (!string.IsNullOrEmpty(panScript))
+                {
+                    _ = core.AddScriptToExecuteOnDocumentCreatedAsync(panScript);
+                    Diag("image-pan injected (" + panScript.Length + " chars)");
+                }
+                // 自己的图片缩放先**停用**：它用 document 级 wheel 捕获 + preventDefault，
+                // 把整个页面的滚动都吃掉了（用户实测：会话正文/左右栏都不能滚）。
+                // 等把官方缩放摸清之后再决定要不要重写这一层。
             }
             catch (Exception ex) { Diag("preview inject failed: " + ex.Message); }
         }
 
-        private static string LoadPreviewScript()
+        private static string LoadPreviewScript(string file = "preview-tools.js")
         {
             try
             {
                 var asm = typeof(DshWebWindow).Assembly;
                 var name = asm.GetManifestResourceNames()
-                    .FirstOrDefault(n => n.EndsWith("preview-tools.js", StringComparison.OrdinalIgnoreCase));
+                    .FirstOrDefault(n => n.EndsWith(file, StringComparison.OrdinalIgnoreCase));
                 if (name == null) return null;
                 using var s = asm.GetManifestResourceStream(name);
                 using var r = new StreamReader(s, Encoding.UTF8);
@@ -52,6 +74,11 @@ namespace DshManager
             try { json = e.TryGetWebMessageAsString(); } catch { }
             if (string.IsNullOrWhiteSpace(json)) return;
 
+            if (json.Contains("\"dsh-dom-dump\""))
+            {
+                Diag("DOMDUMP " + (json.Length > 6000 ? json.Substring(0, 6000) : json));
+                return;
+            }
             if (json.Contains("\"dsh-drag-out\"")) { StartFileDrag(json); return; }
             if (json.Contains("\"dsh-save-file\"") || json.Contains("\"dsh-save-image\"")
                 || json.Contains("\"dsh-copy-image\"") || json.Contains("\"dsh-reveal\""))
