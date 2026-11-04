@@ -16,19 +16,62 @@ public partial class NewInstanceWindow : Window
 
     public string CreatedDir { get; private set; } = "";
     private bool _busy;
+    private bool _dirEdited;
 
     public NewInstanceWindow()
     {
         InitializeComponent();
-        var def = Path.Combine(InstanceRegistry.DefaultRoot, "dsh-new");
+        var def = UniqueDir("dsh-new");
         DirBox.Text = def;
         Loaded += (_, _) =>
         {
-            DirBox.Text = def;
+            DirBox.Text = UniqueDir(FileNameOf(DirBox.Text) is { Length: > 0 } n ? n : "dsh-new");
             AppendLog("提示：安装会用系统的 npm（PATH 上的 npm.cmd），装到上面的目录里。");
             _ = LoadVersionLists();
             AppendLog("已有的 DSH 安装不需要新建——直接在主界面选它就行。");
         };
+    }
+
+    /// <summary>目录名（不带末尾分隔符）。</summary>
+    private static string FileNameOf(string dir)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(dir)) return "";
+            return Path.GetFileName(Path.TrimEndingDirectorySeparator(dir.Trim()));
+        }
+        catch { return ""; }
+    }
+
+    /// <summary>
+    /// 生成一个**没有被占用**的实例目录：
+    /// 目录已存在（非空）、或已被登记成实例 → 依次试 name-2、name-3…
+    /// </summary>
+    private static string UniqueDir(string baseName)
+    {
+        var root = InstanceRegistry.DefaultRoot;
+        var name = string.IsNullOrWhiteSpace(baseName) ? "dsh-new" : baseName.Trim();
+        var regs = InstanceRegistry.Load();
+        bool Taken(string path)
+        {
+            try
+            {
+                if (Directory.Exists(path) && Directory.GetFileSystemEntries(path).Length > 0) return true;
+                if (regs.Any(r => string.Equals(
+                        Path.GetFullPath(r.Dir ?? ""), Path.GetFullPath(path),
+                        StringComparison.OrdinalIgnoreCase))) return true;
+            }
+            catch { }
+            return false;
+        }
+        var candidate = Path.Combine(root, name);
+        if (!Taken(candidate)) return candidate;
+        for (var i = 2; i < 100; i++)
+        {
+            candidate = Path.Combine(root, name + "-" + i);
+            if (!Taken(candidate)) return candidate;
+        }
+        return candidate;
     }
 
     /// <summary>联网取 dsh / Node 的候选版本（拿不到就用内置列表，不阻塞界面）。</summary>
@@ -90,6 +133,23 @@ public partial class NewInstanceWindow : Window
         catch { }
     }
 
+    private void OnNameChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        try
+        {
+            var name = (NameBox.Text ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(name)) return;
+            if (!_dirEdited) DirBox.Text = UniqueDir(name);
+        }
+        catch { }
+    }
+
+    private void OnDirChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        // 用户自己动过目录就不再自动覆盖
+        if (!string.IsNullOrWhiteSpace(DirBox.Text)) _dirEdited = true;
+    }
+
     private void OnBrowse(object sender, RoutedEventArgs e)
     {
         // WPF 没有文件夹选择器，这里用 WinForms 的（.NET 8 Windows Desktop 自带）
@@ -117,6 +177,36 @@ public partial class NewInstanceWindow : Window
         var dir = (DirBox.Text ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) { StatusText.Text = "先填实例名称"; return; }
         if (string.IsNullOrWhiteSpace(dir)) { StatusText.Text = "先选安装目录"; return; }
+
+        // 安装目录必须是「干净的新目录」：已存在非空、或有 dsh 安装、或已登记为实例，一律拒绝。
+        try
+        {
+            dir = Path.GetFullPath(dir.Trim());
+            DirBox.Text = dir;
+            var looksLikeInstance =
+                File.Exists(Path.Combine(dir, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"))
+                || File.Exists(Path.Combine(dir, "app", "apps", "cli", "src", "bin.ts"))
+                || Directory.Exists(Path.Combine(dir, "dsh-home"));
+            var registered = InstanceRegistry.Load().Any(r => string.Equals(
+                Path.GetFullPath(r.Dir ?? ""), dir, StringComparison.OrdinalIgnoreCase));
+            if (registered || looksLikeInstance)
+            {
+                StatusText.Text = "这个目录里已经有一个 dsh 实例了，请换一个目录";
+                AppendLog("✘ " + dir + " 已经是实例目录（登记=" + registered + "，检出=" + looksLikeInstance + "）");
+                return;
+            }
+            if (Directory.Exists(dir) && Directory.GetFileSystemEntries(dir).Length > 0)
+            {
+                StatusText.Text = "目录已存在且不为空，请换一个目录（例如 " + UniqueDir(name) + "）";
+                AppendLog("✘ " + dir + " 非空，拒绝安装");
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "安装目录不合法：" + ex.Message;
+            return;
+        }
 
         var port = 0;
         if (!string.IsNullOrWhiteSpace(PortBox.Text) && !int.TryParse(PortBox.Text, out port))

@@ -40,7 +40,7 @@
                            Foreground="{DynamicResource Muted}" />
                 <Border BorderBrush="{DynamicResource InnerBorder}" BorderThickness="1" CornerRadius="10"
                         Background="{DynamicResource Card}" Height="38">
-                    <TextBox x:Name="NameBox" FontSize="11" VerticalContentAlignment="Center" Margin="12,0"
+                    <TextBox x:Name="NameBox" FontSize="11" VerticalContentAlignment="Center" Margin="12,0" TextChanged="OnNameChanged"
                              Background="Transparent" BorderThickness="0"
                              Foreground="{DynamicResource Text}" Text="dsh-new" />
                 </Border>
@@ -54,7 +54,7 @@
                     </Grid.ColumnDefinitions>
                     <Border BorderBrush="{DynamicResource InnerBorder}" BorderThickness="1" CornerRadius="10"
                             Background="{DynamicResource Card}" Height="38">
-                        <TextBox x:Name="DirBox" FontSize="11" VerticalContentAlignment="Center" Margin="12,0"
+                        <TextBox x:Name="DirBox" FontSize="11" VerticalContentAlignment="Center" Margin="12,0" TextChanged="OnDirChanged"
                                  Background="Transparent" BorderThickness="0"
                                  Foreground="{DynamicResource Text}" />
                     </Border>
