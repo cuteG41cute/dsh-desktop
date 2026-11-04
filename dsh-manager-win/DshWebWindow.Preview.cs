@@ -15,42 +15,92 @@ namespace DshManager
     /// </summary>
     public partial class DshWebWindow
     {
+        /// <summary>
+        /// 预览/文件增强的注入：**按实例的 dsh 版本分流**。
+        ///   0.1.x  → 旧 UI：用旧桌面版那份 preview-tools.js（它当年就是为这套 DOM 写的）
+        ///   >=0.2.x → 新 UI：只用我们自己新写的 image-pan / file-dragout（缩放和右键交给官方）
+        /// 拿不到版本时按「新 UI」处理，并在 web.log 里留一行标记，方便以后排查。
+        /// </summary>
         private void AttachPreviewTools(CoreWebView2 core)
         {
             try
             {
                 core.WebMessageReceived += OnPreviewMessage;
-                // preview-tools.js 是按**旧版产品 DOM** 写的，其中图片缩放靠改 frame.style.zoom，
-                // 在新版里会把「官方缩放」抵消掉；而且它的 wheel 处理会吃掉整页滚动。
-                // 默认**不注入**，只在调试时用 DSH_PREVIEW_TOOLS=1 打开。
-                if (Environment.GetEnvironmentVariable("DSH_PREVIEW_TOOLS") == "1")
+                var version = _inst.DshVersion ?? "";
+                var legacy = IsLegacyUi(version);
+                Diag("preview profile: dsh=" + (string.IsNullOrWhiteSpace(version) ? "?" : version)
+                     + (legacy ? " -> legacy(0.1.x)" : " -> modern(>=0.2)"));
+
+                if (legacy)
                 {
-                    var script = LoadPreviewScript("preview-tools.js");
-                    if (!string.IsNullOrEmpty(script))
+                    // 旧 UI：整包交给旧脚本（缩放/右键/拖出都是它自己那套）
+                    var legacyScript = LoadPreviewScript("preview-tools.js");
+                    if (!string.IsNullOrEmpty(legacyScript))
                     {
-                        _ = core.AddScriptToExecuteOnDocumentCreatedAsync(script);
-                        Diag("preview-tools injected (" + script.Length + " chars)");
+                        _ = core.AddScriptToExecuteOnDocumentCreatedAsync(legacyScript);
+                        Diag("preview-tools injected (legacy, " + legacyScript.Length + " chars)");
                     }
                 }
-                // 文件行拖出到系统（右侧文件树里的「文件」行）
-                var dragScript = Services.AppSettings.WebDragOut ? LoadPreviewScript("file-dragout.js") : null;
-                if (!string.IsNullOrEmpty(dragScript))
+                else
                 {
-                    _ = core.AddScriptToExecuteOnDocumentCreatedAsync(dragScript);
-                    Diag("file-dragout injected (" + dragScript.Length + " chars)");
+                    // 新 UI：只补官方没有的那两半
+                    if (Services.AppSettings.WebPan)
+                    {
+                        var panScript = LoadPreviewScript("image-pan.js");
+                        if (!string.IsNullOrEmpty(panScript))
+                        {
+                            _ = core.AddScriptToExecuteOnDocumentCreatedAsync(panScript);
+                            Diag("image-pan injected (" + panScript.Length + " chars)");
+                        }
+                    }
+                    if (Services.AppSettings.WebDragOut)
+                    {
+                        var dragScript = LoadPreviewScript("file-dragout.js");
+                        if (!string.IsNullOrEmpty(dragScript))
+                        {
+                            _ = core.AddScriptToExecuteOnDocumentCreatedAsync(dragScript);
+                            Diag("file-dragout injected (" + dragScript.Length + " chars)");
+                        }
+                    }
                 }
-                // 拖动平移（只补官方缺的那一半：官方 Ctrl+滚轮能缩放，但没有拖动）
-                var panScript = Services.AppSettings.WebPan ? LoadPreviewScript("image-pan.js") : null;
-                if (!string.IsNullOrEmpty(panScript))
-                {
-                    _ = core.AddScriptToExecuteOnDocumentCreatedAsync(panScript);
-                    Diag("image-pan injected (" + panScript.Length + " chars)");
-                }
-                // 自己的图片缩放先**停用**：它用 document 级 wheel 捕获 + preventDefault，
-                // 把整个页面的滚动都吃掉了（用户实测：会话正文/左右栏都不能滚）。
-                // 等把官方缩放摸清之后再决定要不要重写这一层。
             }
             catch (Exception ex) { Diag("preview inject failed: " + ex.Message); }
+        }
+
+        /// <summary>0.1.x（含 0.1.5-rc.1）是旧 UI；0.2.x 起换成了现在的 DOM。</summary>
+        private static bool IsLegacyUi(string version)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(version)) return false;
+                var core = version.Trim();
+                var dash = core.IndexOf('-');
+                if (dash > 0) core = core.Substring(0, dash);
+                var parts = core.Split('.');
+                if (parts.Length < 2) return false;
+                if (!int.TryParse(parts[0], out var major)) return false;
+                if (!int.TryParse(parts[1], out var minor)) return false;
+                return major == 0 && minor <= 1;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>导航完成后探测一次 DOM 特征，确认当前版本和注入策略匹配。</summary>
+        private async void ProbePreviewDomOnce(CoreWebView2 core)
+        {
+            try
+            {
+                await System.Threading.Tasks.Task.Delay(1500);
+                var js = @"(function(){
+  var files = !!document.querySelector('[data-files-path]');
+  var zoomFrame = !!document.querySelector('[data-document-zoom-mode],[class*=_scrollport]');
+  var legacyImg = !!document.querySelector('[data-image-preview]');
+  window.chrome.webview.postMessage(JSON.stringify({type:'dsh-dom-probe',
+     files:files, zoomFrame:zoomFrame, legacyImg:legacyImg}));
+})();";
+                await core.ExecuteScriptAsync(js);
+            }
+            catch { }
         }
 
         private static string LoadPreviewScript(string file = "preview-tools.js")
@@ -74,6 +124,11 @@ namespace DshManager
             try { json = e.TryGetWebMessageAsString(); } catch { }
             if (string.IsNullOrWhiteSpace(json)) return;
 
+            if (json.Contains("\"dsh-dom-probe\""))
+            {
+                Diag("dom probe: " + (json.Length > 400 ? json.Substring(0, 400) : json));
+                return;
+            }
             if (json.Contains("\"dsh-dom-dump\""))
             {
                 Diag("DOMDUMP " + (json.Length > 6000 ? json.Substring(0, 6000) : json));

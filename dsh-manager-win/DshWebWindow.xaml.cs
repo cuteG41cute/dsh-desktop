@@ -110,6 +110,7 @@ public partial class DshWebWindow : Window
 
             var core = Web.CoreWebView2;
             AttachPreviewTools(core);
+            ProbePreviewDomOnce(core);
             HookDomDumpHotkey();
             core.Settings.AreDevToolsEnabled = true;
             core.Settings.IsStatusBarEnabled = false;
