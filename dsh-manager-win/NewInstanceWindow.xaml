@@ -116,8 +116,8 @@
                 </Border>
             </StackPanel>
 
-            <Border Grid.Row="3" Margin="0,16,0,0" CornerRadius="10" Background="{DynamicResource CardSolid}"
-                    BorderBrush="{DynamicResource InnerBorder}" BorderThickness="1">
+            <Border x:Name="LogCard" Grid.Row="3" Margin="0,16,0,0" CornerRadius="10" Background="{DynamicResource CardSolid}"
+                    BorderBrush="{DynamicResource InnerBorder}" BorderThickness="1" Visibility="Collapsed">
                 <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto" Padding="12,10">
                     <TextBlock x:Name="LogText" FontFamily="{StaticResource MonoFont}" FontSize="9"
                                Foreground="{DynamicResource Muted}" TextWrapping="Wrap" />

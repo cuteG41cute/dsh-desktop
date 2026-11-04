@@ -15,7 +15,7 @@ namespace DshManager.Services;
 /// </summary>
 public static class VersionCatalog
 {
-    private static readonly HttpClient Http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+    private static readonly HttpClient Http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
 
     /// <summary>Linux 版里的兜底列表，网络不通时也还能选。</summary>
     public static readonly string[] FallbackDsh =
@@ -172,14 +172,30 @@ public static class VersionCatalog
             var zip = Path.Combine(Path.GetTempPath(), "dsh-node-" + v + "-win-x64.zip");
             if (!File.Exists(Path.Combine(target, "node.exe")))
             {
-                log("下载 Node v" + v + "（win-x64）…");
                 var url = "https://nodejs.org/dist/v" + v + "/node-v" + v + "-win-x64.zip";
-                using (var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
+                var ok = false;
+                for (var attempt = 1; attempt <= 2 && !ok; attempt++)
                 {
-                    if (!resp.IsSuccessStatusCode)
-                        return (false, "下载失败：" + (int)resp.StatusCode + " " + url);
-                    await using var fs = File.Create(zip);
-                    await resp.Content.CopyToAsync(fs);
+                    try
+                    {
+                        log("下载 Node v" + v + "（win-x64）" + (attempt > 1 ? "（重试 " + attempt + "）" : "") + "…");
+                        using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                        if (!resp.IsSuccessStatusCode)
+                        {
+                            log("HTTP " + (int)resp.StatusCode + " " + url);
+                            if (attempt == 2) return (false, "下载失败：" + (int)resp.StatusCode + " " + url);
+                            continue;
+                        }
+                        await using var fs = File.Create(zip);
+                        await resp.Content.CopyToAsync(fs);
+                        ok = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        log("下载出错：" + ex.Message);
+                        if (attempt == 2) return (false, "下载 Node 失败：" + ex.Message);
+                        await Task.Delay(1500);
+                    }
                 }
                 log("下载完成：" + new FileInfo(zip).Length / (1024 * 1024) + " MB，解压…");
                 var staging = Path.Combine(dir, "node-staging");

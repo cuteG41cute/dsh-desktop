@@ -127,6 +127,8 @@ public partial class NewInstanceWindow : Window
         }
         try
         {
+            // 第一次有日志时把日志卡片露出来（平时它是收起的，避免一片空框）
+            if (LogCard != null && LogCard.Visibility != Visibility.Visible) LogCard.Visibility = Visibility.Visible;
             LogText.Text += (line ?? "") + Environment.NewLine;
             LogScroll.ScrollToEnd();
         }
