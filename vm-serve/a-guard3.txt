@@ -1,0 +1,22 @@
+# ??????????????????????
+type {ESC}
+sleep 600
+click 220 367
+sleep 2500
+shotfull g01_dialog
+click 700 249
+sleep 250
+type ^a
+sleep 150
+type dsh-new
+sleep 250
+click 700 360
+sleep 250
+type ^a
+sleep 150
+type C:\Users\User
+sleep 500
+shotfull g02_fields
+click 1236 1040
+sleep 2500
+shotfull g03_guard

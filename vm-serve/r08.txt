@@ -1,0 +1,3 @@
+ls C:\Users\User\AppData\Local\dsh-manager\instances\dsh-new\app\apps
+ps node
+shot t05_progress

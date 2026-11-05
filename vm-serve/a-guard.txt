@@ -1,0 +1,10 @@
+click 497 243
+sleep 400
+type ^a
+sleep 200
+type C:\Users\User
+sleep 400
+shotfull t02_typed
+click 868 730
+sleep 2500
+shotfull t03_after_create

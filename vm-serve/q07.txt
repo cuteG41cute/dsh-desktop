@@ -1,0 +1,7 @@
+pid
+win 40 40 1000 700
+click 600 600
+sleep 400
+type {PGDN}
+sleep 800
+shot s08_pgdn

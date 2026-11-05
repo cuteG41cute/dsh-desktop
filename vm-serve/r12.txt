@@ -1,0 +1,5 @@
+click 951 502
+sleep 20000
+shot t09_started
+ps node
+ls C:\Users\User\AppData\Local\dsh-manager\logs

@@ -104,8 +104,8 @@ public static class DshHost
             }
             lock (Gate) Started[inst.Id] = new Running { Process = proc };
 
-            // 等端口起来（最多 20 秒）
-            for (var i = 0; i < 40; i++)
+            // 等端口起来（最多 60 秒；首次启动要跑 TS 入口，慢一点的机器 20 秒不够）
+            for (var i = 0; i < 120; i++)
             {
                 Thread.Sleep(500);
                 DshDiscovery.InvalidateListeners();
@@ -115,7 +115,13 @@ public static class DshHost
             }
             if (!inst.Running)
             {
-                message = "服务没有在 20 秒内就绪，详见日志：" + log;
+                // 进程还活着但端口没起来：多半是还在初始化，不要吓用户说"失败"
+                if (!proc.HasExited)
+                {
+                    message = "服务进程已启动，但 60 秒内端口还没监听（首次启动可能较慢），稍后点刷新；日志：" + log;
+                    return false;
+                }
+                message = "服务进程已退出（code " + SafeExitCode(proc) + "），详见日志：" + log;
                 return false;
             }
             message = "服务已就绪（PID " + (inst.Pid > 0 ? inst.Pid.ToString() : proc.Id.ToString())

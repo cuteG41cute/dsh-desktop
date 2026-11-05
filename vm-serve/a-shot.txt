@@ -1,0 +1,3 @@
+win 40 40 1440 900
+sleep 600
+shotfull s01_main

@@ -1,0 +1,6 @@
+click 951 502
+sleep 22000
+shot s03_running
+click 799 185
+sleep 2500
+shot s04_features

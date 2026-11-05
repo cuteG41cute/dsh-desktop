@@ -1,0 +1,22 @@
+click 700 249
+sleep 250
+type ^a
+sleep 120
+type vmtest
+sleep 200
+click 700 360
+sleep 250
+type ^a
+sleep 120
+type C:\Users\User\AppData\Local\dsh-manager\instances\vmtest
+sleep 300
+click 467 537
+sleep 250
+type ^a
+sleep 120
+type 3081
+sleep 300
+shotfull e01_ready
+click 1236 1040
+sleep 5000
+shotfull e02_started

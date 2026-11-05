@@ -1,0 +1,8 @@
+win 40 40 1000 700
+sleep 900
+shotfull p01
+click 150 205
+sleep 1200
+shotfull p02_after1s
+sleep 2000
+shotfull p03_after3s

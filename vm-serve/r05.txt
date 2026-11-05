@@ -1,0 +1,4 @@
+ls C:\Users\User\AppData\Local\dsh-manager\instances\dsh-new
+ls C:\Users\User\AppData\Local\dsh-manager\instances\dsh-new\app
+ps git
+ps node

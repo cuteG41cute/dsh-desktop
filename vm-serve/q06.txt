@@ -1,0 +1,7 @@
+start
+pid
+win 40 40 1000 700
+sleep 1200
+wheel -6 500 500
+sleep 1200
+shot s07_scrolled

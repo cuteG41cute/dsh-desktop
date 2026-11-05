@@ -1,0 +1,3 @@
+﻿uia 窗口功能
+sleep 2500
+shotfull f02_features

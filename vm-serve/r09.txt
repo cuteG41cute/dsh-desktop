@@ -1,0 +1,3 @@
+ls C:\Users\User\AppData\Local\dsh-manager\instances\dsh-new\app\apps\cli\dist
+ps node
+shot t06_progress

@@ -1,0 +1,6 @@
+click 2243 1461
+sleep 1500
+shot s11_closed
+click 911 1306
+sleep 3000
+shot s12_delete

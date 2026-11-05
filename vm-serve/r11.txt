@@ -1,0 +1,4 @@
+shot t08_done
+ls C:\Users\User\AppData\Local\dsh-manager\instances\dsh-new\dsh-home
+ls C:\Users\User\AppData\Local\dsh-manager
+ps DshManager

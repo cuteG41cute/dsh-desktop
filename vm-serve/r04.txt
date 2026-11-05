@@ -1,0 +1,4 @@
+ls C:\Users\User\AppData\Local\dsh-manager\instances
+ls C:\Users\User\AppData\Local\dsh-manager\instances\vmtest
+ps git
+ps node

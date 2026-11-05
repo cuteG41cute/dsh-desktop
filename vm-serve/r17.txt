@@ -1,0 +1,5 @@
+win 40 40 1000 700
+sleep 1200
+click 799 185
+sleep 2500
+shot f11_features

@@ -1,0 +1,8 @@
+click 1008 59
+sleep 1500
+pid
+win 40 40 1000 700
+sleep 1000
+click 799 185
+sleep 2500
+shot f13_features

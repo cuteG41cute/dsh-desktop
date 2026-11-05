@@ -1,0 +1,4 @@
+del C:\Users\User\AppData\Local\dsh-manager\instances\vmtest
+start
+win 40 40 1000 700
+shot t01_main219

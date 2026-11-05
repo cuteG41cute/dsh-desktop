@@ -1,0 +1,3 @@
+type {ENTER}
+sleep 8000
+shot s17_enter

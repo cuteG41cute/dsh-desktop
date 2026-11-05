@@ -1,0 +1,3 @@
+pid
+win 40 40 1000 700
+shot s01_state

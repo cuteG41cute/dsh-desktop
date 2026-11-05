@@ -1,0 +1,6 @@
+start
+pid
+win 40 40 1000 700
+type {PGDN}
+sleep 1200
+shot d01_dash

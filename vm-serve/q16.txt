@@ -1,0 +1,4 @@
+pid
+win 40 40 1000 700
+sleep 1500
+shot s15_after_delete

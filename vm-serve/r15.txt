@@ -1,0 +1,3 @@
+click 601 502
+sleep 4000
+shot t12_webui

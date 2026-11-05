@@ -1,0 +1,5 @@
+start
+pid
+win 40 40 1000 700
+sleep 1500
+shot t13_after_restart

@@ -1,0 +1,4 @@
+click 951 502
+sleep 12000
+shot s02_stopped
+ps node

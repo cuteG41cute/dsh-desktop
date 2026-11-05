@@ -1,0 +1,3 @@
+uiaid WindowFeaturesBtn
+sleep 2500
+shotfull f04_features

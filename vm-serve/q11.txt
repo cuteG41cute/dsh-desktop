@@ -1,0 +1,2 @@
+ls C:\Users\User\AppData\Local\dsh-manager\instances
+Write-Output ('instances_file=' + (Test-Path 'C:\Users\User\AppData\Local\dsh-manager\instances.json'))

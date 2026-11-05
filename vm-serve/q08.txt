@@ -1,0 +1,4 @@
+pid
+click 820 688
+sleep 4000
+shot s09_update

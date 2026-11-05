@@ -1,0 +1,2 @@
+ls C:\Users\User\AppData\Local\dsh-manager\instances\dsh-new
+ps node

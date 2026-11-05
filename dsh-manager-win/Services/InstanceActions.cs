@@ -81,9 +81,21 @@ public static class InstanceActions
         if (inst.Running) DshHost.Stop(inst, out _);
         if (deleteDir)
         {
+            // 刚 taskkill 完时 node 还握着 node_modules 里的文件句柄，立刻删会「删一半」。
+            // 等端口真正不再监听（最多 15 秒）再动手。
+            for (var i = 0; i < 30; i++)
+            {
+                DshDiscovery.InvalidateListeners();
+                DshDiscovery.Probe(inst);
+                if (!inst.Running) break;
+                System.Threading.Thread.Sleep(500);
+            }
+        }
+        if (deleteDir)
+        {
             try
             {
-                if (Directory.Exists(inst.Dir)) Directory.Delete(inst.Dir, true);
+                if (Directory.Exists(inst.Dir)) DeleteDirectoryRobust(inst.Dir);
             }
             catch (Exception ex)
             {
@@ -92,5 +104,48 @@ public static class InstanceActions
         }
         InstanceRegistry.RemoveByDir(inst.Dir);
         return (true, deleteDir ? "已删除实例目录并从登记表移除" : "已从登记表移除（目录保留）");
+    }
+
+    /// <summary>
+    /// 稳妥地递归删除目录：node_modules / pnpm-store 里有只读文件、深路径和被占用的句柄，
+    /// 一句 Directory.Delete 经常删一半就抛异常（VM 实测：剩下 app/pnpm-store/tools 834MB）。
+    /// 这里清只读、重试多次，最后用长路径前缀再试一遍。
+    /// </summary>
+    private static void DeleteDirectoryRobust(string dir)
+    {
+        var full = Path.GetFullPath(dir);
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            try
+            {
+                foreach (var f in Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories))
+                {
+                    try
+                    {
+                        var attrs = File.GetAttributes(f);
+                        if ((attrs & FileAttributes.ReadOnly) != 0)
+                            File.SetAttributes(f, attrs & ~FileAttributes.ReadOnly);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            try { Directory.Delete(full, true); return; }
+            catch
+            {
+                System.Threading.Thread.Sleep(700);
+            }
+        }
+        // 长路径兜底（node_modules 的嵌套路径很容易超过 MAX_PATH）
+        var longPath = full.StartsWith(@"\\?\", StringComparison.Ordinal) ? full : @"\\?\" + full;
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(longPath, "*", SearchOption.AllDirectories))
+            {
+                try { File.SetAttributes(f, FileAttributes.Normal); } catch { }
+            }
+        }
+        catch { }
+        Directory.Delete(longPath, true);
     }
 }

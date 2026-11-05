@@ -1,0 +1,23 @@
+type {ESC}
+sleep 400
+type {ESC}
+sleep 400
+click 220 367
+sleep 2200
+shotfull d01_dialog
+click 700 249
+sleep 250
+type ^a
+sleep 120
+type vmtest
+sleep 200
+click 700 360
+sleep 250
+type ^a
+sleep 120
+type C:\Users\User
+sleep 300
+shotfull d02_fields
+click 1236 1040
+sleep 3000
+shotfull d03_guard

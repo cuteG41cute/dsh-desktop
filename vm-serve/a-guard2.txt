@@ -1,0 +1,16 @@
+click 700 249
+sleep 300
+type ^a
+sleep 150
+type dsh-new
+sleep 300
+click 700 360
+sleep 300
+type ^a
+sleep 150
+type C:\Users\User
+sleep 400
+shotfull t04_fields
+click 1236 1040
+sleep 2500
+shotfull t05_guard

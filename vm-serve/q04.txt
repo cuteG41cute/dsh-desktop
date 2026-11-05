@@ -1,0 +1,8 @@
+click 806 283
+sleep 2500
+shot s05_toggled
+click 799 403
+sleep 1500
+click 897 185
+sleep 20000
+shot s06_window_nopan
