@@ -17,19 +17,25 @@ public partial class NewInstanceWindow : Window
     public string CreatedDir { get; private set; } = "";
     private bool _busy;
     private bool _dirEdited;
+    private bool _suppressDir;
 
     public NewInstanceWindow()
     {
         InitializeComponent();
         var def = UniqueDir("dsh-new");
-        DirBox.Text = def;
+        SetDirSilently(def);
         Loaded += (_, _) =>
         {
-            DirBox.Text = UniqueDir(FileNameOf(DirBox.Text) is { Length: > 0 } n ? n : "dsh-new");
-            AppendLog("提示：安装会用系统的 npm（PATH 上的 npm.cmd），装到上面的目录里。");
+            SetDirSilently(UniqueDir(FileNameOf(DirBox.Text) is { Length: > 0 } n ? n : "dsh-new"));
             _ = LoadVersionLists();
-            AppendLog("已有的 DSH 安装不需要新建——直接在主界面选它就行。");
         };
+    }
+
+    /// <summary>程序自己改目录时不要把「用户手动改过」标记点亮。</summary>
+    private void SetDirSilently(string value)
+    {
+        _suppressDir = true;
+        try { DirBox.Text = value; } finally { _suppressDir = false; }
     }
 
     /// <summary>目录名（不带末尾分隔符）。</summary>
@@ -127,8 +133,9 @@ public partial class NewInstanceWindow : Window
         }
         try
         {
-            // 第一次有日志时把日志卡片露出来（平时它是收起的，避免一片空框）
-            if (LogCard != null && LogCard.Visibility != Visibility.Visible) LogCard.Visibility = Visibility.Visible;
+            // 只有在“真正开始干活”（安装/更新版本）时才把日志卡片露出来；
+            // 启动提示、版本列表加载这些背景日志不显示，避免出现一块看着像空框的区域。
+            if (_busy && LogCard != null && LogCard.Visibility != Visibility.Visible) LogCard.Visibility = Visibility.Visible;
             LogText.Text += (line ?? "") + Environment.NewLine;
             LogScroll.ScrollToEnd();
         }
@@ -148,6 +155,7 @@ public partial class NewInstanceWindow : Window
 
     private void OnDirChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
     {
+        if (_suppressDir) return;                 // 程序设置，不算用户编辑
         // 用户自己动过目录就不再自动覆盖
         if (!string.IsNullOrWhiteSpace(DirBox.Text)) _dirEdited = true;
     }
@@ -166,7 +174,8 @@ public partial class NewInstanceWindow : Window
             if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             {
                 var name = string.IsNullOrWhiteSpace(NameBox.Text) ? "dsh-new" : NameBox.Text.Trim();
-                DirBox.Text = Path.Combine(dlg.SelectedPath, name);
+                SetDirSilently(Path.Combine(dlg.SelectedPath, name));
+        _dirEdited = true;
             }
         }
         catch (Exception ex) { AppendLog("选择目录失败：" + ex.Message); }
@@ -180,11 +189,34 @@ public partial class NewInstanceWindow : Window
         if (string.IsNullOrWhiteSpace(name)) { StatusText.Text = "先填实例名称"; return; }
         if (string.IsNullOrWhiteSpace(dir)) { StatusText.Text = "先选安装目录"; return; }
 
+        // 源码安装依赖 git；干净系统上常常没有，提前检查，别让用户看 .NET 的原始异常
+        try
+        {
+            var gitCheck = new System.Diagnostics.ProcessStartInfo("git", "--version")
+            {
+                RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
+            };
+            using var gp = System.Diagnostics.Process.Start(gitCheck);
+            gp.WaitForExit(8000);
+            if (gp.ExitCode != 0)
+            {
+                StatusText.Text = "没有可用的 Git，请先安装 Git for Windows";
+                AppendLog("✘ git --version 返回 " + gp.ExitCode);
+                return;
+            }
+        }
+        catch
+        {
+            StatusText.Text = "没找到 Git，请先安装 Git for Windows（https://git-scm.com/download/win）";
+            AppendLog("✘ 系统里没有 git 命令，源码安装无法继续");
+            return;
+        }
+
         // 安装目录必须是「干净的新目录」：已存在非空、或有 dsh 安装、或已登记为实例，一律拒绝。
         try
         {
             dir = Path.GetFullPath(dir.Trim());
-            DirBox.Text = dir;
+            SetDirSilently(dir);
             var looksLikeInstance =
                 File.Exists(Path.Combine(dir, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"))
                 || File.Exists(Path.Combine(dir, "app", "apps", "cli", "src", "bin.ts"))
@@ -254,7 +286,21 @@ public partial class NewInstanceWindow : Window
         StatusText.Text = "正在克隆官方仓库并构建…（pnpm install + build，通常十几分钟）";
         var gitRef = (DshVersionBox.Text ?? "").Trim();
         if (string.IsNullOrWhiteSpace(gitRef)) gitRef = "master";
+        var existedBefore = Directory.Exists(dir);
         var (ok, msg) = await InstanceInstaller.InstallSourceAsync(dir, nodeVer, AppendLog, port, gitRef);
+        if (!ok && !existedBefore)
+        {
+            // 半成品目录留着会挡住下一次创建（我们的「目录必须为空」校验）
+            try
+            {
+                if (Directory.Exists(dir) && Directory.GetFileSystemEntries(dir).Length > 0)
+                {
+                    Directory.Delete(dir, true);
+                    AppendLog("已清理未完成的目录：" + dir);
+                }
+            }
+            catch { }
+        }
         _busy = false;
         CreateBtn.IsEnabled = true;
         CancelBtn.IsEnabled = true;
