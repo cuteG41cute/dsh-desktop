@@ -231,9 +231,20 @@ public partial class NewInstanceWindow : Window
             }
             if (Directory.Exists(dir) && Directory.GetFileSystemEntries(dir).Length > 0)
             {
-                StatusText.Text = "目录已存在且不为空，请换一个目录（例如 " + UniqueDir(name) + "）";
-                AppendLog("✘ " + dir + " 非空，拒绝安装");
-                return;
+                // 只允许「管理器自己的半成品」留在目录里继续安装：node/、tools/、pnpm-store/、app/
+                // （典型场景：上次 Node 下载中断，重试时不该逼用户换个目录重来）
+                var allowed = new[] { "node", "tools", "pnpm-store", "app" };
+                var foreign = Directory.GetFileSystemEntries(dir)
+                    .Select(Path.GetFileName)
+                    .Where(nm => !allowed.Contains((nm ?? "").ToLowerInvariant()))
+                    .ToArray();
+                if (foreign.Length > 0)
+                {
+                    StatusText.Text = "目录已存在且不为空，请换一个目录（例如 " + UniqueDir(name) + "）";
+                    AppendLog("✘ " + dir + " 里有其它内容：" + string.Join(", ", foreign.Take(5)));
+                    return;
+                }
+                AppendLog("目录里有未完成的安装（" + string.Join(", ", Directory.GetFileSystemEntries(dir).Select(Path.GetFileName)) + "），继续复用");
             }
         }
         catch (Exception ex)

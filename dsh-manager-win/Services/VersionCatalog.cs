@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace DshManager.Services;
 
@@ -15,7 +16,16 @@ namespace DshManager.Services;
 /// </summary>
 public static class VersionCatalog
 {
-    private static readonly HttpClient Http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+    // 连接超时单独设短（15s）：否则一条挂死的连接会让整个下载干等 10 分钟，
+// 界面一直停在「正在克隆官方仓库并构建…」看起来像卡死（VM 实测遇到过）。
+    private static readonly HttpClient Http = new HttpClient(new System.Net.Http.SocketsHttpHandler
+    {
+        ConnectTimeout = TimeSpan.FromSeconds(15),
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+    })
+    {
+        Timeout = TimeSpan.FromMinutes(10),
+    };
 
     /// <summary>Linux 版里的兜底列表，网络不通时也还能选。</summary>
     public static readonly string[] FallbackDsh =
@@ -186,8 +196,28 @@ public static class VersionCatalog
                             if (attempt == 2) return (false, "下载失败：" + (int)resp.StatusCode + " " + url);
                             continue;
                         }
+                        var total = resp.Content.Headers.ContentLength ?? 0;
                         await using var fs = File.Create(zip);
-                        await resp.Content.CopyToAsync(fs);
+                        await using var src = await resp.Content.ReadAsStreamAsync();
+                        var buf = new byte[81920];
+                        long got = 0, nextReport = 0;
+                        using var stall = new CancellationTokenSource();
+                        int n;
+                        // 卡住检测：30 秒收不到新字节就当这条连接死了（VM 实测会停在 18MB 不动），
+                        // 让外层 catch 走重试，而不是干等 HttpClient 的 10 分钟。
+                        stall.CancelAfter(TimeSpan.FromSeconds(30));
+                        while ((n = await src.ReadAsync(buf, 0, buf.Length, stall.Token)) > 0)
+                        {
+                            await fs.WriteAsync(buf, 0, n);
+                            got += n;
+                            stall.CancelAfter(TimeSpan.FromSeconds(30));
+                            if (got >= nextReport)
+                            {
+                                nextReport = got + 8 * 1024 * 1024;
+                                log("  已下载 " + (got / 1024 / 1024) + " MB"
+                                    + (total > 0 ? " / " + (total / 1024 / 1024) + " MB" : ""));
+                            }
+                        }
                         ok = true;
                     }
                     catch (Exception ex)
