@@ -47,3 +47,7 @@ dsh-desktop/linux/build/.stage/
 # 设计稿参考图与比对产物（可用 tools 重新生成）
 dsh-desktop/linux/manager/design/references/*.png
 vm-shots/
+
+# VM 测试投递目录里的大二进制不进仓库
+vm-serve/DshManager.exe
+vm-report/*.png
