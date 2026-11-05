@@ -317,6 +317,21 @@ public partial class NewInstanceWindow : Window
         CancelBtn.IsEnabled = true;
         StatusText.Text = msg;
         AppendLog((ok ? "✔ " : "✘ ") + msg);
+        if (!ok)
+        {
+            // 失败原因里常见两类：网络（ERR_PNPM_FETCH_TIMEOUT / 下载超时）和环境（缺 Git / 缺权限）。
+            // 给一句可操作的建议，别只丢一段原始输出。
+            var m = msg ?? "";
+            if (m.Contains("ERR_PNPM") || m.Contains("ETIMEDOUT") || m.Contains("ENOTFOUND")
+                || m.Contains("超时") || m.Contains("timeout") || m.Contains("registry"))
+            {
+                AppendLog("提示：看起来是网络问题。可以换个网络/开代理后重试；已经下载的部分（node、仓库、pnpm-store）会被复用。");
+            }
+            else if (m.Contains("git"))
+            {
+                AppendLog("提示：源码安装需要 Git for Windows，装好后重试即可。");
+            }
+        }
         if (ok)
         {
             CreatedDir = dir;
