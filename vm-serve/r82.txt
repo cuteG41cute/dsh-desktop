@@ -1,0 +1,5 @@
+click 1299 856
+sleep 2500
+type {ENTER}
+sleep 8000
+shot v03_afterdelete

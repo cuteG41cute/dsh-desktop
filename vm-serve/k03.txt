@@ -1,0 +1,7 @@
+click 400 300
+sleep 300
+type {PGDN}
+sleep 500
+type {PGDN}
+sleep 900
+shot k03_bottom2

@@ -1,0 +1,9 @@
+click 472 533
+sleep 250
+type ^a
+sleep 120
+type 3081
+sleep 300
+click 1255 1046
+sleep 5000
+shot k10_started

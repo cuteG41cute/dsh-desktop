@@ -1,0 +1,2 @@
+pid
+shot p02_dialog

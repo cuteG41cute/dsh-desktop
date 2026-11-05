@@ -1,0 +1,10 @@
+pid
+click 400 300
+sleep 300
+type {PGUP}
+sleep 400
+type {PGUP}
+sleep 400
+type {PGUP}
+sleep 800
+shot k07_top

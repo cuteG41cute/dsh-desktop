@@ -1,0 +1,3 @@
+dclick 247 322
+sleep 3000
+shot t02_dlg

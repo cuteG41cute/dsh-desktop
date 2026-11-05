@@ -1,0 +1,9 @@
+kill
+sleep 3000
+Remove-Item 'C:\Users\User\AppData\Local\dsh-manager\instances\dsh-new' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $env:TEMP 'dsh-node-*.zip') -Force -ErrorAction SilentlyContinue
+start
+pid
+win 40 40 1400 900
+sleep 1500
+shot r01_main

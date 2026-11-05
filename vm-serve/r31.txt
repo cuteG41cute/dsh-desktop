@@ -1,0 +1,11 @@
+click 218 374
+sleep 2500
+click 472 533
+sleep 250
+type ^a
+sleep 120
+type 3081
+sleep 300
+click 1254 1045
+sleep 6000
+shot r02_started

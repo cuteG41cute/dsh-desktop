@@ -90,6 +90,40 @@ while ($true) {
                     Start-Sleep -Milliseconds 300
                     $out.Add('wheel ' + $delta)
                 }
+                'res' {
+                    $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+                    $out.Add('res=' + $b.Width + 'x' + $b.Height)
+                }
+                'setval' {
+                    $id = $p[1]
+                    $val = ($p[2..($p.Length-1)] -join ' ')
+                    try {
+                        Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+                        $root = [System.Windows.Automation.AutomationElement]::RootElement
+                        $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, $id)
+                        $el = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
+                        if ($el) {
+                            $el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($val)
+                            $out.Add('setval ' + $id + ' = ' + $val)
+                        } else { $out.Add('setval notfound ' + $id) }
+                    } catch { $out.Add('setval err ' + $_.Exception.Message) }
+                    Start-Sleep -Milliseconds 500
+                }
+                'drag' {
+                    $x1=[int]$p[1]; $y1=[int]$p[2]; $x2=[int]$p[3]; $y2=[int]$p[4]
+                    [AG]::SetCursorPos($x1,$y1); Start-Sleep -Milliseconds 200
+                    [AG]::mouse_event(0x0002,0,0,0,[IntPtr]::Zero); Start-Sleep -Milliseconds 200
+                    $steps = 12
+                    for ($i=1; $i -le $steps; $i++) {
+                        $nx = [int]($x1 + ($x2-$x1)*$i/$steps)
+                        $ny = [int]($y1 + ($y2-$y1)*$i/$steps)
+                        [AG]::SetCursorPos($nx,$ny); Start-Sleep -Milliseconds 40
+                    }
+                    Start-Sleep -Milliseconds 150
+                    [AG]::mouse_event(0x0004,0,0,0,[IntPtr]::Zero)
+                    Start-Sleep -Milliseconds 600
+                    $out.Add('drag ' + $x1 + ',' + $y1 + ' -> ' + $x2 + ',' + $y2)
+                }
                 'sleep' { Start-Sleep -Milliseconds ([int]$p[1]) }
                 'focus' { if ($h -ne [IntPtr]::Zero) { [void][AG]::SetForegroundWindow($h); Start-Sleep -Milliseconds 400; $out.Add('focus ok') } }
                 'uiaid' {

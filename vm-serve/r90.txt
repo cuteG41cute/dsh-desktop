@@ -1,0 +1,7 @@
+kill
+start
+pid
+win 40 40 1400 900
+uiaid OpenWindowBtn
+sleep 15000
+shot w01_window

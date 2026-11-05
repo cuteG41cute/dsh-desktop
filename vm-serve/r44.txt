@@ -1,0 +1,7 @@
+click 1475 683
+sleep 250
+type ^a
+sleep 120
+type dsh-a
+sleep 900
+shot q05_follow

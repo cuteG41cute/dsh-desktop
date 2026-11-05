@@ -1,0 +1,3 @@
+setval NameBox dsh-a
+sleep 800
+shot s01_name

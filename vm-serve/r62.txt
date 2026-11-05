@@ -1,0 +1,8 @@
+setval DirBox C:\Users\User\AppData\Local\dsh-manager\instances\dsh-a
+sleep 400
+setval PortBox 3081
+sleep 400
+shot t03_filled
+uiaid CreateBtn
+sleep 8000
+shot t04_creating

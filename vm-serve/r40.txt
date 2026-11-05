@@ -1,0 +1,12 @@
+pid
+win 40 40 1400 900
+sleep 800
+click 218 374
+sleep 2500
+click 530 250
+sleep 250
+type ^a
+sleep 120
+type dsh-a
+sleep 400
+shot q01_name

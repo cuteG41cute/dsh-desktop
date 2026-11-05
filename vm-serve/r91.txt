@@ -1,0 +1,6 @@
+click 3154 207
+sleep 1500
+pid
+uiaid OpenWindowBtn
+sleep 12000
+shot w02_window

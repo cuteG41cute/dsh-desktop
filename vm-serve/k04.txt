@@ -1,0 +1,3 @@
+click 1299 856
+sleep 2500
+shot k04_confirm

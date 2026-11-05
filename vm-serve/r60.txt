@@ -1,0 +1,6 @@
+kill
+start
+pid
+dclick 660 822
+sleep 3000
+shot t01_dlg

@@ -1,0 +1,5 @@
+﻿Write-Output ('tmp_zips=' + (@(Get-ChildItem $env:TEMP -Filter 'dsh-node-*' -ErrorAction SilentlyContinue | ForEach-Object { $_.Name + ':' + [math]::Round($_.Length/1MB,1) + 'MB' }) -join ','))
+Write-Output ('node_proc=' + (@(Get-Process node -ErrorAction SilentlyContinue).Count))
+Write-Output ('git_proc=' + (@(Get-Process git -ErrorAction SilentlyContinue).Count))
+Write-Output ('inst_kids=' + (@(Get-ChildItem 'C:\Users\User\AppData\Local\dsh-manager\instances\dsh-new' -Force -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) -join ','))
+Write-Output ('mgr=' + (@(Get-Process DshManager -ErrorAction SilentlyContinue).Count))

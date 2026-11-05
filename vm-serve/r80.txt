@@ -1,0 +1,6 @@
+kill
+start
+pid
+win 40 40 1400 900
+sleep 1500
+shot v01_ui

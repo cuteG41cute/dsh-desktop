@@ -1,0 +1,8 @@
+pid
+click 700 400
+sleep 300
+type {PGDN}
+sleep 400
+type {PGDN}
+sleep 800
+shot v02_bottom
