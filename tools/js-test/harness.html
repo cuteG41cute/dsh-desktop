@@ -1,0 +1,93 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>pan/dragout harness</title>
+<style>
+  #sp{width:400px;height:300px;overflow:auto;background:#eee}
+  #sf{width:max-content}
+  #im{width:1200px;height:900px;display:block}
+  li{padding:6px}
+</style></head>
+<body>
+<div class="rIfSMq_frame" data-document-zoom-mode="fixed">
+  <div class="rIfSMq_scrollport" id="sp">
+    <div class="rIfSMq_surface" id="sf"><img id="im" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></div>
+  </div>
+</div>
+<ul id="files">
+  <li data-files-entry="file" data-files-path="C:\temp\a.txt">a.txt</li>
+  <li data-files-entry="file" data-files-path="C:\temp\b.txt">b.txt</li>
+  <li data-files-entry="directory" data-files-path="C:\temp\folder">folder/</li>
+</ul>
+<pre id="result">PENDING</pre>
+
+<script>
+  // 模拟 WebView2 的桥，收集脚本发给宿主的消息
+  window.__msgs = [];
+  window.chrome = { webview: { postMessage: function (s) { window.__msgs.push(s); } } };
+</script>
+<script src="image-pan.js"></script>
+<script src="file-dragout.js"></script>
+<script>
+function out(k, v) { document.getElementById('result').textContent += '\n' + k + '=' + v; }
+
+function pointer(type, x, y, target) {
+  var ev = new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1, pointerId: 1, isPrimary: true, pointerType: 'mouse' });
+  target.dispatchEvent(ev);
+}
+
+setTimeout(function () {
+  var sp = document.getElementById('sp');
+  var im = document.getElementById('im');
+  document.getElementById('result').textContent = 'READY';
+
+  // ---- 测试 1：放大后左键拖动 = 平移（scrollLeft/Top 变化）----
+  sp.scrollLeft = 100; sp.scrollTop = 100;
+  var before = sp.scrollLeft + ',' + sp.scrollTop;
+  pointer('pointerdown', 200, 150, im);
+  for (var i = 1; i <= 6; i++) pointer('pointermove', 200 - i * 10, 150 - i * 10, document);
+  pointer('pointerup', 140, 90, document);
+  out('pan_before', before);
+  out('pan_after', sp.scrollLeft + ',' + sp.scrollTop);
+  out('pan_cursor', sp.style.cursor || '(reset)');
+
+  // ---- 测试 2：文件行按下+移动 → 应 postMessage 一条 dsh-drag-out ----
+  var li = document.querySelector('li[data-files-entry="file"]');
+  var r = li.getBoundingClientRect();
+  li.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: r.left + 10, clientY: r.top + 5, button: 0, buttons: 1 }));
+  for (var j = 1; j <= 5; j++) {
+    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + 10 - j * 6, clientY: r.top + 5, buttons: 1 }));
+  }
+  document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+
+  // ---- 测试 3：目录行也应能拖出 ----
+  var dir = document.querySelector('li[data-files-entry="directory"]');
+  var r2 = dir.getBoundingClientRect();
+  dir.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: r2.left + 10, clientY: r2.top + 5, button: 0, buttons: 1 }));
+  for (var k = 1; k <= 5; k++) {
+    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r2.left + 10 - k * 6, clientY: r2.top + 5, buttons: 1 }));
+  }
+  document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+
+  out('msgs_count', window.__msgs.length);
+  for (var m = 0; m < window.__msgs.length; m++) {
+    var raw = window.__msgs[m];
+    var obj = {};
+    try { obj = JSON.parse(raw); } catch (e) {}
+    var path = '';
+    try { path = decodeURIComponent(escape(atob(obj.pathB64 || ''))); } catch (e) { path = '(decode fail)'; }
+    out('msg' + m, (obj.type || '?') + ' -> ' + path);
+  }
+
+  // ---- 测试 4：未放大（不可滚动）时不应接管拖动 ----
+  sp.style.width = '2000px'; sp.style.height = '2000px';
+  var b2 = sp.scrollLeft + ',' + sp.scrollTop;
+  pointer('pointerdown', 300, 200, im);
+  pointer('pointermove', 200, 100, document);
+  pointer('pointerup', 200, 100, document);
+  out('nopan_before', b2);
+  out('nopan_after', sp.scrollLeft + ',' + sp.scrollTop);
+  out('loaded_pan', typeof window.__dshPan);
+  out('loaded_dragout', typeof window.__dshDragOut);
+  out('DONE', '1');
+}, 300);
+</script>
+</body></html>

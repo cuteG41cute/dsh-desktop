@@ -1,0 +1,12 @@
+﻿READY
+pan_before=100,100
+pan_after=160,160
+pan_cursor=(reset)
+msgs_count=2
+msg0=dsh-drag-out -> C:\temp\a.txt
+msg1=dsh-drag-out -> C:\temp\folder
+nopan_before=0,0
+nopan_after=0,0
+loaded_pan=boolean
+loaded_dragout=boolean
+DONE=1

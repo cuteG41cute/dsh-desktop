@@ -91,14 +91,38 @@
 
 > 这一步只证明「注入层认得这套 DOM、页面状态就绪」；**真正的拖动平移与拖出手势**还没跑完——见下面的阻塞。
 
-## 四、环境限制（VM 网络）
+## 四、手势脚本验证（Chromium 无头运行，绕开 VM 的 GUI 阻塞）
+
+VM 的计划任务通道在增强会话下彻底失效（连 `cmd /c echo hi > ping.txt` 这种最小任务都停在 **Queued**），
+所以改用**同一套脚本 + 同引擎（Edge/Chromium ≈ WebView2）**在无头浏览器里做行为验证：
+
+测试页 `tools/js-test/harness.html`：搭出与真实页面同构的 DOM（`_scrollport` / `_surface` / `li[data-files-path]`），
+内联加载 `image-pan.js`、`file-dragout.js`，用合成的 pointer/mouse 事件驱动，并 stub 掉 `chrome.webview.postMessage` 收集消息。
+
+运行：`msedge --headless=new --dump-dom file:///…/harness.html`，结果存 `vm-report/js-harness-result.txt`：
+
+```
+pan_before=100,100
+pan_after=160,160          ← 放大后可滚动，左键拖动让 scrollLeft/Top 各 +60：**平移生效**
+pan_cursor=(reset)         ← 松开后光标恢复
+msgs_count=2
+msg0=dsh-drag-out -> C:\temp\a.txt      ← 文件行拖出，路径正确
+msg1=dsh-drag-out -> C:\temp\folder     ← 目录行拖出，路径正确
+nopan_before=0,0
+nopan_after=0,0            ← 不可滚动（未放大）时不接管拖动：**符合设计**
+loaded_pan=boolean / loaded_dragout=boolean
+```
+
+结论：两个注入脚本的**行为逻辑（平移、文件/目录拖出的消息与路径、未放大时不介入）**在真实 Chromium 里成立。
+
+## 五、环境限制（VM 网络）
 
 | 现象 | 证据 | 结论 |
 | --- | --- | --- |
 | `pnpm install` 失败：`ERR_PNPM_FETCH_TIMEOUT GET https://cdn.sheetjs.com/…` | `u01_ui.png` | 这台开发虚拟机**访问不了 cdn.sheetjs.com**（该依赖不走 npm registry，直接走厂商 CDN），`pnpm install` 因此中断。**不是产品缺陷**；同一台机器上早前网络好时完整装过一次实例 |
 | 便携 Node 下载多次卡住（停在 18.3MB 不动） | 实测 | 用户网络抖动；已用 2.0.24/2.0.25 的「连接超时 + 30 秒无进展判定 + 重试」治住，并加了下载进度日志 |
 
-## 五、未覆盖项（及原因）
+## 六、未覆盖项（及原因）
 
 - **图片 Ctrl+滚轮缩放 / 放大后拖动 / 文件·目录拖出**：VM 实例是空工作区（无图片、无文件树内容），
   WebView 内部手势需真实内容触发；能力已在注入日志与宿主机环境验证，观感层面待有真实内容的实例再验；
@@ -106,13 +130,13 @@
 - **BUG-1 修复复验**：VM 已装 Git，回归需再造无 Git 环境或用临时 PATH 屏蔽；
 - **「服务运行中直接删除」**：需要真实 dsh 服务在跑，而本 VM 因 `cdn.sheetjs.com` 不可达无法完成 `pnpm install`，所以这一条只能间接验证（已用「目录被 node 占着文件句柄 + 只读文件」的实例验证了删除的健壮性：2.0.23 一次删净）。
 
-## 六、阻塞记录（GUI 自动化通道）
+## 七、阻塞记录（GUI 自动化通道）
 
-- **现象**：VM 的交互会话从 `console` 切成了 Hyper-V 增强会话（`31c5ce94259d4…`，Active），此后用 `schtasks /ru User /it` 创建的任务状态一直停在 **Queued**，不再真正执行（`agents=0`）。
+- **现象**：VM 的交互会话从 `console` 切成了 Hyper-V 增强会话（`31c5ce94259d4…`，Active），此后用 `schtasks /ru User /it` 创建的任务状态一直停在 **Queued**，不再真正执行（`agents=0`）。重启虚拟机、重启 Task Scheduler 服务、重建任务都无效；连最小任务 `cmd /c echo hi > ping.txt` 也是 Queued，说明**不是脚本问题，是这台 VM 的交互任务通道坏了**。
 - **影响**：需要注入鼠标/键盘的动作（拖动平移、文件拖出、点击类验证）暂时无法继续。
 - **对策**：重新在 Hyper-V 里连接这台虚拟机的控制台（或重启 VM）让任务恢复执行；也可以改用 `vmconnect` 保持会话在 console。
 
-## 七、可复用的测试设施
+## 八、可复用的测试设施
 
 - `tools/vm-do.ps1`：下发动作清单（`click / type / uiaid / win / shot / wheel / start / kill / ls / ps`）→ 取回 `res.txt` 与截图
 - `vm-serve/agent.ps1`：VM 内常驻代理（交互会话、隐藏窗口）
