@@ -1,0 +1,88 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>card drag + preview menu harness</title></head>
+<body style="font:14px sans-serif">
+<div class="rIfSMq_frame" data-document-zoom-mode="fixed">
+  <div class="rIfSMq_scrollport"><div class="rIfSMq_surface">
+    <div style="padding:8px">C:\Users\tester\Desktop\工作\报告.pptx</div>
+    <img id="im" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="width:600px;height:300px">
+  </div></div>
+</div>
+
+<!-- 模拟会话里的交付卡 -->
+<div data-presented-file="true" id="card" style="border:1px solid #ccc;padding:10px;margin:10px;width:320px;position:relative">
+  <button class="nyYjTG_cardPreview" title="C:\Users\tester\Desktop\工作\内忧外患-大连机场联盟案例汇报PPT-v1.pptx"
+          style="position:absolute;inset:0;opacity:.01">preview</button>
+  <span>📄 内忧外患-大连机场联盟案例汇报PPT-v1.pptx</span>
+  <div style="color:#888;font-size:12px">24 页可编辑 PPT</div>
+</div>
+
+<div id="plain" style="padding:20px;background:#eee">普通区域（右键不该被接管）</div>
+<pre id="result">PENDING</pre>
+
+<script>
+  window.__msgs = [];
+  window.chrome = { webview: { postMessage: function (s) { window.__msgs.push(s); } } };
+  window.__prevented = [];
+  document.addEventListener('contextmenu', function (e) { window.__prevented.push({ target: e.target.id || e.target.tagName, prevented: e.defaultPrevented }); }, false);
+</script>
+<script src="file-dragout.js"></script>
+<script src="preview-menu.js"></script>
+<script>
+function out(k, v) { document.getElementById('result').textContent += '\n' + k + '=' + v; }
+function msgList() {
+  return window.__msgs.map(function (raw) {
+    var o = {}; try { o = JSON.parse(raw); } catch (e) {}
+    var p = ''; try { p = decodeURIComponent(escape(atob(o.pathB64 || ''))); } catch (e) {}
+    var n = ''; try { n = decodeURIComponent(escape(atob(o.nameB64 || ''))); } catch (e) {}
+    return (o.type || '?') + (p ? ' -> ' + p : '') + (n ? ' [name=' + n + ']' : '');
+  });
+}
+
+setTimeout(function () {
+  document.getElementById('result').textContent = 'READY';
+
+  // 1) 交付卡拖出
+  var card = document.getElementById('card');
+  var r = card.getBoundingClientRect();
+  var btn = card.querySelector('button');
+  btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: r.left + 20, clientY: r.top + 20, button: 0, buttons: 1 }));
+  for (var i = 1; i <= 5; i++) {
+    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + 20 - i * 7, clientY: r.top + 20 - i * 3, buttons: 1 }));
+  }
+  document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  out('after_card_drag', JSON.stringify(msgList()));
+
+  // 2) 交付卡右键 → 菜单
+  var ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 260 });
+  btn.dispatchEvent(ev);
+  var menu = document.getElementById('dsh-menu');
+  out('menu_open', !!menu);
+  out('menu_items', menu ? Array.prototype.map.call(menu.children, function (c) { return c.textContent; }).join(' | ') : '(none)');
+  out('card_ctx_prevented', ev.defaultPrevented);
+
+  // 3) 点“保存到桌面…”
+  if (menu) {
+    var rows = Array.prototype.slice.call(menu.children);
+    var save = rows.filter(function (c) { return c.textContent.indexOf('保存到桌面') === 0; })[0];
+    if (save) { save.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); out('menu_after_click', !!document.getElementById('dsh-menu')); }
+    else out('menu_after_click', 'no-save-item');
+  }
+  out('msgs_after_menu', JSON.stringify(msgList()));
+
+  // 4) 普通区域右键 → 不应该被接管
+  var ev2 = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 400, clientY: 700 });
+  document.getElementById('plain').dispatchEvent(ev2);
+  out('plain_ctx_prevented', ev2.defaultPrevented);
+  out('plain_ctx_menu', !!document.getElementById('dsh-menu'));
+
+  // 5) 预览区（图片）右键 → 菜单里应有“复制图片”
+  var im = document.getElementById('im');
+  var ev3 = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 300, clientY: 120 });
+  im.dispatchEvent(ev3);
+  var m3 = document.getElementById('dsh-menu');
+  out('preview_menu_open', !!m3);
+  out('preview_menu_items', m3 ? Array.prototype.map.call(m3.children, function (c) { return c.textContent; }).join(' | ') : '(none)');
+  out('DONE', '1');
+}, 300);
+</script>
+</body></html>

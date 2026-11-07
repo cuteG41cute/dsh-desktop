@@ -26,6 +26,8 @@ namespace DshManager
             try
             {
                 core.WebMessageReceived += OnPreviewMessage;
+                // 顶掉 WebView2 自带的右键菜单（“保存网页/打印/检查”），预览区和交付卡由 preview-menu.js 接管
+                try { core.Settings.AreDefaultContextMenusEnabled = false; } catch { }
                 var version = _inst.DshVersion ?? "";
                 var legacy = IsLegacyUi(version);
                 Diag("preview profile: dsh=" + (string.IsNullOrWhiteSpace(version) ? "?" : version)
@@ -52,6 +54,13 @@ namespace DshManager
                             _ = core.AddScriptToExecuteOnDocumentCreatedAsync(panScript);
                             Diag("image-pan injected (" + panScript.Length + " chars)");
                         }
+                    }
+                    // 预览区/交付卡的右键菜单（保存到桌面、复制路径、资源管理器显示）
+                    var menuScript = LoadPreviewScript("preview-menu.js");
+                    if (!string.IsNullOrEmpty(menuScript))
+                    {
+                        _ = core.AddScriptToExecuteOnDocumentCreatedAsync(menuScript);
+                        Diag("preview-menu injected (" + menuScript.Length + " chars)");
                     }
                     if (Services.AppSettings.WebDragOut)
                     {

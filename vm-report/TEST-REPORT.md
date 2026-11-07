@@ -155,7 +155,19 @@ loaded_pan=boolean / loaded_dragout=boolean
 - **影响**：需要注入鼠标/键盘的动作（拖动平移、文件拖出、点击类验证）暂时无法继续。
 - **对策**：重新在 Hyper-V 里连接这台虚拟机的控制台（或重启 VM）让任务恢复执行；也可以改用 `vmconnect` 保持会话在 console。
 
-## 九、可复用的测试设施
+## 九、2.0.28 新增能力的脚本级验证（无头 Chromium）
+
+| 能力 | 结果 |
+| --- | --- |
+| 交付卡拖出 | `dsh-drag-out -> C:\\Users\\tester\\Desktop\\工作\\内忧外患-…pptx`（路径取自卡片的 `title`） |
+| 交付卡右键菜单 | 弹出「保存到桌面… / 复制文件路径 / 在资源管理器中显示」，且 `defaultPrevented=true`（浏览器默认菜单被顶掉） |
+| 点“保存到桌面…” | 发出 `dsh-save-file` 消息（带路径与文件名），菜单随即关闭 |
+| 普通区域右键 | `defaultPrevented=false`、不弹自定义菜单（不干扰其它区域） |
+| 预览区右键 | 同样弹出菜单（图片文件时额外出现“复制图片”） |
+
+测试页：`tools/js-test/harness2.html`。
+
+## 十、可复用的测试设施
 
 - `tools/vm-do.ps1`：下发动作清单（`click / type / uiaid / win / shot / wheel / start / kill / ls / ps`）→ 取回 `res.txt` 与截图
 - `vm-serve/agent.ps1`：VM 内常驻代理（交互会话、隐藏窗口）

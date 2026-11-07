@@ -1,13 +1,21 @@
-﻿// dsh-manager：把右栏文件树里的「文件行」拖出到系统（桌面/资源管理器/聊天窗口）。
-// 新 UI 的行结构：<li data-files-entry="file" data-files-path="/abs/path"><button class="_row">…
-// 行本身不是 draggable，所以这里用 mousedown + 位移阈值来发起，交给宿主做原生 OLE 拖放。
+// dsh-manager：把「文件树里的文件/目录行」和「会话里的交付文件卡」拖出到系统（桌面/资源管理器/输入框）。
+// - 文件树行：<li data-files-entry="file|directory" data-files-path="C:\abs\path">
+// - 交付卡：<div data-presented-file><button class="_cardPreview" title="C:\abs\path">
+// 两者都不是原生 draggable，所以用 mousedown + 位移阈值发起，交给宿主做原生 OLE 拖放。
 (function () {
   if (window.__dshDragOut) return;
   window.__dshDragOut = true;
 
   var press = null;
 
+  function isPath(s) {
+    if (!s) return false;
+    s = String(s).trim();
+    return /^[A-Za-z]:[\\/]/.test(s) || /^\\\\[^\\]/.test(s);
+  }
+
   function pathOf(el) {
+    // 1) 右栏文件树的行
     var n = el;
     for (var i = 0; n && i < 8; i++) {
       if (n.getAttribute) {
@@ -17,6 +25,19 @@
         if ((kind === 'file' || kind === 'directory') && p) return p;
       }
       n = n.parentElement;
+    }
+
+    // 2) 会话里的交付文件卡（title 上是绝对路径）
+    if (el && el.closest) {
+      var card = el.closest('[data-presented-file]');
+      if (card) {
+        var btn = card.querySelector('button[title]');
+        var t = btn ? btn.getAttribute('title') : null;
+        if (isPath(t)) return String(t).trim();
+        var any = card.querySelector('[title]');
+        var t2 = any ? any.getAttribute('title') : null;
+        if (isPath(t2)) return String(t2).trim();
+      }
     }
     return null;
   }
@@ -44,7 +65,7 @@
 
   document.addEventListener('mouseup', function () { press = null; }, true);
   document.addEventListener('dragstart', function (e) {
-    // 行的原生 HTML5 拖拽如被触发，一律拦下（由宿主接管）
+    // 原生 HTML5 拖拽如被触发，一律拦下（由宿主接管）
     if (pathOf(e.target)) { e.preventDefault(); }
   }, true);
 })();
