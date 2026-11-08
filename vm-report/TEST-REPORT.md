@@ -167,7 +167,39 @@ loaded_pan=boolean / loaded_dragout=boolean
 
 测试页：`tools/js-test/harness2.html`。
 
-## 十、可复用的测试设施
+## 十、2.0.29 文件夹拖入（桥注入）验证
+
+产品前端判定逻辑（`dsh-client-ui-conversation`）：
+
+```js
+const bridge = globalThis.__DSH_HOST_PATHS__;         // 桌面版注入的“文件→绝对路径”桥
+if (bridge === undefined && 拖的是目录) return "只有桌面端支持添加文件夹";
+const path = bridge?.pathFor(file) ?? "";
+if (目录 && path === "") return "无法获取文件夹路径";
+```
+
+浏览器拿不到真实绝对路径，所以注入 `folder-drop.js`：
+- 装上 `__DSH_HOST_PATHS__.pathFor(file)`；
+- 拖动时（dragenter/dragover/drop 捕获阶段）记录本次拖动里哪些是**目录**；
+- **目录**返回它的名字（相对工作区，例如 `报告素材`）→ 产品生成 `@报告素材/` 引用；
+- **普通文件**返回空串 → 保持原来的上传/附件行为不变。
+
+无头 Chromium 验证（`tools/js-test/harness3.html`，用产品同款判定逻辑复算）：
+
+```
+bridge_present=true
+before_drag_dir=            （拖动前不干扰）
+after_drag_dir_path=报告素材
+after_drag_file_path=""     （文件仍走上传）
+product_result=dir:报告素材,file:(upload)   ← 不再出现“只有桌面端支持添加文件夹”
+after_clear_dir=""          （1.8s 后自动清理）
+```
+
+本机 `web.log`：`folder-drop injected (2019 chars)`。
+
+**已知限制**：工作区**之外**的文件夹，引用会是 `@名字/`，可能落空（浏览器无绝对路径可用）。
+
+## 十一、可复用的测试设施
 
 - `tools/vm-do.ps1`：下发动作清单（`click / type / uiaid / win / shot / wheel / start / kill / ls / ps`）→ 取回 `res.txt` 与截图
 - `vm-serve/agent.ps1`：VM 内常驻代理（交互会话、隐藏窗口）

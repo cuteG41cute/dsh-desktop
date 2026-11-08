@@ -1,0 +1,71 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>folder drop harness</title></head>
+<body>
+<pre id="result">PENDING</pre>
+<script src="folder-drop.js"></script>
+<script>
+function out(k, v) { document.getElementById('result').textContent += '\n' + k + '=' + v; }
+
+// 造一个假的 dataTransfer：一个目录 + 一个普通文件
+function fakeTransfer() {
+  var dirEntry = { isDirectory: true, name: '报告素材' };
+  var fileEntry = { isDirectory: false, name: 'a.txt' };
+  return {
+    items: [
+      { kind: 'file', webkitGetAsEntry: function () { return dirEntry; } },
+      { kind: 'file', webkitGetAsEntry: function () { return fileEntry; } },
+    ],
+    files: [{ name: '报告素材' }, { name: 'a.txt' }],
+  };
+}
+
+function fireDrop() {
+  var dt = fakeTransfer();
+  ['dragenter', 'dragover', 'drop'].forEach(function (type) {
+    var ev = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: dt });
+    document.dispatchEvent(ev);
+  });
+  return dt;
+}
+
+setTimeout(function () {
+  document.getElementById('result').textContent = 'READY';
+
+  // 产品里的判定逻辑（照抄自 dsh-client-ui-conversation）
+  function productAdd(files, directories) {
+    var bridge = globalThis.__DSH_HOST_PATHS__;
+    var res = [];
+    for (var i = 0; i < files.length; i++) {
+      var file = files[i];
+      var directory = directories.indexOf(file) >= 0;
+      if (bridge === undefined && directory) { res.push('desktopOnly'); continue; }
+      var path = (bridge && bridge.pathFor ? bridge.pathFor(file) : '') || '';
+      if (directory && path === '') { res.push('pathUnavailable'); continue; }
+      res.push((directory ? 'dir' : 'file') + ':' + (path || '(upload)'));
+    }
+    return res.join(',');
+  }
+
+  out('bridge_present', typeof window.__DSH_HOST_PATHS__ === 'object');
+
+  // 先不拖动：桥在但没记录任何目录
+  out('before_drag_dir', window.__DSH_HOST_PATHS__.pathFor({ name: '报告素材' }));
+  out('before_drag_file', window.__DSH_HOST_PATHS__.pathFor({ name: 'a.txt' }));
+
+  var dt = fireDrop();
+  var dirFile = dt.files[0];
+  var plain = dt.files[1];
+
+  out('after_drag_dir_path', window.__DSH_HOST_PATHS__.pathFor(dirFile));
+  out('after_drag_file_path', JSON.stringify(window.__DSH_HOST_PATHS__.pathFor(plain)));
+  out('product_result', productAdd(dt.files, [dirFile]));
+
+  // 1.8 秒后应清空
+  setTimeout(function () {
+    out('after_clear_dir', JSON.stringify(window.__DSH_HOST_PATHS__.pathFor(dirFile)));
+    out('DONE', '1');
+  }, 1800);
+}, 200);
+</script>
+</body></html>

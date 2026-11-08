@@ -15,9 +15,9 @@
     <!-- 图标沿用旧启动器的黑色鲸鱼（exe / 快捷方式 / 任务栏都用它） -->
     <ApplicationIcon>app.ico</ApplicationIcon>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <Version>2.0.28</Version>
-    <FileVersion>2.0.28.0</FileVersion>
-    <AssemblyVersion>2.0.28.0</AssemblyVersion>
+    <Version>2.0.29</Version>
+    <FileVersion>2.0.29.0</FileVersion>
+    <AssemblyVersion>2.0.29.0</AssemblyVersion>
     <Product>DeepSeek Harness 管理器</Product>
     <AssemblyTitle>DeepSeek Harness 管理器</AssemblyTitle>
     <Company>cuteG41cute</Company>
@@ -31,6 +31,7 @@
     <EmbeddedResource Include="web\image-pan.js" />
     <EmbeddedResource Include="web\file-dragout.js" />
     <EmbeddedResource Include="web\preview-menu.js" />
+    <EmbeddedResource Include="web\folder-drop.js" />
     <Resource Include="app.ico" />
   </ItemGroup>
 

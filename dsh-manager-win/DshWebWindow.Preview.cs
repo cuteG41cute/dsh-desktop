@@ -55,6 +55,13 @@ namespace DshManager
                             Diag("image-pan injected (" + panScript.Length + " chars)");
                         }
                     }
+                    // 文件夹拖入：产品靠 __DSH_HOST_PATHS__ 判断“桌面端”，补上这个桥
+                    var folderScript = LoadPreviewScript("folder-drop.js");
+                    if (!string.IsNullOrEmpty(folderScript))
+                    {
+                        _ = core.AddScriptToExecuteOnDocumentCreatedAsync(folderScript);
+                        Diag("folder-drop injected (" + folderScript.Length + " chars)");
+                    }
                     // 预览区/交付卡的右键菜单（保存到桌面、复制路径、资源管理器显示）
                     var menuScript = LoadPreviewScript("preview-menu.js");
                     if (!string.IsNullOrEmpty(menuScript))
