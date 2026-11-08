@@ -2127,7 +2127,6 @@ class ManagerWindow(Gtk.Window):
     # ---- 新建 ----
     def on_new(self, *_):
         dlg = Gtk.Dialog(title='新建实例', transient_for=self, modal=True)
-        dlg.add_buttons('取消', Gtk.ResponseType.CANCEL, '创建实例', Gtk.ResponseType.OK)
         self._style_dialog(dlg, '新建实例', '在独立目录里安装一份 DeepSeek Harness（用系统 node/npm）')
         dlg.set_default_size(560, 320)
         grid = Gtk.Grid(column_spacing=8, row_spacing=10, border_width=12)
@@ -2248,6 +2247,35 @@ class ManagerWindow(Gtk.Window):
                       '安装需要联网（下载 Node 与 npm 包）。')
         hint.get_style_context().add_class('dim-label')
         grid.attach(hint, 0, 5, 2, 1)
+        # 底部条（对齐 Windows）：细线 + 左侧「更新 dsh / Node 版本」+ 右侧 取消/创建实例
+        sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        sep.set_margin_top(10)
+        grid.attach(sep, 0, 6, 2, 1)
+        foot = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        foot.set_margin_top(12)
+        btn_upd = Gtk.Button(label='更新 dsh / Node 版本')
+        btn_upd.get_style_context().add_class('foot-btn')
+        btn_upd.connect('clicked', lambda *a: fetch_versions())
+        foot.pack_start(btn_upd, False, False, 0)
+        btn_cancel = Gtk.Button(label='取消')
+        btn_cancel.get_style_context().add_class('foot-btn')
+        btn_cancel.connect('clicked', lambda *a: dlg.response(Gtk.ResponseType.CANCEL))
+        btn_ok = Gtk.Button(label='创建实例')
+        btn_ok.get_style_context().add_class('foot-btn')
+        btn_ok.get_style_context().add_class('primary')
+        btn_ok.connect('clicked', lambda *a: dlg.response(Gtk.ResponseType.OK))
+        for b in (btn_upd, btn_cancel, btn_ok):
+            b.set_size_request(-1, 32)
+        foot.pack_end(btn_ok, False, False, 0)
+        foot.pack_end(btn_cancel, False, False, 0)
+        grid.attach(foot, 0, 7, 2, 1)
+        try:
+            area_btn = dlg.get_action_area()
+            for child in area_btn.get_children():
+                child.hide()
+            area_btn.hide()
+        except Exception:
+            pass
         dlg.show_all()
         resp = dlg.run()
         if resp != Gtk.ResponseType.OK:
