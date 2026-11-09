@@ -1,0 +1,93 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>preview menu scoping harness</title></head>
+<body style="font:14px sans-serif">
+<pre id="result">PENDING</pre>
+
+<!-- 1) 会话正文（有 _frame 之类的通用类名，不该被接管） -->
+<div class="dhJKeW_body dhJKeW_frame" id="conv" style="padding:20px;border:1px solid #ddd;margin:8px">
+  会话正文：C:\Users\tester\Desktop\工作\报告.pptx
+</div>
+
+<!-- 2) 交付卡（不该弹菜单，但拖出仍要能用） -->
+<div data-presented-file="true" id="card" style="border:1px solid #ccc;padding:10px;margin:8px;position:relative;width:300px">
+  <button class="nyYjTG_cardPreview" title="C:\Users\tester\Desktop\工作\交付.pptx" style="position:absolute;inset:0;opacity:.01">open</button>
+  <span>交付.pptx</span>
+</div>
+
+<!-- 3) 右栏预览（应该接管） -->
+<div class="rIfSMq_frame" data-document-zoom-mode="fixed" id="pv" style="border:1px solid #06f;margin:8px;padding:8px">
+  <div class="rIfSMq_scrollport"><div class="rIfSMq_surface">
+    <div id="pathline">C:\Users\tester\Desktop\工作\预览图.png</div>
+    <img id="im" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="width:400px;height:200px">
+  </div></div>
+</div>
+
+<script>
+  window.chrome = { webview: { postMessage: function (s) { window.__msgs = (window.__msgs || []).concat([s]); } } };
+  window.__prevented = [];
+</script>
+<script src="preview-menu.js"></script>
+<script src="file-dragout.js"></script>
+<script>
+function out(k, v) { document.getElementById('result').textContent += '\n' + k + '=' + v; }
+function menu() { return document.getElementById('dsh-menu'); }
+function closeMenu() { var m = menu(); if (m) m.remove(); }
+
+function ctx(el, x, y) {
+  var ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x || 100, clientY: y || 100 });
+  el.dispatchEvent(ev);
+  return ev;
+}
+
+setTimeout(function () {
+  document.getElementById('result').textContent = 'READY';
+
+  // 1) 会话正文右键 → 不该接管
+  var ev1 = ctx(document.getElementById('conv'), 60, 60);
+  out('conv_prevented', ev1.defaultPrevented);
+  out('conv_menu', !!menu());
+  closeMenu();
+
+  // 2) 交付卡右键 → 不该弹菜单
+  var ev2 = ctx(document.getElementById('card'), 80, 160);
+  out('card_prevented', ev2.defaultPrevented);
+  out('card_menu', !!menu());
+  closeMenu();
+
+  // 3) 右栏预览右键 → 应该接管，并且能定位到 png 路径
+  var ev3 = ctx(document.getElementById('im'), 200, 320);
+  var m = menu();
+  out('preview_prevented', ev3.defaultPrevented);
+  out('preview_menu', !!m);
+  out('preview_items', m ? Array.prototype.map.call(m.children, function (c) { return c.textContent; }).join(' | ') : '(none)');
+
+  // 4) 点“保存到桌面…”应发出 dsh-save-file
+  if (m) {
+    var save = Array.prototype.slice.call(m.children).filter(function (c) { return c.textContent.indexOf('保存到桌面') === 0; })[0];
+    if (save) save.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  }
+  out('msgs', JSON.stringify((window.__msgs || []).map(function (raw) {
+    var o = {}; try { o = JSON.parse(raw); } catch (e) {}
+    var p = ''; try { p = decodeURIComponent(escape(atob(o.pathB64 || ''))); } catch (e) {}
+    return (o.type || '?') + (p ? ' -> ' + p : '');
+  })));
+
+  // 5) 交付卡拖出仍然要能用
+  var card = document.getElementById('card');
+  var r = card.getBoundingClientRect();
+  var btn = card.querySelector('button');
+  btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: r.left + 20, clientY: r.top + 20, button: 0, buttons: 1 }));
+  for (var i = 1; i <= 5; i++) {
+    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + 20 - i * 7, clientY: r.top + 20 - i * 3, buttons: 1 }));
+  }
+  document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  out('after_card_drag', JSON.stringify((window.__msgs || []).map(function (raw) {
+    var o = {}; try { o = JSON.parse(raw); } catch (e) {}
+    var p = ''; try { p = decodeURIComponent(escape(atob(o.pathB64 || ''))); } catch (e) {}
+    return (o.type || '?') + (p ? ' -> ' + p : '');
+  })));
+
+  out('DONE', '1');
+}, 250);
+</script>
+</body></html>
