@@ -59,7 +59,7 @@
     press = null;
     try { e.preventDefault(); e.stopPropagation(); } catch (err) {}
     try {
-      window.chrome.webview.postMessage(JSON.stringify({ type: 'dsh-drag-out', pathB64: b64(path) }));
+      window.chrome.webview.postMessage(JSON.stringify({ type: 'dsh-drag-out', pathB64: b64(path), ts: Date.now() }));
     } catch (err) {}
   }, true);
 

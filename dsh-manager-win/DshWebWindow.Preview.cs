@@ -161,11 +161,48 @@ namespace DshManager
 
         // ---------------------------------------------------------------- 拖出到系统
 
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);
+
+        private static volatile bool _dragging;
+
+        /// <summary>
+        /// 把文件/目录拖出到系统。**这块以前坑过**：如果消息到得晚（用户已经松手），
+        /// DoDragDrop 会在“没有按键按下”的状态下进入 OLE 拖动循环，等不到 drop 也等不到 Esc，
+        /// 整个 UI 线程就卡死（表现为「管理器未响应」）。所以这里加了三道保险：
+        ///   ① 只认 1.2 秒内发出的拖动请求（JS 里带 ts）；
+        ///   ② 要求此刻左键仍按下；
+        ///   ③ 进入拖动后起一个看门狗，超过 8 秒还没结束就发 Esc 取消。
+        /// </summary>
         private void StartFileDrag(string json)
         {
             var src = DecodeB64(Field(json, "pathB64"));
             if (string.IsNullOrEmpty(src)) return;
             if (!File.Exists(src) && !Directory.Exists(src)) return;
+
+            var ts = 0L;
+            try { long.TryParse(Field(json, "ts"), out ts); } catch { }
+            if (ts > 0)
+            {
+                var age = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - ts;
+                if (age > 1200)
+                {
+                    Diag("drag out skipped (stale message, " + age + "ms) " + src);
+                    return;
+                }
+            }
+
+            // 左键必须还按着，否则 DoDragDrop 会挂住
+            if ((GetAsyncKeyState(0x01) & 0x8000) == 0)
+            {
+                Diag("drag out skipped (left button already up) " + src);
+                Watchdog.Breadcrumb("drag-out skipped (button up)");
+                return;
+            }
+
             try
             {
                 var data = new DataObject();
@@ -173,8 +210,33 @@ namespace DshManager
                 data.SetFileDropList(files);
                 try { data.SetText(src); } catch { }
                 try { data.SetData("text/uri-list", new Uri(src).AbsoluteUri); } catch { }
-                Diag("drag out " + src);
-                DragDrop.DoDragDrop(this, data, DragDropEffects.Copy);
+                Diag("drag out start " + src);
+                Watchdog.Breadcrumb("drag-out start: " + src);
+
+                _dragging = true;
+                var started = DateTime.UtcNow;
+                // 看门狗：拖太久就发 Esc 取消（正常情况下拖动几秒内就结束）
+                System.Threading.Tasks.Task.Run(async () =>
+                {
+                    await System.Threading.Tasks.Task.Delay(8000);
+                    if (!_dragging) return;
+                    Diag("drag out watchdog fired, cancelling");
+                    try
+                    {
+                        keybd_event(0x1B, 0, 0, System.UIntPtr.Zero);
+                        await System.Threading.Tasks.Task.Delay(120);
+                        keybd_event(0x1B, 0, 2, System.UIntPtr.Zero);
+                    }
+                    catch { }
+                });
+
+                try { DragDrop.DoDragDrop(this, data, DragDropEffects.Copy); }
+                finally
+                {
+                    _dragging = false;
+                    Diag("drag out end (" + (int)(DateTime.UtcNow - started).TotalMilliseconds + "ms)");
+                    Watchdog.Breadcrumb("drag-out end");
+                }
             }
             catch (Exception ex) { Diag("drag out failed: " + ex.Message); }
         }
@@ -234,7 +296,9 @@ namespace DshManager
                     AddExtension = true,
                     OverwritePrompt = true,
                 };
-                if (dlg.ShowDialog(this) != true) { ReplyError(requestId, "cancelled"); return; }
+                Watchdog.Breadcrumb("save dialog opening: " + fileName);
+                if (dlg.ShowDialog(this) != true) { Watchdog.Breadcrumb("save dialog cancelled"); ReplyError(requestId, "cancelled"); return; }
+                Watchdog.Breadcrumb("save dialog ok: " + dlg.FileName);
                 var target = dlg.FileName;
                 if (!string.IsNullOrEmpty(src) && File.Exists(src)) File.Copy(src, target, true);
                 else if (!string.IsNullOrEmpty(dataB64))

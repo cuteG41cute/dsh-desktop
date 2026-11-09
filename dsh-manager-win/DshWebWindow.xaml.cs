@@ -109,6 +109,7 @@ public partial class DshWebWindow : Window
             Diag("webview2 ready");
 
             var core = Web.CoreWebView2;
+            Watchdog.Breadcrumb("web window ready: port " + _inst.Port);
             AttachPreviewTools(core);
             ProbePreviewDomOnce(core);
             HookDomDumpHotkey();

@@ -287,6 +287,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         if (BrandVersion != null) BrandVersion.Text = "v" + AppVersion;
+        Watchdog.Start();
         // 实例在 OnLoaded 里扫描（构造时还没有扫描结果，不能索引）
         Loaded += OnLoaded;
         // 拖动边缘缩放时，每个 WM_SIZE 都会触发 SizeChanged；这里只做最便宜的裁剪，
