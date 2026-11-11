@@ -2292,6 +2292,27 @@ class ManagerWindow(Gtk.Window):
         if os.path.exists(prefix) and not os.path.isdir(prefix):
             self.append_log('✘ 目标路径已存在且不是目录：%s' % prefix)
             return
+
+        # 端口占用校验：不能被别的实例占着，也不能已被系统监听
+        try:
+            if port and _port_in_use(port):
+                self.append_log('✘ 端口 %d 已被占用（换个端口再试）' % port)
+                return
+        except Exception:
+            pass
+
+        # 目录校验：已存在但「不是本管理器留下的半成品」就拒绝，避免把第二个实例装进别人的目录。
+        # 允许 node/ app/ tools/ pnpm-store/ dsh-home/ install.json 这些残留（等于「继续复用」）。
+        if os.path.isdir(prefix):
+            allowed = {'node', 'app', 'tools', 'pnpm-store', 'dsh-home', 'install.json', 'logs'}
+            try:
+                foreign = [n for n in os.listdir(prefix) if n not in allowed]
+            except Exception:
+                foreign = []
+            if foreign:
+                self.append_log('✘ 目录已存在且不为空（%s），请换一个目录'
+                                % ', '.join(foreign[:4]))
+                return
         self._run_async('安装 %s' % os.path.basename(prefix),
                         lambda: self.manager.install(prefix, dsh, node, port, label))
 

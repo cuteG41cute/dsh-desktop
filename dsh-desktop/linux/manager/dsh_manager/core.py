@@ -1089,12 +1089,26 @@ class Manager:
             inst.stop()
         except Exception:
             pass
-        try:
-            if purge_data:
-                shutil.rmtree(inst.prefix, ignore_errors=False)
-            else:
-                shutil.rmtree(inst.prefix, ignore_errors=False)
-        except Exception as exc:
-            return False, '删除失败：%s' % exc
+
+        # 停服务之后**等端口真的释放**再删：刚 kill 完时进程还握着 node_modules 里的文件，
+        # 立刻删会「删一半」。Windows 版踩过同样的坑（剩下 800MB 删不掉）。
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            if not _port_listening(inst.port):
+                break
+            time.sleep(0.3)
+
+        last_exc = None
+        for attempt in range(4):
+            try:
+                _rmtree_force(inst.prefix)
+                last_exc = None
+                break
+            except Exception as exc:
+                last_exc = exc
+                time.sleep(0.7)
+        if last_exc is not None:
+            return False, '删除失败（可能有进程占用）：%s' % last_exc
+
         self._forget(inst.prefix)
         return True, '已卸载：%s' % inst.prefix
