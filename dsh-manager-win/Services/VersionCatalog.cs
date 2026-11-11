@@ -18,11 +18,11 @@ public static class VersionCatalog
 {
     // 连接超时单独设短（15s）：否则一条挂死的连接会让整个下载干等 10 分钟，
 // 界面一直停在「正在克隆官方仓库并构建…」看起来像卡死（VM 实测遇到过）。
-    private static readonly HttpClient Http = new HttpClient(new System.Net.Http.SocketsHttpHandler
+    private static readonly HttpClient Http = new HttpClient(ProxyConfig.Configure(new System.Net.Http.SocketsHttpHandler
     {
         ConnectTimeout = TimeSpan.FromSeconds(15),
         PooledConnectionLifetime = TimeSpan.FromMinutes(2),
-    })
+    }))
     {
         Timeout = TimeSpan.FromMinutes(10),
     };
@@ -91,7 +91,8 @@ public static class VersionCatalog
         var list = new List<string> { "master" };
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            using var http = new HttpClient(ProxyConfig.Configure(new System.Net.Http.SocketsHttpHandler()))
+        { Timeout = TimeSpan.FromSeconds(15) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("dsh-manager");
             var json = await http.GetStringAsync(
                 "https://api.github.com/repos/deepseek-ai/deepseek-harness/tags?per_page=40");

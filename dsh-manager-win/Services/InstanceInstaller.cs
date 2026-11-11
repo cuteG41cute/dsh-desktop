@@ -84,6 +84,7 @@ public static class InstanceInstaller
                 psi.Environment["PATH"] = instNodeDir + ";" +
                     (Environment.GetEnvironmentVariable("PATH") ?? "");
 
+            ProxyConfig.ApplyTo(psi);
             var proc = new Process { StartInfo = psi };
             var buffer = new StringBuilder();
             proc.OutputDataReceived += (_, e) => { if (e.Data != null) { lock (buffer) buffer.AppendLine(e.Data); log(e.Data); } };
@@ -166,17 +167,76 @@ public static class InstanceInstaller
         }
     }
 
-    /// <summary>删除实例自己的子目录（app / tools / node 等），失败只记日志不抛。</summary>
+    /// <summary>
+    /// 删除实例自己的子目录（app / tools / node 等）。
+    /// 常见失败原因：上一次的 git.exe / node 进程还捏着句柄（Windows 下会拒绝删除），
+    /// 或者 .git/objects 里有只读文件。这里做三件事：清只读 → 重试三次 → 还删不掉就改名挪开，
+    /// 绝不让「目的路径已存在且不为空」把 clone 挡死。
+    /// </summary>
+    /// <summary>
+    /// pnpm/npm 的代理参数：只设 HTTP(S)_PROXY 环境变量在 pnpm 上不保险（实测仍会直连），
+    /// 必须显式给 --config.proxy / --config.https-proxy；顺便把重试次数放宽。
+    /// </summary>
+    private static void AddPnpmNetworkArgs(System.Collections.Generic.List<string> args, Action<string> log,
+        bool npmStyle = false)
+    {
+        var proxy = ProxyConfig.Current;
+        args.Add("--fetch-retries=5");
+        args.Add("--fetch-timeout=120000");
+        if (proxy != null)
+        {
+            // npm 和 pnpm 的参数名不一样：npm 是 --proxy/--https-proxy，
+            // pnpm 要写成 --config.xxx（写成 --config.https-proxy 给 npm 会被当成未知参数直接失败）。
+            args.Add((npmStyle ? "--proxy=" : "--config.proxy=") + proxy);
+            args.Add((npmStyle ? "--https-proxy=" : "--config.https-proxy=") + proxy);
+        }
+        log("网络策略：" + ProxyConfig.Describe());
+    }
+
     private static void TryDelete(string path, Action<string> log)
     {
+        for (var i = 0; Directory.Exists(path) && i < 3; i++)
+        {
+            try
+            {
+                ClearReadOnly(path);
+                Directory.Delete(path, true);
+            }
+            catch (Exception ex)
+            {
+                log("清理 " + path + " 失败（第 " + (i + 1) + " 次）：" + ex.Message);
+                System.Threading.Thread.Sleep(400);
+            }
+        }
+        if (!Directory.Exists(path)) return;
         try
         {
-            if (Directory.Exists(path)) Directory.Delete(path, true);
+            var aside = path + ".old-" + DateTime.Now.ToString("HHmmss");
+            Directory.Move(path, aside);
+            log("目录被占用，已挪到：" + aside);
+            try { Directory.Delete(aside, true); } catch { }
         }
         catch (Exception ex)
         {
-            log("清理 " + path + " 失败：" + ex.Message);
+            log("目录挪走也失败：" + ex.Message);
         }
+    }
+
+    private static void ClearReadOnly(string path)
+    {
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    var attr = File.GetAttributes(file);
+                    if ((attr & FileAttributes.ReadOnly) != 0) File.SetAttributes(file, attr & ~FileAttributes.ReadOnly);
+                }
+                catch { }
+            }
+        }
+        catch { }
     }
 
     private static bool IsUsableCheckout(string app)
@@ -229,15 +289,19 @@ public static class InstanceInstaller
                     TryDelete(tools, log);
                 }
                 log("在实例目录里装 pnpm " + PnpmVersion + "（不装全局）…");
-                var (pok, pmsg) = await RunAsync(npm, new[]
+                var pargs = new System.Collections.Generic.List<string>
                 {
                     "install", "pnpm@" + PnpmVersion, "--prefix", tools,
                     "--no-audit", "--no-fund", "--loglevel=error",
-                }, dir, log, TimeSpan.FromMinutes(20), node);
+                };
+                AddPnpmNetworkArgs(pargs, log, npmStyle: true);
+                var (pok, pmsg) = await RunAsync(npm, pargs.ToArray(), dir, log, TimeSpan.FromMinutes(20), node);
                 if (!pok) { log("pnpm 安装失败：" + pmsg); return false; }
                 if (!File.Exists(pnpmCjs)) { log("pnpm 没装上：" + pnpmCjs); return false; }
                 return true;
             }
+
+            log("网络策略：" + ProxyConfig.Describe());
 
             async Task<bool> EnsureCheckoutAsync(string reference)
             {
@@ -249,21 +313,45 @@ public static class InstanceInstaller
                 TryDelete(app, log);
                 log("克隆官方仓库：" + SourceRepo);
                 log("使用仓库版本：" + reference);
-                var (cok, cmsg) = await RunAsync("git", new[]
+
+                // 走代理时 git 偶尔会报 `fatal: expected 'packfile'`（HTTP/2 + 代理的经典组合问题），
+                // 强制 HTTP/1.1 并重试 3 次；每次失败都清干净再试。
+                var okClone = false;
+                var msgClone = "";
+                for (var attempt = 1; attempt <= 3 && !okClone; attempt++)
                 {
-                    "clone", "--depth", "1", "--branch", reference, SourceRepo, app,
-                }, dir, log, TimeSpan.FromMinutes(30));
-                if (!cok && reference != "master")
-                {
-                    log("版本 " + reference + " 拉不下来，改用默认分支 …");
-                    TryDelete(app, log);
-                    var again = await RunAsync("git", new[]
+                    if (attempt > 1)
                     {
-                        "clone", "--depth", "1", SourceRepo, app,
-                    }, dir, log, TimeSpan.FromMinutes(30));
-                    cok = again.Ok; cmsg = again.Message;
+                        log("clone 失败（" + msgClone + "），第 " + attempt + " 次重试 …");
+                        TryDelete(app, log);
+                        await Task.Delay(TimeSpan.FromSeconds(2 * attempt));
+                    }
+                    var args = new System.Collections.Generic.List<string>
+                    {
+                        "-c", "http.version=HTTP/1.1",
+                        "clone", "--depth", "1", "--branch", reference, SourceRepo, app,
+                    };
+                    var (aok, amsg) = await RunAsync("git", args.ToArray(), dir, log, TimeSpan.FromMinutes(30));
+                    okClone = aok;
+                    msgClone = amsg;
+                    if (!aok && reference != "master" && attempt == 1)
+                    {
+                        log("版本 " + reference + " 拉不下来，改用默认分支 …");
+                        TryDelete(app, log);
+                        var again = await RunAsync("git", new[]
+                        {
+                            "-c", "http.version=HTTP/1.1", "clone", "--depth", "1", SourceRepo, app,
+                        }, dir, log, TimeSpan.FromMinutes(30));
+                        okClone = again.Ok; msgClone = again.Message;
+                    }
+                    if (okClone && !IsUsableCheckout(app))
+                    {
+                        log("克隆结果不完整（工作区里没有 package.json），按失败处理");
+                        okClone = false;
+                        msgClone = "工作区不完整";
+                    }
                 }
-                if (!cok) { log("git clone 失败：" + cmsg); return false; }
+                if (!okClone) { log("git clone 失败：" + msgClone); return false; }
                 if (!IsUsableCheckout(app))
                 {
                     log("克隆结果不完整（工作区里没有 package.json），多半是网络中断");
@@ -281,10 +369,12 @@ public static class InstanceInstaller
             for (var attempt = 1; attempt <= 2 && !installed; attempt++)
             {
                 log("pnpm install（store 也在实例目录里）" + (attempt > 1 ? "，第 " + attempt + " 次尝试" : "") + " …");
-                var (iok, imsg) = await RunAsync(node, new[]
+                var iargs = new System.Collections.Generic.List<string>
                 {
                     pnpmCjs, "install", "--config.store-dir=" + store,
-                }, app, log, TimeSpan.FromMinutes(60), node);
+                };
+                AddPnpmNetworkArgs(iargs, log);
+                var (iok, imsg) = await RunAsync(node, iargs.ToArray(), app, log, TimeSpan.FromMinutes(60), node);
                 installed = iok;
                 if (iok) break;
                 // 典型症状：pnpm 在空目录里跑（NO_PKG_MANIFEST）。这多半是克隆出来的工作区
@@ -300,10 +390,11 @@ public static class InstanceInstaller
             if (!installed) return (false, "pnpm install 失败");
 
             log("pnpm run build（这一步最慢，可能要十几分钟）…");
-            var (bok, bmsg) = await RunAsync(node, new[]
-            {
-                pnpmCjs, "run", "build",
-            }, app, log, TimeSpan.FromMinutes(90), node);
+            // 注意：**不要**把代理/重试参数塞给 `pnpm run build` —— 它们会被转发给
+            // 仓库自己的构建脚本（tsx scripts/build.ts），那边的参数解析器会直接报错退出。
+            log("网络策略：" + ProxyConfig.Describe());
+            var (bok, bmsg) = await RunAsync(node, new[] { pnpmCjs, "run", "build" },
+                app, log, TimeSpan.FromMinutes(90), node);
             if (!bok) return (false, "构建失败：" + bmsg);
 
             var entry = SourceEntry(dir);
