@@ -288,6 +288,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         if (BrandVersion != null) BrandVersion.Text = "v" + AppVersion;
         Watchdog.Start();
+        StartTtsWatcher();
         // 实例在 OnLoaded 里扫描（构造时还没有扫描结果，不能索引）
         Loaded += OnLoaded;
         // 拖动边缘缩放时，每个 WM_SIZE 都会触发 SizeChanged；这里只做最便宜的裁剪，
@@ -2025,6 +2026,74 @@ public partial class MainWindow : Window
 
 
     // ---------------------------------------------------------------- 快捷动作 / 帮助 / 关于
+    // ---------------------------------------------------------------- 本地语音（Qwen3-TTS）
+
+    private System.Windows.Threading.DispatcherTimer _ttsTimer;
+
+    private void StartTtsWatcher()
+    {
+        _ttsTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _ttsTimer.Tick += (_, _) => UpdateTtsCard();
+        _ttsTimer.Start();
+        UpdateTtsCard();
+    }
+
+    private void UpdateTtsCard()
+    {
+        try
+        {
+            if (TtsCard == null) return;
+            var running = TtsService.Running;
+            var dash = TtsService.DashboardRunning;
+            var models = TtsService.ModelsReady;
+            var bins = TtsService.BinariesReady;
+
+            TtsBadgeText.Text = running ? "运行中" : "已停止";
+            TtsBadge.Background = running
+                ? (System.Windows.Media.Brush)FindResource("AccentSoft")
+                : (System.Windows.Media.Brush)FindResource("InnerBorder");
+
+            if (!bins) TtsSub.Text = "缺少 tts-server.exe（services\\tts\\run）";
+            else if (!models) TtsSub.Text = "模型未就绪（services\\tts\\models 需要两个 GGUF）";
+            else if (running)
+                TtsSub.Text = "Qwen3-TTS · 端口 " + TtsService.Port + " · 管理页 " +
+                              (dash ? "已开" : "未开") + " · " +
+                              (TtsService.ModelsBytes / 1024 / 1024) + " MB 模型";
+            else TtsSub.Text = "Qwen3-TTS · 已就绪（模型 " +
+                              (TtsService.ModelsBytes / 1024 / 1024) + " MB）· 点「启动」拉起";
+
+            TtsStartBtn.IsEnabled = !running && bins && models;
+            TtsStopBtn.IsEnabled = running;
+            TtsOpenBtn.IsEnabled = bins;
+        }
+        catch { }
+    }
+
+    private void OnTtsStart(object sender, RoutedEventArgs e)
+    {
+        var (ok, msg) = TtsService.Start();
+        Toast(msg);
+        if (!ok) return;
+        System.Threading.Tasks.Task.Delay(1500).ContinueWith(_ => Dispatcher.BeginInvoke(new Action(UpdateTtsCard)));
+    }
+
+    private void OnTtsStop(object sender, RoutedEventArgs e)
+    {
+        var (ok, msg) = TtsService.Stop();
+        Toast(msg);
+        if (!ok) return;
+        System.Threading.Tasks.Task.Delay(800).ContinueWith(_ => Dispatcher.BeginInvoke(new Action(UpdateTtsCard)));
+    }
+
+    private void OnTtsOpen(object sender, RoutedEventArgs e)
+    {
+        var (ok, url) = TtsService.EnsureDashboard();
+        if (!ok) { Toast(url); return; }
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch (Exception ex) { Toast("打开管理页失败：" + ex.Message); }
+        Toast("管理页：" + url);
+    }
+
     private void OnQuickToken(object sender, MouseButtonEventArgs e) => OnShowToken();
     private void OnQuickUpdate(object sender, MouseButtonEventArgs e) => CheckUpdateAsync();
     private void OnQuickFolder(object sender, MouseButtonEventArgs e)

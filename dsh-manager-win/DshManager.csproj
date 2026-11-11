@@ -15,9 +15,9 @@
     <!-- 图标沿用旧启动器的黑色鲸鱼（exe / 快捷方式 / 任务栏都用它） -->
     <ApplicationIcon>app.ico</ApplicationIcon>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <Version>3.0.3</Version>
-    <FileVersion>3.0.3.0</FileVersion>
-    <AssemblyVersion>3.0.3.0</AssemblyVersion>
+    <Version>3.0.4</Version>
+    <FileVersion>3.0.4.0</FileVersion>
+    <AssemblyVersion>3.0.4.0</AssemblyVersion>
     <Product>DeepSeek Harness 管理器</Product>
     <AssemblyTitle>DeepSeek Harness 管理器</AssemblyTitle>
     <Company>cuteG41cute</Company>
