@@ -175,6 +175,13 @@ public static class VersionCatalog
             var target = Path.Combine(dir, "node");
             if (File.Exists(Path.Combine(target, "node.exe")))
                 log("实例里已经有 Node，跳过下载：" + target);
+            else if (Directory.Exists(target))
+            {
+                // 上次下载/解压没走完：目录在、node.exe 不在。这种“半成品”直接覆盖重装，
+                // 免得解压时和旧文件混在一起（只动实例自己的 node/，dsh-home 等用户数据不动）。
+                log("实例里的 Node 目录不完整，清理后重新安装：" + target);
+                try { Directory.Delete(target, true); } catch (Exception ex) { log("清理旧 Node 目录失败：" + ex.Message); }
+            }
 
             var v = version == "latest" ? await LatestNodeAsync() : version.TrimStart('v');
             if (string.IsNullOrEmpty(v)) return (false, "没解析出 Node 版本号");

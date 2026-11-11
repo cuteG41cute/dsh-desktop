@@ -145,6 +145,40 @@ public static class InstanceInstaller
     /// 判断 app 目录是不是一份**可用**的源码检出：.git/HEAD 存在，且工作区里有 package.json。
     /// （中断的 git clone 会留下只有 objects/ 的 .git，光看 .git 存在会误判。）
     /// </summary>
+    // 同一个目录只允许一次安装在跑：两次并发会互相删目录（一次把另一次的 app 清掉，
+    // 另一边就变成「在空目录里 pnpm install」→ ERR_PNPM_NO_PKG_MANIFEST）。
+    private static readonly HashSet<string> ActiveDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    private static readonly object ActiveGate = new object();
+
+    private static bool TryEnter(string dir)
+    {
+        lock (ActiveGate)
+        {
+            return ActiveDirs.Add(Path.GetFullPath(dir));
+        }
+    }
+
+    private static void Exit(string dir)
+    {
+        lock (ActiveGate)
+        {
+            try { ActiveDirs.Remove(Path.GetFullPath(dir)); } catch { }
+        }
+    }
+
+    /// <summary>删除实例自己的子目录（app / tools / node 等），失败只记日志不抛。</summary>
+    private static void TryDelete(string path, Action<string> log)
+    {
+        try
+        {
+            if (Directory.Exists(path)) Directory.Delete(path, true);
+        }
+        catch (Exception ex)
+        {
+            log("清理 " + path + " 失败：" + ex.Message);
+        }
+    }
+
     private static bool IsUsableCheckout(string app)
     {
         try
@@ -162,6 +196,8 @@ public static class InstanceInstaller
     public static async Task<(bool Ok, string Message)> InstallSourceAsync(
         string dir, string nodeVersion, Action<string> log, int port, string gitRef = "master")
     {
+        if (!TryEnter(dir))
+            return (false, "这个目录已经有一次安装在跑，等它结束再试（别同时点两次创建）");
         try
         {
             Directory.CreateDirectory(dir);
@@ -178,13 +214,40 @@ public static class InstanceInstaller
             if (Directory.Exists(app) && !IsUsableCheckout(app))
             {
                 log("检测到上次没克隆完整（缺 package.json 或 .git 不完整），清理后重新克隆：" + app);
-                try { Directory.Delete(app, true); } catch (Exception ex) { log("清理旧目录失败：" + ex.Message); }
+                TryDelete(app, log);
             }
-            if (!Directory.Exists(Path.Combine(app, ".git")))
+
+            var tools = Path.Combine(dir, "tools");
+            var pnpmCjs = Path.Combine(tools, "node_modules", "pnpm", "bin", "pnpm.cjs");
+
+            async Task<bool> EnsurePnpmAsync()
             {
-                if (Directory.Exists(app)) Directory.Delete(app, true);
+                if (File.Exists(pnpmCjs)) return true;
+                if (Directory.Exists(tools) && !File.Exists(pnpmCjs))
+                {
+                    log("实例里的 pnpm 不完整，清理后重新安装：" + tools);
+                    TryDelete(tools, log);
+                }
+                log("在实例目录里装 pnpm " + PnpmVersion + "（不装全局）…");
+                var (pok, pmsg) = await RunAsync(npm, new[]
+                {
+                    "install", "pnpm@" + PnpmVersion, "--prefix", tools,
+                    "--no-audit", "--no-fund", "--loglevel=error",
+                }, dir, log, TimeSpan.FromMinutes(20), node);
+                if (!pok) { log("pnpm 安装失败：" + pmsg); return false; }
+                if (!File.Exists(pnpmCjs)) { log("pnpm 没装上：" + pnpmCjs); return false; }
+                return true;
+            }
+
+            async Task<bool> EnsureCheckoutAsync(string reference)
+            {
+                if (IsUsableCheckout(app))
+                {
+                    log("仓库已存在且完整，跳过 clone：" + app);
+                    return true;
+                }
+                TryDelete(app, log);
                 log("克隆官方仓库：" + SourceRepo);
-                var reference = string.IsNullOrWhiteSpace(gitRef) ? "master" : gitRef.Trim();
                 log("使用仓库版本：" + reference);
                 var (cok, cmsg) = await RunAsync("git", new[]
                 {
@@ -193,43 +256,48 @@ public static class InstanceInstaller
                 if (!cok && reference != "master")
                 {
                     log("版本 " + reference + " 拉不下来，改用默认分支 …");
-                    if (Directory.Exists(app)) Directory.Delete(app, true);
+                    TryDelete(app, log);
                     var again = await RunAsync("git", new[]
                     {
                         "clone", "--depth", "1", SourceRepo, app,
                     }, dir, log, TimeSpan.FromMinutes(30));
                     cok = again.Ok; cmsg = again.Message;
                 }
-                if (!cok) return (false, "git clone 失败：" + cmsg);
+                if (!cok) { log("git clone 失败：" + cmsg); return false; }
                 if (!IsUsableCheckout(app))
                 {
-                    return (false, "克隆结果不完整（工作区里没有 package.json）："
-                                   + "多半是网络中断导致，重试一次或换个网络即可");
+                    log("克隆结果不完整（工作区里没有 package.json），多半是网络中断");
+                    return false;
                 }
+                return true;
             }
-            else log("仓库已存在，跳过 clone：" + app);
 
-            var tools = Path.Combine(dir, "tools");
-            var pnpmCjs = Path.Combine(tools, "node_modules", "pnpm", "bin", "pnpm.cjs");
-            if (!File.Exists(pnpmCjs))
-            {
-                log("在实例目录里装 pnpm " + PnpmVersion + "（不装全局）…");
-                var (pok, pmsg) = await RunAsync(npm, new[]
-                {
-                    "install", "pnpm@" + PnpmVersion, "--prefix", tools,
-                    "--no-audit", "--no-fund", "--loglevel=error",
-                }, dir, log, TimeSpan.FromMinutes(20), node);
-                if (!pok) return (false, "pnpm 安装失败：" + pmsg);
-            }
-            if (!File.Exists(pnpmCjs)) return (false, "pnpm 没装上：" + pnpmCjs);
+            var reference = string.IsNullOrWhiteSpace(gitRef) ? "master" : gitRef.Trim();
+            if (!await EnsureCheckoutAsync(reference)) return (false, "克隆官方仓库失败（网络中断或版本不存在），重试一次通常就好");
+            if (!await EnsurePnpmAsync()) return (false, "pnpm 安装失败");
 
             var store = Path.Combine(dir, "pnpm-store");
-            log("pnpm install（store 也在实例目录里）…");
-            var (iok, imsg) = await RunAsync(node, new[]
+            var installed = false;
+            for (var attempt = 1; attempt <= 2 && !installed; attempt++)
             {
-                pnpmCjs, "install", "--config.store-dir=" + store,
-            }, app, log, TimeSpan.FromMinutes(60), node);
-            if (!iok) return (false, "pnpm install 失败：" + imsg);
+                log("pnpm install（store 也在实例目录里）" + (attempt > 1 ? "，第 " + attempt + " 次尝试" : "") + " …");
+                var (iok, imsg) = await RunAsync(node, new[]
+                {
+                    pnpmCjs, "install", "--config.store-dir=" + store,
+                }, app, log, TimeSpan.FromMinutes(60), node);
+                installed = iok;
+                if (iok) break;
+                // 典型症状：pnpm 在空目录里跑（NO_PKG_MANIFEST）。这多半是克隆出来的工作区
+                // 被中途删掉/没落地——清掉重新克隆一次再试，比让用户自己找目录手动删靠谱。
+                if ((imsg ?? "").Contains("NO_PKG_MANIFEST") || !File.Exists(Path.Combine(app, "package.json")))
+                {
+                    log("pnpm 找不到 package.json（工作区不完整），清理后重新克隆再试一次 …");
+                    if (!await EnsureCheckoutAsync(reference)) { log("重新克隆失败"); break; }
+                    continue;
+                }
+                break;
+            }
+            if (!installed) return (false, "pnpm install 失败");
 
             log("pnpm run build（这一步最慢，可能要十几分钟）…");
             var (bok, bmsg) = await RunAsync(node, new[]
@@ -259,6 +327,10 @@ public static class InstanceInstaller
         catch (Exception ex)
         {
             return (false, "源码实例安装失败：" + ex.Message);
+        }
+        finally
+        {
+            Exit(dir);
         }
     }
 

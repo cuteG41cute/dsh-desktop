@@ -148,7 +148,9 @@ public partial class NewInstanceWindow : Window
         {
             var name = (NameBox.Text ?? "").Trim();
             if (string.IsNullOrWhiteSpace(name)) return;
-            if (!_dirEdited) DirBox.Text = UniqueDir(name);
+            // 必须走 SetDirSilently：直接赋 Text 会触发 OnDirChanged，把 _dirEdited 点亮，
+            // 于是“改名同步目录”只生效一次（用户实测：敲完实例名，目录只改了一个字母）。
+            if (!_dirEdited) SetDirSilently(UniqueDir(name));
         }
         catch { }
     }
@@ -284,6 +286,12 @@ public partial class NewInstanceWindow : Window
         _busy = true;
         CreateBtn.IsEnabled = false;
         CancelBtn.IsEnabled = false;
+        try
+        {
+            if (LogCard != null) LogCard.Visibility = Visibility.Visible;
+            if (Prog != null) { Prog.Visibility = Visibility.Visible; Prog.IsIndeterminate = true; }
+        }
+        catch { }
         StatusText.Text = "正在安装…（npm 可能需要几分钟）";
         AppendLog("=== 开始安装 ===");
 
@@ -315,6 +323,11 @@ public partial class NewInstanceWindow : Window
         _busy = false;
         CreateBtn.IsEnabled = true;
         CancelBtn.IsEnabled = true;
+        try
+        {
+            if (Prog != null) { Prog.IsIndeterminate = false; Prog.Visibility = Visibility.Collapsed; }
+        }
+        catch { }
         StatusText.Text = msg;
         AppendLog((ok ? "✔ " : "✘ ") + msg);
         if (!ok)
