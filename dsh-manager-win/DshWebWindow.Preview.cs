@@ -28,6 +28,19 @@ namespace DshManager
                 core.WebMessageReceived += OnPreviewMessage;
                 // 顶掉 WebView2 自带的右键菜单（“保存网页/打印/检查”），预览区和交付卡由 preview-menu.js 接管
                 try { core.Settings.AreDefaultContextMenusEnabled = false; } catch { }
+                // 粘贴要用 navigator.clipboard.readText()，需要放行剪贴板读取权限
+                try
+                {
+                    core.PermissionRequested += (_, e) =>
+                    {
+                        try
+                        {
+                            if (e.PermissionKind == CoreWebView2PermissionKind.ClipboardRead) e.State = CoreWebView2PermissionState.Allow;
+                        }
+                        catch { }
+                    };
+                }
+                catch { }
                 var version = _inst.DshVersion ?? "";
                 var legacy = IsLegacyUi(version);
                 Diag("preview profile: dsh=" + (string.IsNullOrWhiteSpace(version) ? "?" : version)
@@ -54,6 +67,13 @@ namespace DshManager
                             _ = core.AddScriptToExecuteOnDocumentCreatedAsync(panScript);
                             Diag("image-pan injected (" + panScript.Length + " chars)");
                         }
+                    }
+                    // 可编辑控件（会话输入框/搜索框）的右键菜单：剪切/复制/粘贴/全选
+                    var textMenuScript = LoadPreviewScript("text-menu.js");
+                    if (!string.IsNullOrEmpty(textMenuScript))
+                    {
+                        _ = core.AddScriptToExecuteOnDocumentCreatedAsync(textMenuScript);
+                        Diag("text-menu injected (" + textMenuScript.Length + " chars)");
                     }
                     // 文件夹拖入：产品靠 __DSH_HOST_PATHS__ 判断“桌面端”，补上这个桥
                     var folderScript = LoadPreviewScript("folder-drop.js");

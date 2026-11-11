@@ -1,0 +1,101 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>text menu harness</title></head>
+<body style="font:14px sans-serif">
+<textarea id="ta" rows="3" cols="40">hello world</textarea>
+<div id="ce" contenteditable="true" style="border:1px solid #ccc;padding:8px;width:320px;margin-top:8px">可编辑富文本 abc</div>
+<div id="plain" style="margin-top:8px;padding:8px;background:#eee">普通区域</div>
+<pre id="result">PENDING</pre>
+
+<script>
+  // 假剪贴板
+  window.__clip = '';
+  var fakeClip = {
+    writeText: function (t) { window.__clip = String(t); return Promise.resolve(true); },
+    readText: function () { return Promise.resolve(window.__clip); }
+  };
+  try {
+    Object.defineProperty(navigator, 'clipboard', { value: fakeClip, configurable: true });
+  } catch (e) {
+    window.__clipErr = e.message;
+  }
+</script>
+<script src="text-menu.js"></script>
+<script>
+function out(k, v) { document.getElementById('result').textContent += '\n' + k + '=' + v; }
+function menu() { return document.getElementById('dsh-text-menu'); }
+function clickItem(label) {
+  var m = menu(); if (!m) return false;
+  var rows = Array.prototype.slice.call(m.children);
+  var hit = rows.filter(function (r) { return r.textContent === label; })[0];
+  if (!hit) return false;
+  hit.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  return true;
+}
+function ctx(el, x, y) {
+  var ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x || 50, clientY: y || 50 });
+  el.dispatchEvent(ev);
+  return ev;
+}
+
+setTimeout(function () {
+  document.getElementById('result').textContent = 'READY';
+  var ta = document.getElementById('ta');
+  var events = 0;
+  ta.addEventListener('input', function () { events++; });
+
+  // 1) textarea：选中一段再右键
+  ta.focus();
+  ta.setSelectionRange(0, 5);   // "hello"
+  var ev = ctx(ta, 30, 30);
+  out('field_ctx_prevented', ev.defaultPrevented);
+  var m = menu();
+  out('field_menu', !!m);
+  out('field_items', m ? Array.prototype.map.call(m.children, function (c) { return c.textContent; }).join(' | ') : '(none)');
+  out('field_enabled', m ? Array.prototype.map.call(m.children, function (c) { return c.textContent + ':' + (c.style.opacity === '1' ? 'on' : 'off'); }).join(' ') : '(none)');
+  out('clip_err', window.__clipErr || '');
+  out('sel_len', String(ta.value.slice(ta.selectionStart, ta.selectionEnd)).length);
+
+  // 2) 复制
+  clickItem('复制');
+  out('clip_after_copy', JSON.stringify(window.__clip));
+  out('menu_closed_after_copy', !menu());
+
+  // 3) 剪切
+  ctx(ta, 30, 30);
+  clickItem('剪切');
+  out('clip_after_cut', JSON.stringify(window.__clip));
+  var cutValueSync = ta.value;
+
+  // 4) 粘贴（剪贴板里是 hello）
+  ta.setSelectionRange(0, 0);
+  ctx(ta, 30, 30);
+  clickItem('粘贴');
+  setTimeout(function () {
+    out('ta_after_cut', JSON.stringify(cutValueSync));
+    out('ta_after_paste', JSON.stringify(ta.value));
+    out('input_events', events);
+
+    // 5) 全选
+    ctx(ta, 30, 30);
+    clickItem('全选');
+    out('ta_selection', ta.selectionStart + '-' + ta.selectionEnd);
+
+    // 6) contenteditable：右键应弹菜单
+    var ce = document.getElementById('ce');
+    var ev2 = ctx(ce, 80, 80);
+    out('ce_ctx_prevented', ev2.defaultPrevented);
+    out('ce_menu', !!menu());
+    var m2 = menu();
+    out('ce_items', m2 ? Array.prototype.map.call(m2.children, function (c) { return c.textContent; }).join(' | ') : '(none)');
+    if (menu()) menu().remove();
+
+    // 7) 普通区域：不该接管
+    var ev3 = ctx(document.getElementById('plain'), 200, 200);
+    out('plain_prevented', ev3.defaultPrevented);
+    out('plain_menu', !!menu());
+
+    out('DONE', '1');
+  }, 50);
+}, 250);
+</script>
+</body></html>
