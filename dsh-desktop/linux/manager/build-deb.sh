@@ -57,6 +57,21 @@ install -m 0755 "$MANAGER_DIR/bin/dsh-manager"         "$STAGE/usr/bin/dsh-manag
 # 2) 随包带的桌面窗口文件（新实例的 share/ 从这里取）
 install -m 0755 "$LINUX_DIR/dsh-desktop.py" "$STAGE/usr/lib/dsh-manager/share/dsh-desktop.py"
 install -m 0755 "$LINUX_DIR/dsh-desktop"    "$STAGE/usr/lib/dsh-manager/share/dsh-desktop"
+# 会话窗口增强脚本：**与 Windows 同一份文件**（RELEASE-SYNC 规则），统一放到 share/web/
+WEB_SRC="$DESKTOP_DIR/../dsh-manager-win/web"
+mkdir -p "$STAGE/usr/lib/dsh-manager/share/web"
+for f in image-pan.js preview-menu.js text-menu.js folder-drop.js; do
+  if [ -f "$WEB_SRC/$f" ]; then
+    install -m 0644 "$WEB_SRC/$f" "$STAGE/usr/lib/dsh-manager/share/web/$f"
+  else
+    echo "警告：缺少共用脚本 $WEB_SRC/$f" >&2
+  fi
+done
+if [ -f "$LINUX_DIR/share/web/file-dragout-linux.js" ]; then
+  install -m 0644 "$LINUX_DIR/share/web/file-dragout-linux.js" \
+    "$STAGE/usr/lib/dsh-manager/share/web/file-dragout-linux.js"
+fi
+
 PREVIEW="$DESKTOP_DIR/tools/preview-probe/preview-tools.js"
 if [ -f "$PREVIEW" ]; then
   install -m 0644 "$PREVIEW" "$STAGE/usr/lib/dsh-manager/share/preview-tools.js"

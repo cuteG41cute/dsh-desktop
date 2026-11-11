@@ -205,9 +205,10 @@ def main(argv=None):
         elif cmd == 'stop':
             ok, msg = inst.stop()
         elif cmd == 'open':
-            ok, msg = inst.open_window(rebuild=getattr(args, 'rebuild', False))
+            # 走 Manager.open_window：会先把实例里的窗口程序/增强脚本刷新到本包版本
+            ok, msg, _inst = mgr.open_window(args.prefix, rebuild=getattr(args, 'rebuild', False))
         elif cmd == 'rebuild':
-            ok, msg = inst.open_window(rebuild=True)
+            ok, msg, _inst = mgr.open_window(args.prefix, rebuild=True)
         elif cmd == 'reload':
             ok, msg = inst.reload_page(), '已让窗口重新加载页面'
             if not ok:

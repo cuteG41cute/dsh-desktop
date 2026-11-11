@@ -1399,6 +1399,11 @@ class ManagerWindow(Gtk.Window):
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         actions.set_valign(Gtk.Align.CENTER)
+        # 窗口功能：会话窗口里那些「我们自己加的小功能」的开关（对齐 Windows）
+        self.btn_features = self._button('features', '窗口功能', 'btn', 'btn-secondary',
+                                         icon='info', icon_size=15,
+                                         handler=self.on_window_features)
+        actions.pack_start(self.btn_features, False, False, 0)
         self.btn_open = self._button('open', '打开窗口', 'btn', 'btn-primary', icon='↗')
         actions.pack_start(self.btn_open, False, False, 0)
         more = Gtk.MenuButton()
@@ -3044,6 +3049,73 @@ class ManagerWindow(Gtk.Window):
         dlg.destroy()
         self._run_async('更新 %s → dsh %s' % (inst.label, dsh),
                         lambda: self.manager.update(inst.prefix, dsh, node))
+
+    # ---- 窗口功能 ----
+    def on_window_features(self, *_):
+        """会话窗口里的增强开关（放大平移 / 拖出），与 Windows 的「窗口功能」一致。"""
+        dlg, rows = self._build_features_dialog()
+        dlg.show_all()
+        resp = dlg.run()
+        if resp == Gtk.ResponseType.OK:
+            self._apply_features(dlg, rows)
+        else:
+            dlg.destroy()
+
+    def _build_features_dialog(self):
+        from dsh_manager import core as _core
+        st = _core.load_settings()
+        dlg = Gtk.Dialog(title='窗口功能', transient_for=self, modal=True)
+        self._style_dialog(dlg, '窗口功能',
+                           '这些是管理器给会话窗口额外加的小功能；改完重开窗口生效。')
+        dlg.set_default_size(520, 300)
+        area = dlg.get_content_area()
+        area.set_border_width(14)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        area.pack_start(box, False, False, 0)
+
+        rows = []
+
+        def add_switch(title, desc, key):
+            card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            card.get_style_context().add_class('card')
+            card.set_border_width(12)
+            top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            lbl = Gtk.Label(label=title, xalign=0.0)
+            lbl.get_style_context().add_class('danger-title')
+            top.pack_start(lbl, True, True, 0)
+            sw = Gtk.Switch()
+            sw.set_active(bool(st.get(key, True)))
+            sw.set_valign(Gtk.Align.CENTER)
+            top.pack_end(sw, False, False, 0)
+            card.pack_start(top, False, False, 0)
+            sub = Gtk.Label(label=desc, xalign=0.0)
+            sub.set_line_wrap(True)
+            sub.get_style_context().add_class('danger-desc')
+            card.pack_start(sub, False, False, 0)
+            box.pack_start(card, False, False, 0)
+            rows.append((key, sw))
+
+        add_switch('放大后拖动平移', '图片 / PDF 放大超出可视区时，左键拖动可以平移画面。', 'webPan')
+        add_switch('文件·目录拖出到系统', '从右侧文件树或会话交付卡把文件/文件夹拖到桌面或资源管理器。',
+                   'webDragOut')
+
+        hint = Gtk.Label(xalign=0.0,
+                         label='提示：拖出与右键菜单只影响「桌面窗口」；浏览器里打开时仍按网页行为。')
+        hint.set_line_wrap(True)
+        hint.get_style_context().add_class('foot-note')
+        box.pack_start(hint, False, False, 0)
+
+        dlg.add_button('关闭', Gtk.ResponseType.CLOSE)
+        ok = dlg.add_button('保存', Gtk.ResponseType.OK)
+        ok.get_style_context().add_class('primary')
+        return dlg, rows
+
+    def _apply_features(self, dlg, rows):
+        from dsh_manager import core as _core
+        data = {k: bool(sw.get_active()) for k, sw in rows}
+        _core.save_settings(data)
+        dlg.destroy()
+        self._toast('窗口功能已更新（重开窗口后生效）')
 
     # ---- 修复 ----
     def on_repair(self, *_):

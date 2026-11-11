@@ -56,6 +56,9 @@ DEFAULT_SETTINGS = {
     'theme': 'frost',
     'mode': 'day',          # day / night
     'logLines': 800,        # 日志面板保留行数
+    # 会话窗口增强开关（与 Windows 的 AppSettings.WebPan / WebDragOut 对应）
+    'webPan': True,         # 图片/PDF 放大后左键拖动平移
+    'webDragOut': True,     # 文件树行 / 交付卡拖出到系统
 }
 
 
@@ -873,6 +876,22 @@ class Manager:
                         os.chmod(dest, 0o755)
                     break
 
+        # 会话窗口增强脚本（与 Windows 同一份 JS，见 docs/RELEASE-SYNC.md）
+        web_dest = os.path.join(inst.share, 'web')
+        os.makedirs(web_dest, exist_ok=True)
+        for base in src_dirs:
+            web_src = os.path.join(base, 'web')
+            if not os.path.isdir(web_src):
+                continue
+            for fname in os.listdir(web_src):
+                if not fname.endswith('.js'):
+                    continue
+                try:
+                    shutil.copy2(os.path.join(web_src, fname), os.path.join(web_dest, fname))
+                except Exception:
+                    pass
+            break
+
     def _approve_scripts(self, inst, force=False):
         """npm 11 默认把依赖的 install scripts 拦下来（allow-scripts 提示）。
 
@@ -1039,7 +1058,18 @@ class Manager:
     def _refresh_share_if_stale(self, inst):
         """实例里的 dsh-desktop / dsh-desktop.py 与本包不一致时刷新。"""
         changed = False
+        # share/web 里的增强脚本缺一个也算「过期」
+        web_src = os.path.join(SYSTEM_SHARE, 'web')
+        if os.path.isdir(web_src):
+            for fname in os.listdir(web_src):
+                if not fname.endswith('.js'):
+                    continue
+                if not os.path.exists(os.path.join(inst.share, 'web', fname)):
+                    changed = True
+                    break
         for name in ('dsh-desktop', 'dsh-desktop.py'):
+            if changed:
+                break
             src = os.path.join(SYSTEM_SHARE, name)
             dst = os.path.join(inst.share, name)
             if not (os.path.exists(src) and os.path.exists(dst)):

@@ -402,6 +402,56 @@ def load_preview_tools():
         return ''
 
 
+WEB_SHARE_DIR = os.path.join(SHARE_DIR, 'web')
+
+
+def manager_settings():
+    """读管理器的 settings.json（同一份文件：~/.config/dsh-manager/settings.json）。"""
+    base = os.environ.get('XDG_CONFIG_HOME') or os.path.expanduser('~/.config')
+    path = os.path.join(base, 'dsh-manager', 'settings.json')
+    data = {}
+    try:
+        with open(path, 'r', encoding='utf-8') as fh:
+            loaded = json.load(fh)
+        if isinstance(loaded, dict):
+            data = loaded
+    except Exception:
+        pass
+    return data
+
+
+def load_web_scripts():
+    """会话窗口增强脚本（与 Windows 共用同一份 JS），按开关过滤。
+
+    返回 [(名字, 源码)]；缺文件就跳过（不让窗口起不来）。
+    """
+    out = []
+    try:
+        st = manager_settings()
+    except Exception:
+        st = {}
+    pan_on = st.get('webPan', True)
+    drag_on = st.get('webDragOut', True)
+
+    wanted = []
+    if pan_on:
+        wanted.append('image-pan.js')
+    wanted.append('folder-drop.js')
+    wanted.append('preview-menu.js')
+    wanted.append('text-menu.js')
+    if drag_on:
+        wanted.append('file-dragout-linux.js')
+
+    for name in wanted:
+        path = os.path.join(WEB_SHARE_DIR, name)
+        try:
+            with open(path, 'r', encoding='utf-8') as fh:
+                out.append((name, fh.read()))
+        except Exception as exc:
+            sys.stderr.write('[dsh-desktop] 跳过 %s：%s\n' % (name, exc))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 弹窗 / 外部链接
 # ---------------------------------------------------------------------------
@@ -475,6 +525,18 @@ def selftest():
         ok = ok and (st == 'ok')
 
     print('\n[4] 注入脚本')
+    scripts = load_web_scripts()
+    if scripts:
+        print('  ✓ share/web 下注入 %d 个脚本：%s' % (
+            len(scripts), ', '.join(n for n, _ in scripts)))
+        missing = [n for n in ('image-pan.js', 'preview-menu.js', 'text-menu.js', 'folder-drop.js')
+                   if n not in [x for x, _ in scripts] and n != 'image-pan.js']
+        if missing:
+            print('  ✗ share/web 缺：', missing)
+            ok = False
+    else:
+        print('  ✗ share/web 下没有脚本（期望在 %s）' % WEB_SHARE_DIR)
+        ok = False
     js = load_preview_tools()
     if js:
         marks = ['dsh-save-file', 'dsh-drag-out', 'IS_WEBKIT', 'dsh-read-file']
@@ -708,9 +770,10 @@ def start_control_server(win):
             conn, _addr = srv.accept()
         except Exception:
             return True
+        deferred = {'on': False}
         try:
             conn.settimeout(1.5)
-            data = conn.recv(64).decode('utf-8', 'replace').strip()
+            data = conn.recv(1024).decode('utf-8', 'replace').strip()
             if data.startswith('ping'):
                 conn.sendall(('ok %d\n' % os.getpid()).encode('utf-8'))
             elif data.startswith('raise'):
@@ -722,6 +785,68 @@ def start_control_server(win):
             elif data.startswith('reload'):
                 GLib.idle_add(lambda: (win.web.reload(), False)[1])
                 conn.sendall(b'reloaded\n')
+            elif data.startswith('js '):
+                # 排障用：执行一段 JS 并把结果回传（需要 DSH_DESKTOP_DEBUG=1）
+                if not os.environ.get('DSH_DESKTOP_DEBUG'):
+                    conn.sendall(b'js disabled (need DSH_DESKTOP_DEBUG=1)\n')
+                else:
+                    script = data[3:].strip()
+                    deferred['on'] = True
+                    sent = {'done': False}
+
+                    def _finish(text, _c=conn):
+                        if sent['done']:
+                            return False
+                        sent['done'] = True
+                        try:
+                            _c.sendall(text.encode('utf-8', 'replace'))
+                        except Exception:
+                            pass
+                        try:
+                            _c.close()
+                        except Exception:
+                            pass
+                        return False
+
+                    def _cb(_web, res, _user, _f=_finish):
+                        # WebKitGTK 的异步结果是 Gio.AsyncResult；4.1 用 evaluate_javascript_finish，
+                        # 4.0 用 run_javascript_finish。值再取 to_string()。
+                        text = ''
+                        try:
+                            jres = None
+                            if hasattr(_web, 'evaluate_javascript_finish'):
+                                try:
+                                    jres = _web.evaluate_javascript_finish(res)
+                                except Exception:
+                                    jres = None
+                            if jres is None and hasattr(_web, 'run_javascript_finish'):
+                                jres = _web.run_javascript_finish(res)
+                            if jres is not None:
+                                try:
+                                    val = jres.get_js_value()
+                                    text = val.to_string() if hasattr(val, 'to_string') else str(val)
+                                except Exception:
+                                    text = jres.to_string() if hasattr(jres, 'to_string') else str(jres)
+                            _f('js: %s\n' % text)
+                        except Exception as exc:
+                            sys.stderr.write('[dsh-desktop] js-cb exc: %s\n' % exc)
+                            _f('js ERR %s\n' % exc)
+                        return False
+
+                    def _run(_f=_finish, _cb=_cb, _script=script):
+                        try:
+                            sys.stderr.write('[dsh-desktop] js-run begin: %s\n' % _script[:60])
+                            ok_run = win.web.run_js(_script, _cb)
+                            sys.stderr.write('[dsh-desktop] js-run queued=%s\n' % ok_run)
+                            if not ok_run:
+                                _f('js ERR no js api\n')
+                        except Exception as exc:
+                            sys.stderr.write('[dsh-desktop] js-run exc: %s\n' % exc)
+                            _f('js ERR %s\n' % exc)
+                        return False
+
+                    GLib.idle_add(_run)
+                    GLib.timeout_add(4000, lambda: _finish('js TIMEOUT\n'))
             elif data.startswith('quit'):
                 conn.sendall(b'bye\n')
                 GLib.idle_add(lambda: (quit_primary(), False)[1])
@@ -730,10 +855,11 @@ def start_control_server(win):
         except Exception:
             pass
         finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
+            if not deferred['on']:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         return True
 
     GLib.io_add_watch(srv, GLib.IO_IN, on_io)
@@ -936,9 +1062,19 @@ def run_gui():
 
         def _install_scripts(self):
             ucm = self.get_user_content_manager()
+            # 会话窗口增强（与 Windows 共用同一份 JS 文件，见 docs/RELEASE-SYNC.md）
+            for name, js in load_web_scripts():
+                try:
+                    ucm.add_script(WebKit2.UserScript(
+                        js, WebKit2.UserContentInjectedFrames.TOP_FRAME,
+                        WebKit2.UserScriptInjectionTime.START, None, None))
+                    sys.stderr.write('[dsh-desktop] injected %s (%d chars)\n' % (name, len(js)))
+                except Exception as exc:
+                    sys.stderr.write('[dsh-desktop] inject %s failed: %s\n' % (name, exc))
             js = load_preview_tools()
-            if js:
-                # 预览增强（与 Windows 同一份文件）：只对「桌面窗口」注入
+            if js and os.environ.get('DSH_PREVIEW_TOOLS'):
+                # 旧版预览工具（含自己的缩放逻辑，会和产品官方 Ctrl+滚轮打架）——默认不再注入，
+                # 需要时用 DSH_PREVIEW_TOOLS=1 打开
                 ucm.add_script(WebKit2.UserScript(
                     js, WebKit2.UserContentInjectedFrames.TOP_FRAME,
                     WebKit2.UserScriptInjectionTime.START, None, None))
