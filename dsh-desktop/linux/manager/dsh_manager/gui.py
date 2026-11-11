@@ -280,6 +280,14 @@ def _extra_css_text():
         '.plugin-row-body { padding: 13px 12px; border-radius: 9px; }\n'
         'entry, spinbutton { min-height: 32px; border-radius: 10px; padding: 4px 10px; }\n'
         '.dsh-dialog button { min-height: 32px; border-radius: 11px; padding: 0 15px; font-size: 10px; font-weight: bold; }\n'
+        '.danger-card { margin-top: 16px; padding: 14px 16px; }\n'
+        'button.danger { border-width: 0; color: %(danger)s;'
+        ' background-image: none; background-color: alpha(%(danger)s, 0.14);'
+        ' border-radius: 11px; min-height: 32px; padding: 0 15px;'
+        ' font-size: 10px; font-weight: bold; }\n'
+        'button.danger:hover { background-color: alpha(%(danger)s, 0.22); }\n'
+        '.danger-title { font-size: 11px; font-weight: bold; }\n'
+        '.danger-desc { font-size: 10px; color: %(muted)s; }\n'
         '.dlg-close, .dlg-close:hover, .dlg-close:focus { border: none;'
         ' box-shadow: none; background-image: none; background-color: transparent;'
         ' outline: none; }\n'
@@ -1063,9 +1071,22 @@ class ManagerWindow(Gtk.Window):
         head.pack_start(self.chip_count, False, False, 0)
         head.set_size_request(-1, 32)
         head.set_margin_bottom(7)   # 左右留白交给 CSS 的 padding（设计稿 .side-section-title）
-        btn_add = self._button('new', '', 'icon-btn', 'small', icon='＋')
-        btn_add.set_tooltip_text('新建实例')
-        head.pack_end(btn_add, False, False, 0)
+        # 对齐 Windows：这里原来是「＋新建实例」，现在是「刷新实例列表」
+        # （新建实例另有下面那个大按钮，重复的「＋」没必要）
+        self._refresh_stack = Gtk.Stack()
+        self._refresh_stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self._refresh_icon = self._icon('refresh', 'muted', 15)
+        self._refresh_spin = Gtk.Spinner()
+        self._refresh_stack.add_named(self._refresh_icon, 'icon')
+        self._refresh_stack.add_named(self._refresh_spin, 'spin')
+        self._refresh_stack.set_visible_child_name('icon')
+        self.btn_refresh_side = Gtk.Button()
+        self.btn_refresh_side.get_style_context().add_class('icon-btn')
+        self.btn_refresh_side.get_style_context().add_class('small')
+        self.btn_refresh_side.set_tooltip_text('刷新实例列表')
+        self.btn_refresh_side.add(self._refresh_stack)
+        self.btn_refresh_side.connect('clicked', self.on_refresh_list)
+        head.pack_end(self.btn_refresh_side, False, False, 0)
         side.pack_start(head, False, False, 0)
 
         self.instance_list = Gtk.ListBox()
@@ -1545,6 +1566,25 @@ class ManagerWindow(Gtk.Window):
         log_card.pack_start(self.log_body, False, False, 0)
         page.pack_start(log_card, False, False, 0)
 
+        # ---- 删除实例（对齐 Windows：仪表盘最下方一张卡）----
+        del_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        del_card.get_style_context().add_class('card')
+        del_card.get_style_context().add_class('danger-card')
+        del_head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        del_head.get_style_context().add_class('danger-head')
+        del_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        del_text.pack_start(self._label('删除实例', 'danger-title'), False, False, 0)
+        self.lbl_del_hint = self._label('停止服务并删除该实例的安装目录（只对管理器创建的实例生效）',
+                                        'danger-desc')
+        del_text.pack_start(self.lbl_del_hint, False, False, 0)
+        del_head.pack_start(del_text, True, True, 0)
+        self.btn_delete_instance = self._button('trash', '删除实例', 'danger', icon_role='danger',
+                                                icon_size=14, handler=self.on_delete_instance)
+        self.btn_delete_instance.set_size_request(-1, 32)
+        del_head.pack_end(self.btn_delete_instance, False, False, 0)
+        del_card.pack_start(del_head, False, False, 0)
+        page.pack_start(del_card, False, False, 0)
+
         footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         # 设计稿里 .page-footer 是"整行容器 + space-between"，所以样式类要挂在容器上，
         # 而不是两个标签上（否则量出来的宽度只有文字那么宽）。
@@ -1713,6 +1753,33 @@ class ManagerWindow(Gtk.Window):
         self.selected = self.manager.instance_at(inst.prefix)
         self._fill_details(self.selected)
         self.set_buttons_sensitive(True)
+
+    def on_refresh_list(self, *_):
+        """刷新实例列表：图标转圈 + 底部提示，约 0.7 秒收尾（对齐 Windows 的刷新按钮）。"""
+        try:
+            self._refresh_stack.set_visible_child_name('spin')
+            self._refresh_spin.start()
+        except Exception:
+            pass
+        self._toast('实例列表正在刷新中…')
+        try:
+            self.refresh()
+        except Exception as exc:
+            self.append_log('✘ 刷新失败：%s' % exc)
+        GLib.timeout_add(700, self._finish_refresh)
+
+    def _finish_refresh(self):
+        try:
+            self._refresh_spin.stop()
+            self._refresh_stack.set_visible_child_name('icon')
+        except Exception:
+            pass
+        try:
+            n = len(self.manager.list_instances())
+        except Exception:
+            n = 0
+        self._toast('实例列表已刷新（%d 个）' % n)
+        return False
 
     def on_select(self, *_a):
         """兼容旧调用：把当前选择重新填一遍。"""
@@ -2984,6 +3051,24 @@ class ManagerWindow(Gtk.Window):
         if not inst:
             return
         self._run_async('修复 %s' % inst.label, lambda: self.manager.repair(inst.prefix))
+
+    # ---- 删除实例（仪表盘底部的卡）----
+    def on_delete_instance(self, *_):
+        inst = self._need()
+        if not inst:
+            return
+        if not self._confirm('删除实例「%s」？' % inst.label,
+                             '会先停止服务，然后删除整个目录并从登记表移除，不可恢复：\n%s'
+                             % inst.prefix):
+            return
+        self._toast('正在删除「%s」…' % inst.label)
+
+        def work():
+            ok, msg = self.manager.uninstall(inst.prefix)
+            GLib.idle_add(lambda: (self._toast(msg), self.refresh(), False)[-1])
+            return ok
+
+        self._run_async('删除 %s' % inst.label, work)
 
     # ---- 卸载 ----
     def on_uninstall(self, *_):
