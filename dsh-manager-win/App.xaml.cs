@@ -122,6 +122,15 @@ public partial class App : Application
                 SelfTestInstallAndExit(dir ?? "");
                 return;
             }
+            // --selftest-source <dir> [--ref master]：走「源码检出」安装路径（与新建实例的
+            // 「安装方式·官方仓库源码」完全同一条代码），用来在没有界面的情况下验证 clone/pnpm 链路。
+            if (args.Contains("--selftest-source"))
+            {
+                var dir = args.SkipWhile(a => a != "--selftest-source").Skip(1).FirstOrDefault() ?? "";
+                var gitRef = args.SkipWhile(a => a != "--ref").Skip(1).FirstOrDefault() ?? "master";
+                SelfTestSourceAndExit(dir, gitRef);
+                return;
+            }
             if (args.Contains("--shot"))
 {
                 var path = args.SkipWhile(a => a != "--shot").Skip(1).FirstOrDefault()
@@ -166,6 +175,41 @@ public partial class App : Application
     /// --selftest-install &lt;dir&gt;：装一份实例，然后依次跑 修复 / 更新 / 卸载。
     /// 结果写进 crash.log（开发期验证「管理器创建的实例」这套动作，不用点界面）。
     /// </summary>
+    /// <summary>
+    /// 源码安装自检：直接调用 InstanceInstaller.InstallSourceAsync（与新建实例同一条路径），
+    /// 日志写进 %LOCALAPPDATA%/dsh-manager/source-test.log，便于边跑边看。
+    /// </summary>
+    private void SelfTestSourceAndExit(string dir, string gitRef)
+    {
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var logPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "dsh-manager", "source-test.log");
+        Directory.CreateDirectory(Path.GetDirectoryName(logPath) ?? ".");
+        void Slog(string m)
+        {
+            try { File.AppendAllText(logPath, DateTime.Now.ToString("HH:mm:ss.fff ") + m + Environment.NewLine); } catch { }
+        }
+
+        Task.Run(async () =>
+        {
+            try
+            {
+                Slog("[source-test] dir=" + dir + " ref=" + gitRef);
+                var (ok, msg) = await InstanceInstaller.InstallSourceAsync(dir, "latest", m => Slog("    | " + m), 0, gitRef);
+                Slog("[source-test] result -> " + (ok ? "OK" : "FAIL") + ": " + msg);
+            }
+            catch (Exception ex)
+            {
+                Slog("[source-test] exception: " + ex);
+            }
+            finally
+            {
+                Dispatcher.Invoke(() => Shutdown());
+            }
+        });
+    }
+
     private void SelfTestInstallAndExit(string dir)
     {
         ShutdownMode = ShutdownMode.OnExplicitShutdown;

@@ -141,6 +141,24 @@ public static class InstanceInstaller
     /// 从官方仓库克隆一份**全新**实例：git clone → 装 pnpm 到实例目录 → pnpm install → pnpm run build。
     /// 全程只用实例目录里的 portable Node，不碰系统的 npm/pnpm 全局状态。
     /// </summary>
+    /// <summary>
+    /// 判断 app 目录是不是一份**可用**的源码检出：.git/HEAD 存在，且工作区里有 package.json。
+    /// （中断的 git clone 会留下只有 objects/ 的 .git，光看 .git 存在会误判。）
+    /// </summary>
+    private static bool IsUsableCheckout(string app)
+    {
+        try
+        {
+            if (!File.Exists(Path.Combine(app, ".git", "HEAD"))) return false;
+            if (!File.Exists(Path.Combine(app, "package.json"))) return false;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static async Task<(bool Ok, string Message)> InstallSourceAsync(
         string dir, string nodeVersion, Action<string> log, int port, string gitRef = "master")
     {
@@ -154,6 +172,14 @@ public static class InstanceInstaller
             if (!File.Exists(node)) return (false, "实例里没有 node.exe（请选择具体 Node 版本，源码实例必须自带 Node）");
 
             var app = Path.Combine(dir, "app");
+            // 「有 .git 就算克隆好了」是错的：克隆被中断时会留下一个只有 objects/ 的空 .git，
+            // 下次重试就跳过 clone，直接在空目录里 pnpm install → ERR_PNPM_NO_PKG_MANIFEST。
+            // 这里要求「.git 完整 + 工作区里有 package.json」，缺一个就当没克隆过、删掉重来。
+            if (Directory.Exists(app) && !IsUsableCheckout(app))
+            {
+                log("检测到上次没克隆完整（缺 package.json 或 .git 不完整），清理后重新克隆：" + app);
+                try { Directory.Delete(app, true); } catch (Exception ex) { log("清理旧目录失败：" + ex.Message); }
+            }
             if (!Directory.Exists(Path.Combine(app, ".git")))
             {
                 if (Directory.Exists(app)) Directory.Delete(app, true);
@@ -175,6 +201,11 @@ public static class InstanceInstaller
                     cok = again.Ok; cmsg = again.Message;
                 }
                 if (!cok) return (false, "git clone 失败：" + cmsg);
+                if (!IsUsableCheckout(app))
+                {
+                    return (false, "克隆结果不完整（工作区里没有 package.json）："
+                                   + "多半是网络中断导致，重试一次或换个网络即可");
+                }
             }
             else log("仓库已存在，跳过 clone：" + app);
 
