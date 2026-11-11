@@ -68,6 +68,13 @@ namespace DshManager
                             Diag("image-pan injected (" + panScript.Length + " chars)");
                         }
                     }
+                    // 朗读（Web Speech API）：右下角小喇叭 + Ctrl+Shift+R + 选中右键
+                    var readScript = LoadPreviewScript("read-aloud.js");
+                    if (!string.IsNullOrEmpty(readScript))
+                    {
+                        _ = core.AddScriptToExecuteOnDocumentCreatedAsync(readScript);
+                        Diag("read-aloud injected (" + readScript.Length + " chars)");
+                    }
                     // 可编辑控件（会话输入框/搜索框）的右键菜单：剪切/复制/粘贴/全选
                     var textMenuScript = LoadPreviewScript("text-menu.js");
                     if (!string.IsNullOrEmpty(textMenuScript))
@@ -160,6 +167,11 @@ namespace DshManager
             try { json = e.TryGetWebMessageAsString(); } catch { }
             if (string.IsNullOrWhiteSpace(json)) return;
 
+            if (json.Contains("\"dsh-tts-probe\""))
+            {
+                Diag("tts probe: " + json);
+                return;
+            }
             if (json.Contains("\"dsh-dom-probe\""))
             {
                 Diag("dom probe: " + (json.Length > 400 ? json.Substring(0, 400) : json));
