@@ -489,6 +489,65 @@ def pulse_until(bar, state):
     GLib.timeout_add(110, tick)
 
 
+
+# ---------------------------------------------------------------- UI 看门狗
+# 目的与 Windows 版一致：UI 卡死时能知道「卡之前用户做了什么」。
+# 做法：GLib 每秒 tick 一次；后台线程发现超过 8 秒没 tick，就把最近 24 条操作写进 hang.log。
+_HANG = {'last': 0.0, 'trail': [], 'started': False}
+
+
+def hang_breadcrumb(text):
+    try:
+        import time as _t
+        _HANG['trail'].append(_t.strftime('%H:%M:%S') + '  ' + str(text))
+        if len(_HANG['trail']) > 24:
+            del _HANG['trail'][:-24]
+    except Exception:
+        pass
+
+
+def hang_log_path():
+    return os.path.join(config_dir(), 'hang.log')
+
+
+def start_hang_watchdog():
+    """启动看门狗（幂等）。"""
+    if _HANG.get('started'):
+        return
+    _HANG['started'] = True
+    import threading
+    import time as _t
+
+    _HANG['last'] = _t.time()
+
+    def tick():
+        _HANG['last'] = _t.time()
+        return True
+
+    GLib.timeout_add(1000, tick)
+
+    def loop():
+        last_report = 0.0
+        while True:
+            _t.sleep(2)
+            try:
+                gap = _t.time() - _HANG['last']
+                if gap < 8:
+                    continue
+                now = _t.time()
+                if now - last_report < 10:
+                    continue
+                last_report = now
+                lines = ['=== %s  UI 线程无响应 %ds ===' % (_t.strftime('%Y-%m-%d %H:%M:%S'), int(gap))]
+                lines += ['  ' + x for x in _HANG['trail']]
+                os.makedirs(config_dir(), exist_ok=True)
+                with open(hang_log_path(), 'a', encoding='utf-8') as fh:
+                    fh.write('\n'.join(lines) + '\n\n')
+            except Exception:
+                pass
+
+    threading.Thread(target=loop, daemon=True, name='dsh-hang-watchdog').start()
+
 class ManagerWindow(Gtk.Window):
     def __init__(self, manager=None):
         Gtk.Window.__init__(self, title='DeepSeek Harness 管理器 %s' % MANAGER_VERSION)
@@ -511,6 +570,10 @@ class ManagerWindow(Gtk.Window):
             self.append_log('✘ 主题未加载：%s（界面会用 GTK 默认皮肤）' % (last_theme_error() or '未知原因'))
         GLib.timeout_add(400, self._drain_log)
         GLib.timeout_add(4000, self._tick)
+        start_hang_watchdog()
+        hang_breadcrumb('管理器窗口已就绪')
+
+
 
     def _fit_to_screen(self):
         """把「初始尺寸」缩到屏幕工作区内。
@@ -1556,7 +1619,8 @@ class ManagerWindow(Gtk.Window):
         self.lbl_log_empty.set_no_show_all(True)
         self.log_body.pack_start(self.lbl_log_empty, False, False, 0)
         self.lbl_log_empty.show()      # no_show_all 之后要自己显一次（首屏就是空态）
-        for _ in range(3):
+        # 与 Windows 对齐：最近日志最多 15 条（空行先建好、隐藏，来一条显示一条）
+        for _ in range(15):
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=11)
             t = self._label('', 'log-time')
             lvl = self._chip('', 'log-level')
@@ -1760,6 +1824,7 @@ class ManagerWindow(Gtk.Window):
         self.set_buttons_sensitive(True)
 
     def on_refresh_list(self, *_):
+        hang_breadcrumb('点击刷新实例列表')
         """刷新实例列表：图标转圈 + 底部提示，约 0.7 秒收尾（对齐 Windows 的刷新按钮）。"""
         try:
             self._refresh_stack.set_visible_child_name('spin')
@@ -1847,7 +1912,7 @@ class ManagerWindow(Gtk.Window):
 
     # ------------------------------------------------------------ 日志
     def _push_recent_log(self, text):
-        """把一行日志塞进「最近日志」卡（新的在上，最多 3 条）。"""
+        """把一行日志塞进「最近日志」卡（新的在上，最多 15 条，与 Windows 一致）。"""
         import time as _time
         stamp = _time.strftime('%H:%M:%S')
         level, cls, body = '信息', 'info', text
@@ -1858,7 +1923,7 @@ class ManagerWindow(Gtk.Window):
         elif text.startswith('——') and text.rstrip().endswith('——'):
             level, cls, body = '系统', 'muted', text.strip('— ').strip()
         self._recent.insert(0, (stamp, level, cls, body[:180]))
-        del self._recent[3:]
+        del self._recent[15:]
         try:
             self.chip_log_count.label.set_text(str(len(self._recent)))
             self.lbl_log_empty.set_visible(not self._recent)
@@ -3052,6 +3117,7 @@ class ManagerWindow(Gtk.Window):
 
     # ---- 窗口功能 ----
     def on_window_features(self, *_):
+        hang_breadcrumb('打开窗口功能')
         """会话窗口里的增强开关（放大平移 / 拖出），与 Windows 的「窗口功能」一致。"""
         dlg, rows = self._build_features_dialog()
         dlg.show_all()
@@ -3126,6 +3192,7 @@ class ManagerWindow(Gtk.Window):
 
     # ---- 删除实例（仪表盘底部的卡）----
     def on_delete_instance(self, *_):
+        hang_breadcrumb('点击删除实例')
         inst = self._need()
         if not inst:
             return

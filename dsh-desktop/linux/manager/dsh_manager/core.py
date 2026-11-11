@@ -24,6 +24,45 @@ import urllib.request
 from datetime import datetime
 
 APP = 'dsh-manager'
+
+def _port_listening(port, host='127.0.0.1', timeout=0.2):
+    """端口上还有人监听吗（只做一次很短的连接探测）。"""
+    if not port:
+        return False
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            return s.connect_ex((host, int(port))) == 0
+    except Exception:
+        return False
+
+
+def _rmtree_force(path):
+    """递归删除：先尽力把权限放开，再删；只有真删不掉才抛。"""
+    if not os.path.exists(path):
+        return
+
+    def _onerror(func, target, exc_info):
+        try:
+            os.chmod(target, 0o700)
+        except Exception:
+            pass
+        try:
+            parent = os.path.dirname(target)
+            if parent:
+                os.chmod(parent, 0o700)
+        except Exception:
+            pass
+        try:
+            func(target)
+        except Exception:
+            pass
+
+    shutil.rmtree(path, onerror=_onerror)
+    if os.path.exists(path):
+        raise OSError('目录仍存在：%s' % path)
+
+
 NPM_PKG = '@deepseek-ai/dsh'
 DEFAULT_NODE = '24.19.0'
 DEFAULT_DSH = '0.1.5-rc.1'
@@ -32,7 +71,7 @@ DEFAULT_ROOT = os.path.expanduser('~/.local/opt')
 FALLBACK_DSH_VERSIONS = ['0.2.1-rc.5', '0.2.0-rc.2', '0.1.7-rc.2', '0.1.5-rc.3', '0.1.5-rc.1']
 FALLBACK_NODE_VERSIONS = ['26.13.0', '24.22.2', '22.23.4', '20.20.2']
 SYSTEM_SHARE = '/usr/lib/dsh-manager/share'      # deb 里随包带的窗口文件
-MANAGER_VERSION = '1.5.8'
+MANAGER_VERSION = '3.0.0'
 MANAGER_LIB = '/usr/lib/dsh-manager'             # 管理器自己的安装目录（deb）
 
 
@@ -981,6 +1020,9 @@ class Manager:
                                  'port': int(port or self.next_port()),
                                  'dsh': dsh_version, 'node': node_version,
                                  'dshHome': os.path.join(prefix, 'dsh-home')})
+        # 记录「这个目录是我们刚创建的」——失败时只清理自己造出来的，
+        # 用户已有的目录（哪怕空的）绝不动。
+        created_here = not os.path.exists(prefix)
         try:
             os.makedirs(inst.prefix, exist_ok=True)
             for sub in ('bin', 'share', 'logs', 'dsh-home'):
@@ -1006,6 +1048,13 @@ class Manager:
             return True, '安装完成：%s（端口 %d）' % (inst.prefix, inst.port), inst
         except Exception as exc:
             self.log('✘ 安装失败：%s' % exc)
+            # 半成品目录要清掉，否则用户重试会撞「目录非空」（Windows 版踩过同样的坑）
+            if created_here:
+                try:
+                    _rmtree_force(inst.prefix)
+                    self.log('已清理半成品目录：%s' % inst.prefix)
+                except Exception as rm_exc:
+                    self.log('清理半成品目录失败（可手动删除）：%s' % rm_exc)
             return False, '安装失败：%s' % exc, inst
 
     def update(self, prefix, dsh_version=None, node_version=None):

@@ -14,10 +14,13 @@ if [ ! -f "$DEB" ]; then
   exit 1
 fi
 echo "BUILD=OK rc=$RC size=$(stat -c %s "$DEB")"
-CNT=$(dpkg-deb --fsys-tarfile "$DEB" | tar -xO ./usr/lib/dsh-manager/share/dsh-desktop.py 2>/dev/null | grep -c "startswith('js ")
-echo "JSACTION=${CNT:-0}"
-CNT2=$(dpkg-deb --fsys-tarfile "$DEB" | tar -xO ./usr/lib/dsh-manager/share/dsh-desktop.py 2>/dev/null | grep -c load_web_scripts)
-echo "LOADER=${CNT2:-0}"
+TMP=$(mktemp -d)
+dpkg-deb --fsys-tarfile "$DEB" | tar -x -C "$TMP" ./usr/lib/dsh-manager/share/dsh-desktop.py 2>/dev/null || true
+SYS="$TMP/usr/lib/dsh-manager/share/dsh-desktop.py"
+echo "JSACTION=$(grep -c "startswith('js " "$SYS" 2>/dev/null || echo 0)"
+echo "JSRUN=$(grep -c 'js-run begin' "$SYS" 2>/dev/null || echo 0)"
+echo "LOADER=$(grep -c 'load_web_scripts' "$SYS" 2>/dev/null || echo 0)"
+rm -rf "$TMP"
 for f in image-pan.js preview-menu.js text-menu.js folder-drop.js file-dragout-linux.js; do
   dpkg-deb --fsys-tarfile "$DEB" | tar -t 2>/dev/null | grep -q "share/web/$f" && echo "WEB=$f ok" || echo "WEB=$f MISSING"
 done
