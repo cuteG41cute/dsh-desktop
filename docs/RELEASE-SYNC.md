@@ -1,4 +1,4 @@
-# 双端同步规则（Windows / Linux 管理器）
+﻿# 双端同步规则（Windows / Linux 管理器）
 
 从 **3.0.0** 起，Windows 与 Linux 管理器使用**同一个版本号**，并且在同一个 Release 里一起发布。
 
@@ -68,3 +68,22 @@ Windows 从 2.0.0 起是「git clone 官方仓库 + 实例内 pnpm install/build
 - [ ] 同一个 tag：`v<版本>`
 - [ ] Release 同时含 exe + deb + 两端说明
 - [ ] 发布后 `git ls-remote` 与 Release 资产哈希核对
+
+
+## 6. 状态（2026-11-11）
+
+**v3.0.0 已发布**（同一个 Release：`DshManager.exe` + `dsh-manager_3.0.0_all.deb` + 双端说明）。
+
+已完成并验证（Linux 侧在真实 Ubuntu 26.04 + GTK 3.24 + WebKitGTK 4.1 虚拟机里逐项确认）：
+
+- 侧栏「＋」→ 刷新按钮（转圈 + toast）
+- 仪表盘底部「删除实例」卡（软红按钮，确认后卸载）
+- 新建实例：端口占用 / 非空目录校验
+- 安装失败清理半成品目录（只删本次新建的）
+- 卸载健壮化（等端口释放 + 清权限重试）
+- 最近日志 15 条
+- UI 看门狗 hang.log
+- 顶栏「窗口功能」+ 两个开关（写入 settings.json 并实际控制注入）
+- 会话窗口 5 项增强（与 Windows 共用同一份 JS；控制套接字断言 `__dshPan / __dshMenu / __dshTextMenu / __dshDragOutLinux / __DSH_HOST_PATHS__` 全部为真，且合成右键事件在预览区/输入框/正文三处的行为符合预期）
+
+后续每次改动都要按第 2 节的规则双端同步。
