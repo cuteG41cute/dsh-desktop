@@ -280,6 +280,7 @@ def _extra_css_text():
         '.plugin-row-body { padding: 13px 12px; border-radius: 9px; }\n'
         'entry, spinbutton { min-height: 32px; border-radius: 10px; padding: 4px 10px; }\n'
         '.dsh-dialog button { min-height: 32px; border-radius: 11px; padding: 0 15px; font-size: 10px; font-weight: bold; }\n'
+        'window, window.background { box-shadow: none; }\n'
         '.danger-card { margin-top: 16px; padding: 14px 16px; }\n'
         'button.danger { border-width: 0; color: %(danger)s;'
         ' background-image: none; background-color: alpha(%(danger)s, 0.14);'
@@ -916,22 +917,41 @@ class ManagerWindow(Gtk.Window):
         return pb
 
     def _on_window_draw(self, _widget, cr):
-        """清透明（含四角）→ 圆角裁切 → 铺主题背景；子控件由默认处理器接着画。"""
+        """清透明（含四角）→ 圆角裁切 → 铺主题背景；子控件由默认处理器接着画。
+
+        **阴影边距**：GTK 的 CSD 会在窗口表面四周留一圈阴影边距，这圈也算进
+        cairo 的可绘制区域。之前我们从 (0,0) 按 allocation 画背景，等于把背景
+        铺进了阴影区 —— 在有的机器上就表现为「窗口顶上多出一条背景」。
+        这里先算出边距偏移，只画真正的内容区。
+        """
         alloc = self.get_allocation()
-        # 1) 整幅清成透明：圆角之外必须真的透出桌面
+        # 阴影边距：窗口表面比控件分配区大出来的那一圈（居中）
+        ox = oy = 0
+        try:
+            win = self.get_window()
+            if win is not None:
+                ww, wh = win.get_width(), win.get_height()
+                if ww > alloc.width:
+                    ox = (ww - alloc.width) // 2
+                if wh > alloc.height:
+                    oy = (wh - alloc.height) // 2
+        except Exception:
+            ox = oy = 0
+        # 1) 整幅清成透明：圆角之外必须真的透出桌面（含阴影边距）
         cr.save()
         cr.set_operator(cairo.OPERATOR_SOURCE)
         cr.set_source_rgba(0, 0, 0, 0)
         cr.paint()
         cr.set_operator(cairo.OPERATOR_OVER)
         cr.restore()
-        # 2) 圆角裁切（这个 clip 要留给子控件，所以不能 restore 掉）
-        self._rounded_path(cr, 0, 0, alloc.width, alloc.height, self._corner_radius())
+        # 2) 圆角裁切：只裁内容区，不碰阴影边距
+        self._rounded_path(cr, ox, oy, alloc.width, alloc.height, self._corner_radius())
         cr.clip()
         # 3) 自己画窗口背景：app_paintable 之后 GTK 不会替我们填
         pb = self._window_bg_pixbuf()
         if pb is not None and pb.get_width() > 0 and pb.get_height() > 0:
             cr.save()
+            cr.translate(ox, oy)
             cr.scale(alloc.width / float(pb.get_width()),
                      alloc.height / float(pb.get_height()))
             Gdk.cairo_set_source_pixbuf(cr, pb, 0, 0)
