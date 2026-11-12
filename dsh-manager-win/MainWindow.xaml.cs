@@ -2170,6 +2170,27 @@ public partial class MainWindow : Window
                     Toast(rok ? ("已改名为 " + next.Trim()) : rmsg);
                     if (rok) await RefreshTtsVoicesAsync();
                 };
+                var preview = new Button
+                {
+                    Content = "试听", Style = (Style)FindResource("BtnCompact"),
+                    Height = 26, Padding = new Thickness(10, 0, 10, 0), FontSize = 9,
+                    Margin = new Thickness(0, 0, 8, 0),
+                };
+                var previewName = v.Name;
+                preview.Click += async (_, _) =>
+                {
+                    if (TtsSynthStatus != null) TtsSynthStatus.Text = "正在合成「" + previewName + "」的试听…";
+                    var (pok, perr, pwav, psecs, pelapsed) = await TtsService.SynthesizeAsync(
+                        "你好，这是这个音色的试听。", previewName);
+                    if (!pok)
+                    {
+                        if (TtsSynthStatus != null) TtsSynthStatus.Text = "试听失败：" + perr;
+                        return;
+                    }
+                    if (TtsSynthStatus != null)
+                        TtsSynthStatus.Text = $"「{previewName}」试听：音频 {psecs:F1}s · 用时 {pelapsed.TotalSeconds:F1}s";
+                    PlayTtsWav(pwav);
+                };
                 var del = new Button
                 {
                     Content = "删除", Style = (Style)FindResource("BtnCompact"),
@@ -2184,6 +2205,7 @@ public partial class MainWindow : Window
                 Grid.SetColumn(name, 0);
                 Grid.SetColumn(id, 1);
                 var actions = new StackPanel { Orientation = Orientation.Horizontal };
+                actions.Children.Add(preview);
                 actions.Children.Add(rename);
                 actions.Children.Add(del);
                 Grid.SetColumn(actions, 2);
@@ -2198,6 +2220,17 @@ public partial class MainWindow : Window
         }
         catch { }
         finally { _ttsVoicesBusy = false; }
+    }
+
+    private void PlayTtsWav(string wav)
+    {
+        try
+        {
+            _ttsPlayer ??= new System.Windows.Media.MediaPlayer();
+            _ttsPlayer.Open(new Uri(wav));
+            _ttsPlayer.Play();
+        }
+        catch (Exception ex) { Toast("播放失败：" + ex.Message); }
     }
 
     private void OnTtsPickFile(object sender, RoutedEventArgs e)
@@ -2300,13 +2333,7 @@ public partial class MainWindow : Window
         }
         if (TtsSynthStatus != null)
             TtsSynthStatus.Text = $"完成：音频 {secs:F1}s · 用时 {elapsed.TotalSeconds:F1}s";
-        try
-        {
-            _ttsPlayer ??= new System.Windows.Media.MediaPlayer();
-            _ttsPlayer.Open(new Uri(wav));
-            _ttsPlayer.Play();
-        }
-        catch (Exception ex) { Toast("播放失败：" + ex.Message); }
+        PlayTtsWav(wav);
     }
 
     private void OnTtsFolder(object sender, RoutedEventArgs e)
