@@ -570,6 +570,7 @@ class ManagerWindow(Gtk.Window):
             self.append_log('✘ 主题未加载：%s（界面会用 GTK 默认皮肤）' % (last_theme_error() or '未知原因'))
         GLib.timeout_add(400, self._drain_log)
         GLib.timeout_add(4000, self._tick)
+        GLib.timeout_add(600, self._clamp_window_to_screen)
         start_hang_watchdog()
         hang_breadcrumb('管理器窗口已就绪')
 
@@ -870,6 +871,7 @@ class ManagerWindow(Gtk.Window):
         if self._rgba and cairo is not None:
             self.connect('draw', self._on_window_draw)
         self.connect('window-state-event', self._on_window_state)
+        self._setup_resize_edges()
 
     def _corner_radius(self):
         """窗口圆角：跟主题的 app-radius；最大化时为 0。"""
@@ -950,6 +952,167 @@ class ManagerWindow(Gtk.Window):
                 ctx.remove_class('maximized')
         self.queue_draw()
         return False
+
+    # ---- 无边框窗口的边缘缩放 ----
+    # 关掉系统标题栏后，Wayland 下窗口没有系统绘制的可拖边缘，
+    # 用户「拖边框」自然没反应。这里自己做：指针进入窗口四周 7px 时换光标，
+    # 按下时调 begin_resize_drag()，交给合成器完成真正的缩放。
+    _EDGE_MARGIN = 10
+
+    def _edge_at(self, x, y):
+        try:
+            w = self.get_allocated_width()
+            h = self.get_allocated_height()
+        except Exception:
+            return None
+        m = self._EDGE_MARGIN
+        left, right = x <= m, x >= w - m
+        top, bottom = y <= m, y >= h - m
+        if top and left:
+            return Gdk.WindowEdge.NORTH_WEST
+        if top and right:
+            return Gdk.WindowEdge.NORTH_EAST
+        if bottom and left:
+            return Gdk.WindowEdge.SOUTH_WEST
+        if bottom and right:
+            return Gdk.WindowEdge.SOUTH_EAST
+        if left:
+            return Gdk.WindowEdge.WEST
+        if right:
+            return Gdk.WindowEdge.EAST
+        if top:
+            return Gdk.WindowEdge.NORTH
+        if bottom:
+            return Gdk.WindowEdge.SOUTH
+        return None
+
+    _EDGE_CURSORS = {
+        'nw': 'nwse-resize', 'se': 'nwse-resize',
+        'ne': 'nesw-resize', 'sw': 'nesw-resize',
+        'w': 'ew-resize', 'e': 'ew-resize',
+        'n': 'ns-resize', 's': 'ns-resize',
+    }
+
+    def _edge_name(self, edge):
+        if edge is None:
+            return None
+        return {
+            Gdk.WindowEdge.NORTH_WEST: 'nw', Gdk.WindowEdge.SOUTH_EAST: 'se',
+            Gdk.WindowEdge.NORTH_EAST: 'ne', Gdk.WindowEdge.SOUTH_WEST: 'sw',
+            Gdk.WindowEdge.WEST: 'w', Gdk.WindowEdge.EAST: 'e',
+            Gdk.WindowEdge.NORTH: 'n', Gdk.WindowEdge.SOUTH: 's',
+        }.get(edge)
+
+    def _setup_resize_edges(self):
+        try:
+            self.add_events(Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.BUTTON_PRESS_MASK)
+        except Exception:
+            pass
+        self._edge_hover = None
+        self.connect('motion-notify-event', self._on_edge_motion)
+        self.connect('button-press-event', self._on_edge_press, )
+        # 顶栏 + 两侧内衬也能拖动窗口（用户不必去够标题栏细缝）
+        self.connect('button-press-event', self._on_drag_band_press)
+
+    def _apply_edge_cursor(self, name):
+        try:
+            win = self.get_window()
+            if win is None:
+                return
+            if name is None:
+                win.set_cursor(None)
+            else:
+                display = Gdk.Display.get_default()
+                win.set_cursor(Gdk.Cursor.new_from_name(display, self._EDGE_CURSORS[name]))
+        except Exception:
+            pass
+
+    def _on_edge_motion(self, _w, event):
+        if not getattr(self, '_frameless', False) or self.is_maximized():
+            return False
+        name = self._edge_name(self._edge_at(event.x, event.y))
+        if name != self._edge_hover:
+            self._edge_hover = name
+            self._apply_edge_cursor(name)
+        return False
+
+    def _on_edge_press(self, _w, event):
+        if not getattr(self, '_frameless', False) or self.is_maximized():
+            return False
+        if event.button != 1:
+            return False
+        edge = self._edge_at(event.x, event.y)
+        if edge is None:
+            return False
+        try:
+            win = self.get_window()
+            if win is None:
+                return False
+            win.begin_resize_drag(edge, event.button, int(event.x_root), int(event.y_root),
+                                  int(event.time))
+            return True
+        except Exception:
+            return False
+
+    # ---- 拖动带：顶栏整条 + 左右内衬 ----
+    # 用户反馈：窗口比屏幕大时根本够不到标题栏/右下角。这里把「顶栏（除按钮外）」
+    # 和「左右两边内衬」都当成拖动区，边缘 10px 仍然留给缩放。
+    _SIDE_DRAG_WIDTH = 18
+
+    def _drag_top_height(self):
+        try:
+            bar = getattr(self, 'topbar_box', None)
+            h = bar.get_allocated_height() if bar is not None else 0
+            if h > 0:
+                return h
+        except Exception:
+            pass
+        return 64
+
+    def _on_drag_band_press(self, _w, event):
+        if not getattr(self, '_frameless', False) or self.is_maximized():
+            return False
+        if event.button != 1:
+            return False
+        # 边缘留给缩放
+        if self._edge_at(event.x, event.y) is not None:
+            return False
+        try:
+            w = self.get_allocated_width()
+        except Exception:
+            return False
+        m = self._EDGE_MARGIN
+        top_band = m + self._drag_top_height()
+        in_top = event.y <= top_band
+        in_side = event.x <= m + self._SIDE_DRAG_WIDTH or event.x >= w - m - self._SIDE_DRAG_WIDTH
+        if not (in_top or in_side):
+            return False
+        try:
+            win = self.get_window()
+            if win is None:
+                return False
+            win.begin_move_drag(event.button, int(event.x_root), int(event.y_root), int(event.time))
+            return True
+        except Exception:
+            return False
+
+    def _clamp_window_to_screen(self):
+        """把窗口夹进屏幕工作区：比屏幕大就缩到屏幕大小，跑出屏外就挪回来。"""
+        try:
+            display = Gdk.Display.get_default()
+            monitor = display.get_primary_monitor() or display.get_monitor(0)
+            area = monitor.get_workarea()
+            w, h = self.get_size()
+            pos_x, pos_y = self.get_position()
+            new_w = min(w, area.width)
+            new_h = min(h, area.height)
+            if new_w != w or new_h != h:
+                self.resize(new_w, new_h)
+            if pos_x < area.x or pos_x + new_w > area.x + area.width or pos_y < area.y or pos_y + new_h > area.y + area.height:
+                self.move(area.x, area.y)
+            return False
+        except Exception:
+            return False
 
     def _start_window_drag(self, widget, event):
         """顶栏空白处拖动窗口；双击切最大化。按钮等子控件会自己吃掉事件。"""
@@ -1211,7 +1374,8 @@ class ManagerWindow(Gtk.Window):
     # ---- 主区 ----
     def _build_main(self):
         self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.main_box.pack_start(self._build_topbar(), False, False, 0)
+        self.topbar_box = self._build_topbar()
+        self.main_box.pack_start(self.topbar_box, False, False, 0)
 
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
