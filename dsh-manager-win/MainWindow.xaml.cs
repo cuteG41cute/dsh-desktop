@@ -2192,10 +2192,18 @@ public partial class MainWindow : Window
         if (dlg.ShowDialog() == true)
         {
             _ttsPickedFile = dlg.FileName;
+            if (TtsVoiceNameHint != null) TtsVoiceNameHint.Visibility = Visibility.Collapsed;
             if (TtsVoiceFile != null) TtsVoiceFile.Text = System.IO.Path.GetFileName(dlg.FileName);
             if (TtsVoiceName != null && string.IsNullOrWhiteSpace(TtsVoiceName.Text))
                 TtsVoiceName.Text = System.IO.Path.GetFileNameWithoutExtension(dlg.FileName);
         }
+    }
+
+    private void OnTtsVoiceNameChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        if (TtsVoiceNameHint == null) return;
+        TtsVoiceNameHint.Visibility = string.IsNullOrEmpty(TtsVoiceName.Text)
+            ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private async void OnTtsUpload(object sender, RoutedEventArgs e)
