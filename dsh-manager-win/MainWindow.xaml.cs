@@ -2079,12 +2079,36 @@ public partial class MainWindow : Window
             else if (running) TtsDetail.Text = "管理页 " + (dash ? "已打开" : "未打开") + " · 可直接用于会话朗读";
             else TtsDetail.Text = "已就绪，点「启动服务」拉起";
 
-            TtsStartBtn2.IsEnabled = !running && bins && models;
-            TtsStopBtn2.IsEnabled = running;
+            if (TtsToggleBtn != null)
+            {
+                TtsToggleBtn.Content = running ? "停止" : "启动";
+                TtsToggleBtn.IsEnabled = running || (bins && models);
+                TtsToggleBtn.Background = running
+                    ? (Brush)FindResource("Card")
+                    : (Brush)FindResource("Accent");
+                TtsToggleBtn.Foreground = running
+                    ? (Brush)FindResource("Text")
+                    : (Brush)FindResource("OnAccent");
+            }
 
             if (running && !_ttsVoicesBusy) _ = RefreshTtsVoicesAsync();
         }
         catch { }
+    }
+
+    private void OnTtsToggle(object sender, RoutedEventArgs e)
+    {
+        if (TtsService.Running)
+        {
+            TtsService.Stop();
+            Toast("本地语音已停止");
+        }
+        else
+        {
+            var (ok, msg) = TtsService.Start();
+            Toast(msg);
+        }
+        UpdateTtsCard();
     }
 
     private void OnTtsStart(object sender, RoutedEventArgs e)
