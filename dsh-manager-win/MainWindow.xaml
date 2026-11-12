@@ -726,11 +726,17 @@
                     </StackPanel>
 
                     <Border Height="1" Background="{DynamicResource InnerBorder}" Margin="0,18,0,0" />
-                    <TextBlock Text="音色" FontSize="10.5" FontWeight="SemiBold" Margin="0,14,0,0"
-                               Foreground="{DynamicResource Text}" />
+                    <Grid Margin="0,14,0,0">
+                        <TextBlock Text="音色" FontSize="10.5" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" Foreground="{DynamicResource Text}" />
+                        <Button x:Name="TtsNewVoiceToggle" Content="新建音色" HorizontalAlignment="Right"
+                                Style="{StaticResource BtnCompact}" Height="26" Padding="12,0" FontSize="9"
+                                Click="OnTtsToggleNewVoice" />
+                    </Grid>
                     <TextBlock Margin="0,6,0,0" FontSize="8.5" Foreground="{DynamicResource Subtle}"
                                Text="Qwen3-TTS 没有内置音色，需要先上传一段 5–20 秒的干净人声作为参考。" />
                     <StackPanel x:Name="TtsVoiceList" Margin="0,10,0,0" />
+                    <StackPanel x:Name="TtsNewVoicePanel" Visibility="Collapsed">
                     <TextBlock Text="新音色名字" FontSize="8.5" Margin="0,10,0,5"
                                Foreground="{DynamicResource Subtle}" />
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
@@ -751,6 +757,7 @@
                         <TextBlock x:Name="TtsVoiceFile" Text="未选择文件" FontSize="8.5" Margin="12,0,0,0"
                                    VerticalAlignment="Center" Foreground="{DynamicResource Subtle}"
                                    TextTrimming="CharacterEllipsis" MaxWidth="240" />
+                    </StackPanel>
                     </StackPanel>
 
                     <Border Height="1" Background="{DynamicResource InnerBorder}" Margin="0,16,0,0" />
@@ -778,7 +785,7 @@
                                Text="接口地址  http://127.0.0.1:8098/v1      模型  codec-q8_0      音色  ganyu      语速  1.0      格式  wav      API Key  留空" />
                     <TextBlock Margin="0,7,0,0" FontSize="8.5" TextWrapping="Wrap"
                                Foreground="{DynamicResource Subtle}"
-                               Text="音色用名字（如 ganyu / demo）即可，也可以填音色 id；新增音色在「打开管理页」里上传参考音频。" />
+                               Text="音色用名字（如 ganyu / demo）即可，也可以填音色 id；新增或改名在「音色」段里操作。" />
 
                     <Border Height="1" Background="{DynamicResource InnerBorder}" Margin="0,16,0,0" />
                     <TextBlock Text="说明" FontSize="10.5" FontWeight="SemiBold" Margin="0,14,0,0"

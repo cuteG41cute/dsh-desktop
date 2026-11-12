@@ -269,6 +269,26 @@ public static class TtsService
         catch (Exception ex) { return (false, "删除失败：" + ex.Message); }
     }
 
+    /// <summary>音色改名（PATCH /v1/audio/voices/<id>）。</summary>
+    public static async Task<(bool Ok, string Message)> RenameVoiceAsync(string id, string name)
+    {
+        if (!Running) return (false, "服务没在运行");
+        try
+        {
+            using var c = Client();
+            var body = JsonSerializer.Serialize(new Dictionary<string, object> { ["name"] = name });
+            using var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var req = new HttpRequestMessage(new HttpMethod("PATCH"), $"http://127.0.0.1:{Port}/v1/audio/voices/{id}")
+            {
+                Content = content,
+            };
+            var resp = await c.SendAsync(req);
+            var text = await resp.Content.ReadAsStringAsync();
+            return (resp.IsSuccessStatusCode, resp.IsSuccessStatusCode ? "已改名" : text);
+        }
+        catch (Exception ex) { return (false, "改名失败：" + ex.Message); }
+    }
+
     /// <summary>合成一段语音，返回临时 wav 路径和耗时。</summary>
     public static async Task<(bool Ok, string Error, string WavPath, double Seconds, TimeSpan Elapsed)> SynthesizeAsync(string text, string voice)
     {

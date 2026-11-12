@@ -2154,12 +2154,27 @@ public partial class MainWindow : Window
                     VerticalAlignment = VerticalAlignment.Center,
                     Foreground = (Brush)FindResource("Subtle"),
                 };
+                var rename = new Button
+                {
+                    Content = "改名", Style = (Style)FindResource("BtnCompact"),
+                    Height = 26, Padding = new Thickness(10, 0, 10, 0), FontSize = 9,
+                    Margin = new Thickness(0, 0, 8, 0),
+                };
+                var voiceName = v.Name;
+                var voiceId = v.Id;
+                rename.Click += async (_, _) =>
+                {
+                    var next = PromptText("音色改名", "新的音色名字（朗读设置里直接填这个名字）", voiceName);
+                    if (string.IsNullOrWhiteSpace(next) || next.Trim() == voiceName) return;
+                    var (rok, rmsg) = await TtsService.RenameVoiceAsync(voiceId, next.Trim());
+                    Toast(rok ? ("已改名为 " + next.Trim()) : rmsg);
+                    if (rok) await RefreshTtsVoicesAsync();
+                };
                 var del = new Button
                 {
                     Content = "删除", Style = (Style)FindResource("BtnCompact"),
                     Height = 26, Padding = new Thickness(10, 0, 10, 0), FontSize = 9,
                 };
-                var voiceId = v.Id;
                 del.Click += async (_, _) =>
                 {
                     var (dok, dmsg) = await TtsService.DeleteVoiceAsync(voiceId);
@@ -2168,10 +2183,13 @@ public partial class MainWindow : Window
                 };
                 Grid.SetColumn(name, 0);
                 Grid.SetColumn(id, 1);
-                Grid.SetColumn(del, 2);
+                var actions = new StackPanel { Orientation = Orientation.Horizontal };
+                actions.Children.Add(rename);
+                actions.Children.Add(del);
+                Grid.SetColumn(actions, 2);
                 row.Children.Add(name);
                 row.Children.Add(id);
-                row.Children.Add(del);
+                row.Children.Add(actions);
                 TtsVoiceList.Children.Add(row);
                 TtsVoiceCombo.Items.Add(v.Name);
             }
@@ -2197,6 +2215,45 @@ public partial class MainWindow : Window
             if (TtsVoiceName != null && string.IsNullOrWhiteSpace(TtsVoiceName.Text))
                 TtsVoiceName.Text = System.IO.Path.GetFileNameWithoutExtension(dlg.FileName);
         }
+    }
+
+    private void OnTtsToggleNewVoice(object sender, RoutedEventArgs e)
+    {
+        if (TtsNewVoicePanel == null) return;
+        var show = TtsNewVoicePanel.Visibility != Visibility.Visible;
+        TtsNewVoicePanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (TtsNewVoiceToggle != null) TtsNewVoiceToggle.Content = show ? "收起" : "新建音色";
+    }
+
+    /// <summary>极简输入对话框（改名用）。</summary>
+    private string PromptText(string title, string label, string initial)
+    {
+        var win = new Window
+        {
+            Title = title, Width = 380, SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = this,
+            ResizeMode = ResizeMode.NoResize, WindowStyle = WindowStyle.ToolWindow,
+            Background = (Brush)FindResource("WindowBackground"),
+        };
+        var root = new StackPanel { Margin = new Thickness(18) };
+        root.Children.Add(new TextBlock
+        {
+            Text = label, FontSize = 10, Margin = new Thickness(0, 0, 0, 8),
+            Foreground = (Brush)FindResource("Muted"),
+        });
+        var box = new TextBox { Text = initial, FontSize = 12, Height = 32, Padding = new Thickness(8, 0, 8, 0), VerticalContentAlignment = VerticalAlignment.Center };
+        root.Children.Add(box);
+        var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) };
+        var ok = new Button { Content = "确定", Style = (Style)FindResource("BtnPrimary"), Height = 30, Padding = new Thickness(16, 0, 16, 0), IsDefault = true };
+        var cancel = new Button { Content = "取消", Style = (Style)FindResource("BtnCompact"), Height = 30, Padding = new Thickness(14, 0, 14, 0), Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
+        ok.Click += (_, _) => { win.DialogResult = true; };
+        row.Children.Add(ok);
+        row.Children.Add(cancel);
+        root.Children.Add(row);
+        win.Content = root;
+        box.Focus();
+        box.SelectAll();
+        return win.ShowDialog() == true ? box.Text : null;
     }
 
     private void OnTtsVoiceNameChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
