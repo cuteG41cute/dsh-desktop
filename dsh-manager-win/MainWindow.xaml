@@ -665,17 +665,17 @@
             <TextBlock Text="不依赖任何实例、由管理器自己提供的能力"
                        FontSize="9.5" Margin="0,8,0,0" Foreground="{DynamicResource Muted}" />
 
-            <Border Style="{StaticResource CardStyle}" Margin="0,20,0,0" Padding="20,16">
+            <Border Style="{StaticResource CardStyle}" Margin="0,20,0,0" Padding="20,18">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal">
-                        <Border Width="30" Height="30" CornerRadius="9" Background="{DynamicResource AccentSoft}"
+                        <Border Width="32" Height="32" CornerRadius="9" Background="{DynamicResource AccentSoft}"
                                 VerticalAlignment="Center">
                             <Path Width="15" Height="15" Data="{StaticResource Icon.info}"
                                   Style="{StaticResource IconPath}" Stroke="{DynamicResource Accent}"
                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
-                        <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="本地语音" FontSize="11.5" FontWeight="SemiBold"
+                        <StackPanel Margin="11,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="本地语音" FontSize="12" FontWeight="SemiBold"
                                        Foreground="{DynamicResource Text}" />
                             <TextBlock Text="Qwen3-TTS · OpenAI 兼容 /v1/audio/speech"
                                        FontSize="8.5" Margin="0,3,0,0" Foreground="{DynamicResource Muted}" />
@@ -713,7 +713,7 @@
                         </StackPanel>
                     </Grid>
 
-                    <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                    <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
                         <Button x:Name="TtsStartBtn2" Content="启动服务" Style="{StaticResource BtnSecondary}"
                                 Height="32" Padding="14,0" Margin="0,0,8,0" Click="OnTtsStart" />
                         <Button x:Name="TtsStopBtn2" Content="停止服务" Style="{StaticResource BtnSecondary}"
@@ -725,27 +725,21 @@
                         <Button Content="查看日志" Style="{StaticResource BtnCompact}"
                                 Height="32" Padding="12,0" Click="OnTtsLog" />
                     </StackPanel>
-                </StackPanel>
-            </Border>
 
-            <Border Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="20,16">
-                <StackPanel>
-                    <TextBlock Text="朗读设置怎么填" FontSize="10.5" FontWeight="SemiBold"
+                    <Border Height="1" Background="{DynamicResource InnerBorder}" Margin="0,18,0,0" />
+                    <TextBlock Text="朗读设置怎么填" FontSize="10.5" FontWeight="SemiBold" Margin="0,14,0,0"
                                Foreground="{DynamicResource Text}" />
-                    <TextBlock Margin="0,10,0,0" FontSize="9" TextWrapping="Wrap"
+                    <TextBlock Margin="0,9,0,0" FontSize="9" TextWrapping="Wrap"
                                Foreground="{DynamicResource Muted}"
                                Text="接口地址  http://127.0.0.1:8098/v1      模型  codec-q8_0      音色  ganyu      语速  1.0      格式  wav      API Key  留空" />
-                    <TextBlock Margin="0,8,0,0" FontSize="8.5" TextWrapping="Wrap"
+                    <TextBlock Margin="0,7,0,0" FontSize="8.5" TextWrapping="Wrap"
                                Foreground="{DynamicResource Subtle}"
                                Text="音色用名字（如 ganyu / demo）即可，也可以填音色 id；新增音色在「打开管理页」里上传参考音频。" />
-                </StackPanel>
-            </Border>
 
-            <Border Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="20,16">
-                <StackPanel>
-                    <TextBlock Text="说明" FontSize="10.5" FontWeight="SemiBold"
+                    <Border Height="1" Background="{DynamicResource InnerBorder}" Margin="0,16,0,0" />
+                    <TextBlock Text="说明" FontSize="10.5" FontWeight="SemiBold" Margin="0,14,0,0"
                                Foreground="{DynamicResource Text}" />
-                    <TextBlock Margin="0,8,0,0" FontSize="8.5" TextWrapping="Wrap"
+                    <TextBlock Margin="0,9,0,0" FontSize="8.5" TextWrapping="Wrap"
                                Foreground="{DynamicResource Muted}"
                                Text="服务由管理器启动/停止，日志写在 services\tts\logs\server.log；CPU 推理速度约为实时的 0.3 倍，长文本请先在管理页里合成再播放。" />
                 </StackPanel>
