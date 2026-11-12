@@ -1891,26 +1891,37 @@ public partial class MainWindow : Window
     private bool _settingsPage;
 
     /// <summary>给 --shot 用：直接打开设置页。</summary>
-    public void OpenSettingsPage() => ShowPage(true);
+    public void OpenSettingsPage() => ShowPage("settings");
+    public void OpenTtsPage() => ShowPage("tts");
 
-    private void OnShowOverview(object sender, RoutedEventArgs e) => ShowPage(false);
-    private void OnShowSettings(object sender, RoutedEventArgs e) => ShowPage(true);
+    private void OnShowOverview(object sender, RoutedEventArgs e) => ShowPage("overview");
+    private void OnShowSettings(object sender, RoutedEventArgs e) => ShowPage("settings");
+    private void OnShowTts(object sender, RoutedEventArgs e) => ShowPage("tts");
 
-    private void ShowPage(bool settings)
+    private void ShowPage(string page)
     {
-        _settingsPage = settings;
-        if (ContentScroll != null) ContentScroll.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
-        if (SettingsScroll != null) SettingsScroll.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
-        if (Breadcrumb != null) Breadcrumb.Text = settings ? "管理器设置" : "实例概览";
-        // 侧栏高亮跟着当前页走
-        if (OverviewNav != null && SettingsNav != null)
+        var isSettings = page == "settings";
+        var isTts = page == "tts";
+        _settingsPage = isSettings;
+        if (ContentScroll != null) ContentScroll.Visibility = (!isSettings && !isTts) ? Visibility.Visible : Visibility.Collapsed;
+        if (SettingsScroll != null) SettingsScroll.Visibility = isSettings ? Visibility.Visible : Visibility.Collapsed;
+        if (TtsScroll != null) TtsScroll.Visibility = isTts ? Visibility.Visible : Visibility.Collapsed;
+        if (Breadcrumb != null)
+            Breadcrumb.Text = isSettings ? "管理器设置" : (isTts ? "本地语音" : "实例概览");
+
+        // 侧栏高亮：三选一
+        void Style(Button b, bool active)
         {
-            OverviewNav.Foreground = (Brush)FindResource(settings ? "Muted" : "Accent");
-            OverviewNav.Background = settings ? Brushes.Transparent : (Brush)FindResource("Hover");
-            SettingsNav.Foreground = (Brush)FindResource(settings ? "Accent" : "Muted");
-            SettingsNav.Background = settings ? (Brush)FindResource("Hover") : Brushes.Transparent;
+            if (b == null) return;
+            b.Foreground = (Brush)FindResource(active ? "Accent" : "Muted");
+            b.Background = active ? (Brush)FindResource("Hover") : Brushes.Transparent;
         }
-        if (settings) { FillSettingsInfo(); RefreshSettingsAppearance(); }
+        Style(OverviewNav, page == "overview");
+        Style(SettingsNav, isSettings);
+        Style(TtsNav, isTts);
+
+        if (isSettings) { FillSettingsInfo(); RefreshSettingsAppearance(); }
+        if (isTts) UpdateTtsCard();
     }
 
     /// <summary>设置页左侧的「管理器信息」列表（键值成对，样式照设计稿的 info-list）。</summary>
@@ -1970,7 +1981,7 @@ public partial class MainWindow : Window
 
     private void OnSettingsChangeTheme(object sender, RoutedEventArgs e)
     {
-        ShowPage(false);                 // 主题菜单挂在顶栏的按钮上，先回到仪表盘再弹
+        ShowPage("overview");             // 主题菜单挂在顶栏的按钮上，先回到仪表盘再弹
         OnThemeTrigger(ThemeTrigger, new RoutedEventArgs());
     }
 
@@ -2042,29 +2053,35 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (TtsCard == null) return;
+            if (TtsStateText == null) return;
             var running = TtsService.Running;
             var dash = TtsService.DashboardRunning;
             var models = TtsService.ModelsReady;
             var bins = TtsService.BinariesReady;
 
-            TtsBadgeText.Text = running ? "运行中" : "已停止";
-            TtsBadge.Background = running
-                ? (System.Windows.Media.Brush)FindResource("AccentSoft")
-                : (System.Windows.Media.Brush)FindResource("InnerBorder");
+            TtsStateText.Text = running ? "运行中" : "已停止";
+            TtsStateBadge.Background = running
+                ? (Brush)FindResource("AccentSoft")
+                : (Brush)FindResource("InnerBorder");
+            TtsStateText.Foreground = running
+                ? (Brush)FindResource("Accent")
+                : (Brush)FindResource("Muted");
 
-            if (!bins) TtsSub.Text = "缺少 tts-server.exe（services\\tts\\run）";
-            else if (!models) TtsSub.Text = "模型未就绪（services\\tts\\models 需要两个 GGUF）";
-            else if (running)
-                TtsSub.Text = "Qwen3-TTS · 端口 " + TtsService.Port + " · 管理页 " +
-                              (dash ? "已开" : "未开") + " · " +
-                              (TtsService.ModelsBytes / 1024 / 1024) + " MB 模型";
-            else TtsSub.Text = "Qwen3-TTS · 已就绪（模型 " +
-                              (TtsService.ModelsBytes / 1024 / 1024) + " MB）· 点「启动」拉起";
+            TtsPortText.Text = TtsService.Port.ToString();
+            TtsModelText.Text = System.IO.Path.GetFileName(TtsService.BackbonePath) + " + " +
+                                System.IO.Path.GetFileName(TtsService.CodecPath);
+            TtsSizeText.Text = bins
+                ? (TtsService.ModelsBytes / 1024 / 1024) + " MB"
+                : "—";
 
-            TtsStartBtn.IsEnabled = !running && bins && models;
-            TtsStopBtn.IsEnabled = running;
-            TtsOpenBtn.IsEnabled = bins;
+            if (!bins) TtsDetail.Text = "缺少 tts-server.exe（services\\tts\\run），需要先放到该目录";
+            else if (!models) TtsDetail.Text = "模型未就绪：services\\tts\\models 需要两个 GGUF";
+            else if (running) TtsDetail.Text = "管理页 " + (dash ? "已打开" : "未打开") + " · 可直接用于会话朗读";
+            else TtsDetail.Text = "已就绪，点「启动服务」拉起";
+
+            TtsStartBtn2.IsEnabled = !running && bins && models;
+            TtsStopBtn2.IsEnabled = running;
+            TtsOpenBtn2.IsEnabled = bins;
         }
         catch { }
     }
@@ -2083,6 +2100,32 @@ public partial class MainWindow : Window
         Toast(msg);
         if (!ok) return;
         System.Threading.Tasks.Task.Delay(800).ContinueWith(_ => Dispatcher.BeginInvoke(new Action(UpdateTtsCard)));
+    }
+
+    private void OnTtsFolder(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = TtsService.Root,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex) { Toast("打开目录失败：" + ex.Message); }
+    }
+
+    private void OnTtsLog(object sender, RoutedEventArgs e)
+    {
+        var log = System.IO.Path.Combine(TtsService.LogDir, "server.log");
+        try
+        {
+            if (!System.IO.File.Exists(log)) { Toast("还没有日志：" + log); return; }
+            var text = System.IO.File.ReadAllText(log);
+            if (text.Length > 20000) text = text.Substring(text.Length - 20000);
+            ShowTextWindow("本地语音日志", text, null);
+        }
+        catch (Exception ex) { Toast("读取日志失败：" + ex.Message); }
     }
 
     private void OnTtsOpen(object sender, RoutedEventArgs e)

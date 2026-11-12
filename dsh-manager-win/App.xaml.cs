@@ -286,10 +286,11 @@ public partial class App : Application
             }
         }
         win.Show();
-        if (Environment.GetCommandLineArgs().Contains("--page") &&
-            Environment.GetCommandLineArgs().SkipWhile(a => a != "--page").Skip(1).FirstOrDefault() == "settings")
+        if (Environment.GetCommandLineArgs().Contains("--page"))
         {
-            win.OpenSettingsPage();
+            var page = Environment.GetCommandLineArgs().SkipWhile(a => a != "--page").Skip(1).FirstOrDefault() ?? "";
+            if (page == "settings") win.OpenSettingsPage();
+            else if (page == "tts") win.OpenTtsPage();
         }
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
         timer.Tick += (_, _) =>

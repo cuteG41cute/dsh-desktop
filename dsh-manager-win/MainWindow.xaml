@@ -144,6 +144,15 @@
                                     <TextBlock Text="实例概览" Margin="10,0,0,0" />
                                 </StackPanel>
                             </Button>
+                            <TextBlock Text="管理器功能" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Subtle}" Margin="11,14,0,8" />
+                            <Button Style="{StaticResource SideLink}" x:Name="TtsNav" Click="OnShowTts">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Width="17" Height="17" Data="{StaticResource Icon.info}"
+                                          Style="{StaticResource IconPath}" />
+                                    <TextBlock Text="本地语音" Margin="10,0,0,0" />
+                                </StackPanel>
+                            </Button>
                             <Button Style="{StaticResource SideLink}" x:Name="SettingsNav" Click="OnShowSettings">
                                 <StackPanel Orientation="Horizontal">
                                     <Path Width="17" Height="17" Data="{StaticResource Icon.settings}"
@@ -582,48 +591,6 @@
                                 </Border>
                             </UniformGrid>
 
-                            <!-- 本地语音服务（Qwen3-TTS） -->
-                            <Border x:Name="TtsCard" Style="{StaticResource CardStyle}" Margin="0,0,0,0" Padding="18,14">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-
-                                    <Border Grid.Column="0" Width="34" Height="34" CornerRadius="10"
-                                            Background="{DynamicResource AccentSoft}" VerticalAlignment="Center">
-                                        <Path Width="16" Height="16" Data="{StaticResource Icon.info}"
-                                              Style="{StaticResource IconPath}" Stroke="{DynamicResource Accent}"
-                                              HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                    </Border>
-
-                                    <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="本地语音" FontSize="11" FontWeight="SemiBold"
-                                                       Foreground="{DynamicResource Text}" />
-                                            <Border x:Name="TtsBadge" Background="{DynamicResource InnerBorder}" CornerRadius="8"
-                                                    Padding="6,1" Margin="9,0,0,0">
-                                                <TextBlock x:Name="TtsBadgeText" Text="检查中" FontSize="8"
-                                                           Foreground="{DynamicResource Muted}" />
-                                            </Border>
-                                        </StackPanel>
-                                        <TextBlock x:Name="TtsSub" Text="Qwen3-TTS · 读取状态…" FontSize="8.5"
-                                                   Margin="0,5,0,0" Foreground="{DynamicResource Muted}"
-                                                   TextTrimming="CharacterEllipsis" />
-                                    </StackPanel>
-
-                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Button x:Name="TtsStartBtn" Content="启动" Style="{StaticResource BtnCompact}"
-                                                Height="30" Padding="12,0" Margin="0,0,8,0" Click="OnTtsStart" />
-                                        <Button x:Name="TtsStopBtn" Content="停止" Style="{StaticResource BtnCompact}"
-                                                Height="30" Padding="12,0" Margin="0,0,8,0" Click="OnTtsStop" />
-                                        <Button x:Name="TtsOpenBtn" Content="管理页" Style="{StaticResource BtnSecondary}"
-                                                Height="30" Padding="12,0" Click="OnTtsOpen" />
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-
                             <!-- 最近日志 -->
                             <Border Style="{StaticResource CardStyle}" Margin="0,20,0,0" ClipToBounds="True">
                                 <StackPanel>
@@ -691,7 +658,94 @@
                     </ScrollViewer>
 
                     <!-- ================= 管理器设置页 ================= -->
-                    <ScrollViewer x:Name="SettingsScroll" Grid.Row="1" Visibility="Collapsed"
+                    <!-- ================= 本地语音（管理器功能） ================= -->
+    <ScrollViewer x:Name="TtsScroll" Grid.Row="1" Visibility="Collapsed"
+                  VerticalScrollBarVisibility="Auto" Padding="30,25,30,15">
+        <StackPanel HorizontalAlignment="Left" MaxWidth="1000">
+            <TextBlock Text="本地语音" FontSize="25" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Text}" />
+            <TextBlock Text="Qwen3-TTS 本地推理服务 · 对外是 OpenAI 兼容的 /v1/audio/speech"
+                       FontSize="9.5" Margin="0,8,0,0" Foreground="{DynamicResource Muted}" />
+
+            <Border Style="{StaticResource CardStyle}" Margin="0,20,0,0" Padding="20,16">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="运行状态" FontSize="10.5" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Text}" VerticalAlignment="Center" />
+                        <Border x:Name="TtsStateBadge" Background="{DynamicResource InnerBorder}"
+                                CornerRadius="8" Padding="7,1" Margin="10,0,0,0" VerticalAlignment="Center">
+                            <TextBlock x:Name="TtsStateText" Text="检查中" FontSize="8"
+                                       Foreground="{DynamicResource Muted}" />
+                        </Border>
+                        <TextBlock x:Name="TtsDetail" Text="" FontSize="8.5" Margin="12,0,0,0"
+                                   VerticalAlignment="Center" Foreground="{DynamicResource Muted}" />
+                    </StackPanel>
+
+                    <Grid Margin="0,16,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="端口" FontSize="8.5" Foreground="{DynamicResource Subtle}" />
+                            <TextBlock x:Name="TtsPortText" Text="—" FontSize="11" Margin="0,4,0,0"
+                                       Foreground="{DynamicResource Text}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Margin="0,0,18,0">
+                            <TextBlock Text="模型" FontSize="8.5" Foreground="{DynamicResource Subtle}" />
+                            <TextBlock x:Name="TtsModelText" Text="—" FontSize="11" Margin="0,4,0,0"
+                                       TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                       Foreground="{DynamicResource Text}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" MinWidth="90">
+                            <TextBlock Text="占用空间" FontSize="8.5" Foreground="{DynamicResource Subtle}" />
+                            <TextBlock x:Name="TtsSizeText" Text="—" FontSize="11" Margin="0,4,0,0"
+                                       Foreground="{DynamicResource Text}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                        <Button x:Name="TtsStartBtn2" Content="启动服务" Style="{StaticResource BtnSecondary}"
+                                Height="32" Padding="14,0" Margin="0,0,8,0" Click="OnTtsStart" />
+                        <Button x:Name="TtsStopBtn2" Content="停止服务" Style="{StaticResource BtnSecondary}"
+                                Height="32" Padding="14,0" Margin="0,0,8,0" Click="OnTtsStop" />
+                        <Button x:Name="TtsOpenBtn2" Content="打开管理页" Style="{StaticResource BtnPrimary}"
+                                Height="32" Padding="14,0" Margin="0,0,8,0" Click="OnTtsOpen" />
+                        <Button Content="程序目录" Style="{StaticResource BtnCompact}"
+                                Height="32" Padding="12,0" Margin="0,0,8,0" Click="OnTtsFolder" />
+                        <Button Content="查看日志" Style="{StaticResource BtnCompact}"
+                                Height="32" Padding="12,0" Click="OnTtsLog" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="20,16">
+                <StackPanel>
+                    <TextBlock Text="朗读设置怎么填" FontSize="10.5" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Text}" />
+                    <TextBlock Margin="0,10,0,0" FontSize="9" TextWrapping="Wrap"
+                               Foreground="{DynamicResource Muted}"
+                               Text="接口地址  http://127.0.0.1:8098/v1      模型  codec-q8_0      音色  ganyu      语速  1.0      格式  wav      API Key  留空" />
+                    <TextBlock Margin="0,8,0,0" FontSize="8.5" TextWrapping="Wrap"
+                               Foreground="{DynamicResource Subtle}"
+                               Text="音色用名字（如 ganyu / demo）即可，也可以填音色 id；新增音色在「打开管理页」里上传参考音频。" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="20,16">
+                <StackPanel>
+                    <TextBlock Text="说明" FontSize="10.5" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Text}" />
+                    <TextBlock Margin="0,8,0,0" FontSize="8.5" TextWrapping="Wrap"
+                               Foreground="{DynamicResource Muted}"
+                               Text="服务由管理器启动/停止，日志写在 services\tts\logs\server.log；CPU 推理速度约为实时的 0.3 倍，长文本请先在管理页里合成再播放。" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+
+    <ScrollViewer x:Name="SettingsScroll" Grid.Row="1" Visibility="Collapsed"
                                   VerticalScrollBarVisibility="Auto" Padding="30,25,30,15">
                         <StackPanel>
                             <Grid Margin="0,0,0,22">
