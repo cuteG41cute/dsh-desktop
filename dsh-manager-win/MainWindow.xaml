@@ -144,13 +144,11 @@
                                     <TextBlock Text="实例概览" Margin="10,0,0,0" />
                                 </StackPanel>
                             </Button>
-                            <TextBlock Text="管理器功能" FontSize="10" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource Subtle}" Margin="11,14,0,8" />
-                            <Button Style="{StaticResource SideLink}" x:Name="TtsNav" Click="OnShowTts">
+                            <Button Style="{StaticResource SideLink}" x:Name="FeaturesNav" Click="OnShowTts">
                                 <StackPanel Orientation="Horizontal">
-                                    <Path Width="17" Height="17" Data="{StaticResource Icon.info}"
+                                    <Path Width="17" Height="17" Data="{StaticResource Icon.puzzle}"
                                           Style="{StaticResource IconPath}" />
-                                    <TextBlock Text="本地语音" Margin="10,0,0,0" />
+                                    <TextBlock Text="管理器功能" Margin="10,0,0,0" />
                                 </StackPanel>
                             </Button>
                             <Button Style="{StaticResource SideLink}" x:Name="SettingsNav" Click="OnShowSettings">
@@ -658,22 +656,32 @@
                     </ScrollViewer>
 
                     <!-- ================= 管理器设置页 ================= -->
-                    <!-- ================= 本地语音（管理器功能） ================= -->
-    <ScrollViewer x:Name="TtsScroll" Grid.Row="1" Visibility="Collapsed"
+                    <!-- ================= 管理器功能 ================= -->
+    <ScrollViewer x:Name="FeaturesScroll" Grid.Row="1" Visibility="Collapsed"
                   VerticalScrollBarVisibility="Auto" Padding="30,25,30,15">
         <StackPanel HorizontalAlignment="Left" MaxWidth="1000">
-            <TextBlock Text="本地语音" FontSize="25" FontWeight="SemiBold"
+            <TextBlock Text="管理器功能" FontSize="25" FontWeight="SemiBold"
                        Foreground="{DynamicResource Text}" />
-            <TextBlock Text="Qwen3-TTS 本地推理服务 · 对外是 OpenAI 兼容的 /v1/audio/speech"
+            <TextBlock Text="不依赖任何实例、由管理器自己提供的能力"
                        FontSize="9.5" Margin="0,8,0,0" Foreground="{DynamicResource Muted}" />
 
             <Border Style="{StaticResource CardStyle}" Margin="0,20,0,0" Padding="20,16">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="运行状态" FontSize="10.5" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource Text}" VerticalAlignment="Center" />
+                        <Border Width="30" Height="30" CornerRadius="9" Background="{DynamicResource AccentSoft}"
+                                VerticalAlignment="Center">
+                            <Path Width="15" Height="15" Data="{StaticResource Icon.info}"
+                                  Style="{StaticResource IconPath}" Stroke="{DynamicResource Accent}"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="本地语音" FontSize="11.5" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Text}" />
+                            <TextBlock Text="Qwen3-TTS · OpenAI 兼容 /v1/audio/speech"
+                                       FontSize="8.5" Margin="0,3,0,0" Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
                         <Border x:Name="TtsStateBadge" Background="{DynamicResource InnerBorder}"
-                                CornerRadius="8" Padding="7,1" Margin="10,0,0,0" VerticalAlignment="Center">
+                                CornerRadius="8" Padding="7,1" Margin="12,0,0,0" VerticalAlignment="Center">
                             <TextBlock x:Name="TtsStateText" Text="检查中" FontSize="8"
                                        Foreground="{DynamicResource Muted}" />
                         </Border>

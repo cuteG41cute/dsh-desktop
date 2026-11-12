@@ -1905,9 +1905,9 @@ public partial class MainWindow : Window
         _settingsPage = isSettings;
         if (ContentScroll != null) ContentScroll.Visibility = (!isSettings && !isTts) ? Visibility.Visible : Visibility.Collapsed;
         if (SettingsScroll != null) SettingsScroll.Visibility = isSettings ? Visibility.Visible : Visibility.Collapsed;
-        if (TtsScroll != null) TtsScroll.Visibility = isTts ? Visibility.Visible : Visibility.Collapsed;
+        if (FeaturesScroll != null) FeaturesScroll.Visibility = isTts ? Visibility.Visible : Visibility.Collapsed;
         if (Breadcrumb != null)
-            Breadcrumb.Text = isSettings ? "管理器设置" : (isTts ? "本地语音" : "实例概览");
+            Breadcrumb.Text = isSettings ? "管理器设置" : (isTts ? "管理器功能" : "实例概览");
 
         // 侧栏高亮：三选一
         void Style(Button b, bool active)
@@ -1918,7 +1918,7 @@ public partial class MainWindow : Window
         }
         Style(OverviewNav, page == "overview");
         Style(SettingsNav, isSettings);
-        Style(TtsNav, isTts);
+        Style(FeaturesNav, isTts);
 
         if (isSettings) { FillSettingsInfo(); RefreshSettingsAppearance(); }
         if (isTts) UpdateTtsCard();
