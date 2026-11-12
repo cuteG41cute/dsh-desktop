@@ -1,3 +1,7 @@
+using System.Collections.Generic;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -188,6 +192,121 @@ public static class TtsService
         }
         catch { }
         return 0;
+    }
+
+    // ---------------------------------------------------------------- 管理页功能（内嵌）
+
+    public sealed class VoiceInfo
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+    }
+
+    private static HttpClient Client()
+    {
+        var c = new HttpClient(ProxyConfig.Configure(new SocketsHttpHandler()))
+        {
+            Timeout = TimeSpan.FromMinutes(10),
+        };
+        return c;
+    }
+
+    /// <summary>列出自定义音色。</summary>
+    public static async Task<(bool Ok, string Error, List<VoiceInfo> Voices)> ListVoicesAsync()
+    {
+        var list = new List<VoiceInfo>();
+        if (!Running) return (false, "服务没在运行", list);
+        try
+        {
+            using var c = Client();
+            var json = await c.GetStringAsync($"http://127.0.0.1:{Port}/v1/audio/voices");
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("custom", out var arr) && arr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var v in arr.EnumerateArray())
+                {
+                    list.Add(new VoiceInfo
+                    {
+                        Id = v.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "",
+                        Name = v.TryGetProperty("name", out var name) ? name.GetString() ?? "" : "",
+                    });
+                }
+            }
+            return (true, "", list);
+        }
+        catch (Exception ex) { return (false, ex.Message, list); }
+    }
+
+    /// <summary>用一段参考音频克隆音色（multipart 上传给 tts-server）。</summary>
+    public static async Task<(bool Ok, string Message)> CreateVoiceAsync(string name, string wavPath)
+    {
+        if (!Running) return (false, "服务没在运行");
+        try
+        {
+            using var c = Client();
+            using var form = new MultipartFormDataContent();
+            form.Add(new StringContent(name), "name");
+            var bytes = await File.ReadAllBytesAsync(wavPath);
+            var file = new ByteArrayContent(bytes);
+            file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("audio/wav");
+            form.Add(file, "audio_sample", Path.GetFileName(wavPath));
+            var resp = await c.PostAsync($"http://127.0.0.1:{Port}/v1/audio/voices", form);
+            var text = await resp.Content.ReadAsStringAsync();
+            return (resp.IsSuccessStatusCode, resp.IsSuccessStatusCode ? ("已创建音色：" + name) : text);
+        }
+        catch (Exception ex) { return (false, "上传失败：" + ex.Message); }
+    }
+
+    public static async Task<(bool Ok, string Message)> DeleteVoiceAsync(string id)
+    {
+        if (!Running) return (false, "服务没在运行");
+        try
+        {
+            using var c = Client();
+            var resp = await c.DeleteAsync($"http://127.0.0.1:{Port}/v1/audio/voices/{id}");
+            return (resp.IsSuccessStatusCode, resp.IsSuccessStatusCode ? "已删除" : ("删除失败：" + (int)resp.StatusCode));
+        }
+        catch (Exception ex) { return (false, "删除失败：" + ex.Message); }
+    }
+
+    /// <summary>合成一段语音，返回临时 wav 路径和耗时。</summary>
+    public static async Task<(bool Ok, string Error, string WavPath, double Seconds, TimeSpan Elapsed)> SynthesizeAsync(string text, string voice)
+    {
+        if (!Running) return (false, "服务没在运行", "", 0, TimeSpan.Zero);
+        try
+        {
+            var payload = new Dictionary<string, object>
+            {
+                ["model"] = "codec-q8_0",
+                ["input"] = text,
+                ["response_format"] = "wav",
+            };
+            if (!string.IsNullOrWhiteSpace(voice)) payload["voice"] = voice;
+            var body = JsonSerializer.Serialize(payload);
+            var sw = Stopwatch.StartNew();
+            using var c = Client();
+            using var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var resp = await c.PostAsync($"http://127.0.0.1:{Port}/v1/audio/speech", content);
+            sw.Stop();
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await resp.Content.ReadAsStringAsync();
+                return (false, err.Length > 300 ? err.Substring(0, 300) : err, "", 0, sw.Elapsed);
+            }
+            var bytes = await resp.Content.ReadAsByteArrayAsync();
+            var dir = Path.Combine(Path.GetTempPath(), "dsh-manager-tts");
+            Directory.CreateDirectory(dir);
+            var file = Path.Combine(dir, "tts-" + DateTime.Now.ToString("HHmmss") + ".wav");
+            await File.WriteAllBytesAsync(file, bytes);
+            double secs = 0;
+            if (bytes.Length > 44)
+            {
+                const int rate = 24000, ch = 1, bits = 16;
+                secs = (bytes.Length - 44) / (double)(rate * ch * bits / 8);
+            }
+            return (true, "", file, secs, sw.Elapsed);
+        }
+        catch (Exception ex) { return (false, "合成失败：" + ex.Message, "", 0, TimeSpan.Zero); }
     }
 
     private static void Append(string file, string line)
