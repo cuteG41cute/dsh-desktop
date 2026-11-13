@@ -96,7 +96,16 @@ namespace DshManager
         if (!string.IsNullOrEmpty(chipsScript))
         {
             _ = core.AddScriptToExecuteOnDocumentCreatedAsync(chipsScript);
-            Diag("chips-drawer injected");
+            Diag("chips-drawer injected (" + chipsScript.Length + " chars)");
+            core.NavigationCompleted += async (_, __) =>
+            {
+                try
+                {
+                    var alive = await core.ExecuteScriptAsync("String(!!window.__dshChipsDrawer)");
+                    Diag("chips-drawer alive=" + alive);
+                }
+                catch (Exception ex) { Diag("chips-drawer check failed: " + ex.Message); }
+            };
         }
 
         var dragScript = LoadPreviewScript("file-dragout.js");

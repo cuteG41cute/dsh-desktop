@@ -27,9 +27,7 @@
 
   var BREAK = 1500;          // 窄于此宽度才收（1440 时顶栏已经放不下了）
   var MIN_CHIPS = 2;         // 至少两枚才值得收
-  var style = document.createElement('style');
-  style.id = 'dshcd-style';
-  style.textContent = [
+  var STYLE_TEXT = [
     'body.dshcd-on [data-dshcd-chip]{display:none !important;}',
     '#dshcd-pill{position:fixed;z-index:2147483000;height:26px;padding:0 10px;border-radius:8px;',
     '  border:1px solid rgba(128,128,128,.45);background:rgba(20,20,24,.06);color:inherit;',
@@ -45,8 +43,22 @@
     '  border-radius:7px;font:inherit;font-size:11px;cursor:pointer;white-space:nowrap;overflow:hidden;',
     '  text-overflow:ellipsis;color:inherit;}',
     '#dshcd-panel button:hover{background:rgba(128,128,128,.18);}',
-  ].join('\n');
-  if (!document.getElementById('dshcd-style')) (document.head || document.documentElement).appendChild(style);
+  ].join('\n');;
+
+  function installStyle() {
+    try {
+      if (document.getElementById('dshcd-style')) return true;
+      var host0 = document.head || document.documentElement || document.body;
+      if (!host0) return false;
+      var s = document.createElement('style');
+      s.id = 'dshcd-style';
+      s.textContent = STYLE_TEXT;
+      host0.appendChild(s);
+      return true;
+    } catch (e) { post({ dshcd: 'style-error', m: String((e && e.message) || e) }); return false; }
+  }
+  installStyle();
+
 
   var pill = null, panel = null;
 
@@ -63,8 +75,8 @@
       var t = (b.innerText || b.textContent || '').trim();
       if (!t || t.length > 24) continue;
       if (!CHIP_TEXT_RE.test(t)) continue;
-      var r = b.getBoundingClientRect();
-      if (r.width < 8) continue;
+      /* 注意：芯片被我们 display:none 之后 innerText 会变空、宽度变 0，
+         这里不能再按可见宽度过滤，否则第二帧会把芯片当成不存在而反复闪。 */
       out.push(b);
     }
     return out;
@@ -233,6 +245,7 @@
     return false;
   }
 
+  var lastCollapseWidth = 0;
   var lastDiag = 0;
   function diag() {
     var now = Date.now();
@@ -268,8 +281,15 @@
     var chips = collectChips();
     var narrow = window.innerWidth < BREAK;
     var util0 = utilities();
-    var squeezed = narrow || chipsOverlapHeader(util0, chips);
+    var already = document.body.classList.contains('dshcd-on');
+    /* 芯片一旦被藏起来，就量不到它们的宽度/重叠了 —— 这时候沿用上一次的判断，
+       直到窗口变宽超过「上次触发时的宽度 + 40」才重新评估，避免一帧藏一帧露地闪。 */
+    var squeezed;
+    if (narrow) squeezed = true;
+    else if (already && window.innerWidth <= (lastCollapseWidth + 40)) squeezed = true;
+    else squeezed = chipsOverlapHeader(util0, chips);
     var on = squeezed && chips.length >= MIN_CHIPS;
+    if (on) lastCollapseWidth = Math.max(0, window.innerWidth);
     if (on) {
       for (var i = 0; i < chips.length; i++) chips[i].setAttribute('data-dshcd-chip', '1');
       document.body.classList.add('dshcd-on');
@@ -300,6 +320,7 @@
 
   function boot() {
     if (!document.body) { setTimeout(boot, 60); return; }
+    installStyle();
     var dark = document.body.hasAttribute('data-ds-dark-theme');
     document.body.classList.toggle('dsh-dark', dark);
     refresh();
