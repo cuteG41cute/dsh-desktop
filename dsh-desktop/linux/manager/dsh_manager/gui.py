@@ -26,6 +26,7 @@ except ImportError:       # pragma: no cover
     cairo = None
 
 from . import plugins as plug  # noqa: E402
+from . import tts as tts_svc  # noqa: E402
 from .core import (DEFAULT_DSH, DEFAULT_NODE, MANAGER_LIB, MANAGER_VERSION,  # noqa: E402
                    FALLBACK_DSH_VERSIONS, FALLBACK_NODE_VERSIONS,
                    Manager, append_manager_log, config_dir, load_settings,
@@ -1364,6 +1365,10 @@ class ManagerWindow(Gtk.Window):
                                          handler=lambda *a: self._show_page('dashboard'),
                                          icon='grid', icon_role='accent', icon_size=17)
         bottom.pack_start(self.btn_overview, False, False, 0)
+        self.btn_tts = self._button('', '本地语音', 'side-link',
+                                    icon='info', icon_role='muted', icon_size=17,
+                                    handler=lambda *a: self._show_page('tts'))
+        bottom.pack_start(self.btn_tts, False, False, 0)
         self.btn_settings = self._button('settings', '管理器设置', 'side-link',
                                          icon='settings', icon_role='muted', icon_size=17)
         bottom.pack_start(self.btn_settings, False, False, 0)
@@ -1402,6 +1407,10 @@ class ManagerWindow(Gtk.Window):
         self.stack.set_transition_duration(160)
         self.stack.add_named(self._build_dashboard(), 'dashboard')
         self.stack.add_named(self._build_settings_page(), 'settings')
+        self.stack.add_named(self._build_tts_page(), 'tts')
+        _start_page = os.environ.get('DSH_MANAGER_START_PAGE')
+        if _start_page in ('dashboard', 'settings', 'tts'):
+            GLib.idle_add(lambda: (self._show_page(_start_page), False)[1])
         self.main_box.pack_start(self.stack, True, True, 0)
         return self.main_box
 
@@ -2044,7 +2053,8 @@ class ManagerWindow(Gtk.Window):
         status = inst.status()
         pid = inst.running_pid()
         self.lbl_title.set_text(inst.label)
-        self.lbl_crumb.set_text('实例概览')
+        if self.stack.get_visible_child_name() == 'dashboard':
+            self.lbl_crumb.set_text('实例概览')
 
         ctx = self.chip_badge.get_style_context()
         for cls in ('running', 'needs-repair', 'stopped'):
@@ -2166,6 +2176,344 @@ class ManagerWindow(Gtk.Window):
                 pass
 
     # ---- 设置页（设计稿的第二页） ----
+    # ------------------------------------------------------------ 本地语音
+    def _build_tts_page(self):
+        sw = Gtk.ScrolledWindow()
+        sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        page.get_style_context().add_class('content')
+        sw.add(page)
+
+        eyebrow = self._label('MANAGER CAPABILITIES', 'eyebrow')
+        eyebrow.set_halign(Gtk.Align.START)
+        page.pack_start(eyebrow, False, False, 0)
+        page.pack_start(self._label('本地语音', 'page-title'), False, False, 0)
+        page.pack_start(self._label('Qwen3-TTS 本地推理服务，对外是 OpenAI 兼容接口。', 'page-desc'),
+                        False, False, 0)
+
+        # ---- 状态卡 ----
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        card.get_style_context().add_class('card')
+        card.set_margin_top(18)
+        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        head.pack_start(self._chip('Q', 'quick-icon', width=36, height=36), False, False, 0)
+        titles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        titles.pack_start(self._label('本地语音模型', 'card-label'), False, False, 0)
+        titles.pack_start(self._label('Qwen3-TTS · OpenAI 兼容 /v1/audio/speech', 'card-sub'),
+                          False, False, 0)
+        head.pack_start(titles, True, True, 0)
+        self.lbl_tts_state = self._label('检查中', 'pill')
+        head.pack_start(self.lbl_tts_state, False, False, 0)
+        self.btn_tts_toggle = self._button('ttsToggle', '启动服务', 'btn', 'btn-secondary',
+                                          handler=self.on_tts_toggle)
+        head.pack_start(self.btn_tts_toggle, False, False, 0)
+        card.pack_start(head, False, False, 0)
+
+        meta = Gtk.Grid(column_spacing=26, row_spacing=6)
+        meta.set_margin_top(14)
+        meta.attach(self._label('服务端口', 'field-hint'), 0, 0, 1, 1)
+        meta.attach(self._label('模型文件', 'field-hint'), 1, 0, 1, 1)
+        meta.attach(self._label('占用空间', 'field-hint'), 2, 0, 1, 1)
+        self.lbl_tts_port = self._label('—', 'value')
+        self.lbl_tts_model = self._label('—', 'value')
+        self.lbl_tts_size = self._label('—', 'value')
+        meta.attach(self.lbl_tts_port, 0, 1, 1, 1)
+        meta.attach(self.lbl_tts_model, 1, 1, 1, 1)
+        meta.attach(self.lbl_tts_size, 2, 1, 1, 1)
+        card.pack_start(meta, False, False, 0)
+        self.lbl_tts_hint = self._label('', 'field-hint')
+        self.lbl_tts_hint.set_margin_top(8)
+        card.pack_start(self.lbl_tts_hint, False, False, 0)
+
+        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        actions.set_margin_top(14)
+        actions.pack_start(self._button('', '程序目录', 'btn', 'btn-secondary',
+                                        handler=self.on_tts_open_dir), False, False, 0)
+        actions.pack_start(self._button('', '查看日志', 'btn', 'btn-secondary',
+                                        handler=self.on_tts_show_log), False, False, 0)
+        card.pack_start(actions, False, False, 0)
+        page.pack_start(card, False, False, 0)
+
+        # ---- 音色卡 ----
+        voices = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        voices.get_style_context().add_class('card')
+        voices.set_margin_top(16)
+        vhead = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        vtitles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        self.lbl_tts_voices_title = self._label('参考音色', 'card-label')
+        vtitles.pack_start(self.lbl_tts_voices_title, False, False, 0)
+        vtitles.pack_start(self._label('上传干净人声，创建可用于合成的音色', 'card-sub'),
+                           False, False, 0)
+        vhead.pack_start(vtitles, True, True, 0)
+        vhead.pack_start(self._button('', '新建音色', 'btn', 'btn-secondary',
+                                      handler=self.on_tts_new_voice), False, False, 0)
+        voices.pack_start(vhead, False, False, 0)
+        self.tts_voice_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.tts_voice_box.set_margin_top(10)
+        voices.pack_start(self.tts_voice_box, False, False, 0)
+        page.pack_start(voices, False, False, 0)
+
+        # ---- 朗读接入卡 ----
+        synth = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        synth.get_style_context().add_class('card')
+        synth.set_margin_top(16)
+        synth.pack_start(self._label('朗读接入', 'card-label'), False, False, 0)
+        synth.pack_start(self._label('用于会话朗读的 OpenAI 兼容配置', 'card-sub'), False, False, 0)
+
+        endpoint_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        endpoint_row.set_margin_top(12)
+        self.lbl_tts_endpoint = self._label('http://127.0.0.1:%d/v1' % tts_svc.PORT, 'value')
+        endpoint_row.pack_start(self.lbl_tts_endpoint, True, True, 0)
+        endpoint_row.pack_start(self._button('', '复制', 'btn', 'btn-secondary',
+                                             handler=self.on_tts_copy_endpoint), False, False, 0)
+        synth.pack_start(endpoint_row, False, False, 0)
+
+        combo_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        combo_row.set_margin_top(10)
+        self.tts_voice_combo = Gtk.ComboBoxText()
+        combo_row.pack_start(Gtk.Label(label='音色'), False, False, 0)
+        combo_row.pack_start(self.tts_voice_combo, False, False, 0)
+        self.tts_speed = Gtk.ComboBoxText()
+        for s in ('0.8', '1.0', '1.2', '1.5'):
+            self.tts_speed.append_text(s + '×')
+        self.tts_speed.set_active(1)
+        combo_row.pack_start(Gtk.Label(label='语速'), False, False, 0)
+        combo_row.pack_start(self.tts_speed, False, False, 0)
+        synth.pack_start(combo_row, False, False, 0)
+
+        self.tts_synth_view = Gtk.TextView()
+        self.tts_synth_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.tts_synth_view.set_size_request(-1, 64)
+        self.tts_synth_view.get_buffer().set_text('你好，这是由本地模型合成的语音。')
+        tv_scroll = Gtk.ScrolledWindow()
+        tv_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        tv_scroll.set_size_request(-1, 74)
+        tv_scroll.set_margin_top(10)
+        tv_scroll.add(self.tts_synth_view)
+        synth.pack_start(tv_scroll, False, False, 0)
+
+        play_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        play_row.set_margin_top(10)
+        self.lbl_tts_play = self._label('合成在本机完成，不会上传文本', 'field-hint')
+        play_row.pack_start(self.lbl_tts_play, True, True, 0)
+        play_row.pack_start(self._button('', '合成并播放', 'btn', 'btn-primary',
+                                         handler=self.on_tts_synth), False, False, 0)
+        synth.pack_start(play_row, False, False, 0)
+        page.pack_start(synth, False, False, 0)
+
+        GLib.timeout_add(2500, lambda: (self._refresh_tts(), True)[1])
+        return sw
+
+    # ---- 本地语音：刷新与动作 ----
+    def _refresh_tts(self):
+        try:
+            running = tts_svc.running()
+            self.lbl_tts_state.set_text('运行中' if running else '已停止')
+            self.btn_tts_toggle.set_label('停止服务' if running else '启动服务')
+            self.lbl_tts_port.set_text(str(tts_svc.PORT) + ' · 仅本机访问')
+            p = tts_svc.paths()
+            b = os.path.basename(tts_svc._find_backbone() or '—')
+            m = os.path.basename(tts_svc._find_codec() or '—')
+            self.lbl_tts_model.set_text('%s + %s' % (b, m))
+            self.lbl_tts_size.set_text('%d MB' % (tts_svc.models_bytes() // 1024 // 1024))
+            if not tts_svc.binaries_ready():
+                self.lbl_tts_hint.set_text('缺少 run/tts-server：把编译好的服务程序放进 %s'
+                                           % tts_svc.paths()['run'])
+            elif not tts_svc.models_ready():
+                self.lbl_tts_hint.set_text('缺少模型：把 qwen3-tts*.gguf 与 codec*.gguf 放进 %s'
+                                           % tts_svc.paths()['models'])
+            else:
+                self.lbl_tts_hint.set_text('资源就绪 · 模型目录 %s' % tts_svc.paths()['models'])
+            if running:
+                self._fill_tts_voices()
+        except Exception:
+            pass
+        return False
+
+    def _fill_tts_voices(self):
+        ok, err, voices = tts_svc.list_voices()
+        box = self.tts_voice_box
+        for child in list(box.get_children()):
+            box.remove(child)
+        self.lbl_tts_voices_title.set_text('参考音色 · %d' % len(voices))
+        combo = self.tts_voice_combo
+        combo.remove_all()
+        if not ok:
+            box.pack_start(self._label(err, 'card-sub'), False, False, 0)
+            return
+        if not voices:
+            box.pack_start(self._label('还没有音色', 'card-sub'), False, False, 0)
+            return
+        for v in voices:
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            name = self._label(v['name'], 'row-title')
+            name.set_width_chars(10)
+            row.pack_start(name, False, False, 0)
+            sub = self._label(v['id'], 'card-sub')
+            row.pack_start(sub, True, True, 0)
+            row.pack_start(self._button('', '试听', 'btn', 'btn-secondary',
+                                        handler=lambda _b, n=v['name']: self.on_tts_preview(n)),
+                           False, False, 0)
+            row.pack_start(self._button('', '改名', 'btn', 'btn-secondary',
+                                        handler=lambda _b, vv=v: self.on_tts_rename(vv)),
+                           False, False, 0)
+            row.pack_start(self._button('', '删除', 'btn', 'btn-secondary',
+                                        handler=lambda _b, vv=v: self.on_tts_delete(vv)),
+                           False, False, 0)
+            box.pack_start(row, False, False, 0)
+            combo.append_text(v['name'])
+        if combo.get_active() < 0:
+            combo.set_active(0)
+
+    def _tts_bg(self, fn):
+        threading.Thread(target=fn, daemon=True).start()
+
+    def on_tts_toggle(self, *_):
+        def job():
+            ok, msg = (tts_svc.stop() if tts_svc.running() else tts_svc.start())
+            GLib.idle_add(lambda: (self._toast(msg), self._refresh_tts(), False)[2])
+        self._tts_bg(job)
+
+    def on_tts_open_dir(self, *_):
+        p = tts_svc.paths()['root']
+        os.makedirs(p, exist_ok=True)
+        subprocess.Popen(['xdg-open', p], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def on_tts_show_log(self, *_):
+        path = os.path.join(tts_svc.paths()['logs'], 'server.log')
+        try:
+            with open(path, 'r', encoding='utf-8', errors='replace') as fh:
+                text = fh.read()[-8000:]
+        except OSError:
+            text = '还没有日志：%s' % path
+        self._text_dialog('本地语音日志', text, None)
+
+    def on_tts_copy_endpoint(self, *_):
+        Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(
+            'http://127.0.0.1:%d/v1' % tts_svc.PORT, -1)
+        self._toast('已复制接口地址')
+
+    def on_tts_new_voice(self, *_):
+        dialog = Gtk.Dialog(title='新建音色', transient_for=self, modal=True)
+        dialog.add_buttons('取消', Gtk.ResponseType.CANCEL, '选择音频…', Gtk.ResponseType.OK)
+        box = dialog.get_content_area()
+        box.set_spacing(8)
+        box.set_margin_top(12)
+        box.set_margin_start(14)
+        box.set_margin_end(14)
+        entry = Gtk.Entry()
+        entry.set_placeholder_text('音色名字，例如 ganyu')
+        box.pack_start(Gtk.Label(label='音色名字', xalign=0), False, False, 0)
+        box.pack_start(entry, False, False, 0)
+        dialog.show_all()
+        if dialog.run() != Gtk.ResponseType.OK:
+            dialog.destroy()
+            return
+        name = entry.get_text().strip()
+        dialog.destroy()
+        if not name:
+            self._toast('先给音色起个名字')
+            return
+        chooser = Gtk.FileChooserDialog(title='选择参考音频（WAV/MP3，5–20 秒）',
+                                        transient_for=self, action=Gtk.FileChooserAction.OPEN)
+        chooser.add_buttons('取消', Gtk.ResponseType.CANCEL, '打开', Gtk.ResponseType.OK)
+        filt = Gtk.FileFilter()
+        filt.set_name('音频文件')
+        for pat in ('*.wav', '*.mp3', '*.m4a', '*.flac'):
+            filt.add_pattern(pat)
+        chooser.add_filter(filt)
+        if chooser.run() != Gtk.ResponseType.OK:
+            chooser.destroy()
+            return
+        path = chooser.get_filename()
+        chooser.destroy()
+        if not path:
+            return
+
+        def job():
+            # 参考音频统一转成 24k 单声道 PCM16（服务端只收这种）
+            src, err = tts_svc.transcode_to_wav(path)
+            if not src:
+                if path.lower().endswith('.wav'):
+                    src = path   # 没有 ffmpeg 时，至少让已经是 wav 的试试
+                else:
+                    GLib.idle_add(lambda: (self._toast('转码失败：' + err), False)[1])
+                    return
+            ok, msg = tts_svc.create_voice(name, src)
+            GLib.idle_add(lambda: (self._toast(msg), self._refresh_tts(), False)[2])
+        self._toast('正在上传并克隆音色…')
+        self._tts_bg(job)
+
+    def on_tts_rename(self, voice):
+        dialog = Gtk.Dialog(title='音色改名', transient_for=self, modal=True)
+        dialog.add_buttons('取消', Gtk.ResponseType.CANCEL, '确定', Gtk.ResponseType.OK)
+        entry = Gtk.Entry()
+        entry.set_text(voice['name'])
+        dialog.get_content_area().pack_start(Gtk.Label(label='新的音色名字', xalign=0), False, False, 4)
+        dialog.get_content_area().pack_start(entry, False, False, 0)
+        dialog.show_all()
+        if dialog.run() != Gtk.ResponseType.OK:
+            dialog.destroy()
+            return
+        new_name = entry.get_text().strip()
+        dialog.destroy()
+        if not new_name or new_name == voice['name']:
+            return
+
+        def job():
+            ok, msg = tts_svc.rename_voice(voice['id'], new_name)
+            GLib.idle_add(lambda: (self._toast(msg), self._refresh_tts(), False)[2])
+        self._tts_bg(job)
+
+    def on_tts_delete(self, voice):
+        dialog = Gtk.MessageDialog(transient_for=self, modal=True,
+                                   message_type=Gtk.MessageType.QUESTION,
+                                   buttons=Gtk.ButtonsType.OK_CANCEL,
+                                   text='删除音色「%s」？' % voice['name'])
+        dialog.format_secondary_text('已使用这个名字的朗读配置会失效。')
+        ok = dialog.run() == Gtk.ResponseType.OK
+        dialog.destroy()
+        if not ok:
+            return
+
+        def job():
+            ok2, msg = tts_svc.delete_voice(voice['id'])
+            GLib.idle_add(lambda: (self._toast(msg), self._refresh_tts(), False)[2])
+        self._tts_bg(job)
+
+    def on_tts_preview(self, name):
+        def job():
+            ok, err, wav, secs = tts_svc.synthesize('你好，这是这个音色的试听。', name)
+            if not ok:
+                GLib.idle_add(lambda: (self.lbl_tts_play.set_text('试听失败：' + err), False)[1])
+                return
+            okp, pmsg = tts_svc.play(wav)
+            GLib.idle_add(lambda: (self.lbl_tts_play.set_text(
+                '「%s」试听：%.1fs 音频%s' % (name, secs, '' if okp else '（' + pmsg + '）')), False)[1])
+        self._toast('正在合成「%s」的试听…' % name)
+        self._tts_bg(job)
+
+    def on_tts_synth(self, *_):
+        buf = self.tts_synth_view.get_buffer()
+        text = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), True).strip()
+        if not text:
+            self._toast('先输入要合成的文字')
+            return
+        voice = self.tts_voice_combo.get_active_text() or ''
+        speed = (self.tts_speed.get_active_text() or '1.0×').rstrip('×')
+        self.lbl_tts_play.set_text('合成中…（CPU 约 0.3 倍速）')
+
+        def job():
+            ok, err, wav, secs = tts_svc.synthesize(text, voice)
+            if not ok:
+                GLib.idle_add(lambda: (self.lbl_tts_play.set_text('失败：' + err), False)[1])
+                return
+            wav2 = tts_svc.apply_speed(wav, speed)
+            okp, pmsg = tts_svc.play(wav2)
+            GLib.idle_add(lambda: (self.lbl_tts_play.set_text(
+                '完成：音频 %.1fs%s' % (secs, '' if okp else '（' + pmsg + '）')), False)[1])
+        self._tts_bg(job)
+
     def _build_settings_page(self):
         self.settings_sw = Gtk.ScrolledWindow()
         self.settings_sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
@@ -2299,13 +2647,19 @@ class ManagerWindow(Gtk.Window):
     # ---- 页面切换 ----
     def _show_page(self, name):
         self.stack.set_visible_child_name(name)
-        for btn, key in ((self.btn_overview, 'dashboard'), (self.btn_settings, 'settings')):
+        pairs = [(self.btn_overview, 'dashboard'), (self.btn_settings, 'settings')]
+        if getattr(self, 'btn_tts', None) is not None:
+            pairs.append((self.btn_tts, 'tts'))
+        for btn, key in pairs:
             ctx = btn.get_style_context()
             if key == name:
                 ctx.add_class('selected')
             else:
                 ctx.remove_class('selected')
-        self.lbl_crumb.set_text('实例概览' if name == 'dashboard' else '管理器设置')
+        self.lbl_crumb.set_text({'dashboard': '实例概览', 'settings': '管理器设置',
+                                 'tts': '本地语音'}.get(name, '实例概览'))
+        if name == 'tts':
+            self._refresh_tts()
 
     def on_help(self, *_):
         self._text_dialog('使用帮助',

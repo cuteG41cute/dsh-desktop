@@ -439,6 +439,7 @@ def load_web_scripts():
     wanted.append('folder-drop.js')
     wanted.append('preview-menu.js')
     wanted.append('text-menu.js')
+    wanted.append('chips-drawer.js')
     if drag_on:
         wanted.append('file-dragout-linux.js')
 

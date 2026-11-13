@@ -10,7 +10,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # dsh-desktop/linux/manag
 MANAGER_DIR="$HERE"
 LINUX_DIR="$(cd "$HERE/.." && pwd)"                    # dsh-desktop/linux
 DESKTOP_DIR="$(cd "$LINUX_DIR/.." && pwd)"             # dsh-desktop
-VERSION="3.0.7"
+VERSION="3.1.0"
 OUT="$HERE"
 
 while [ $# -gt 0 ]; do
@@ -52,6 +52,7 @@ mkdir -p "$STAGE/usr/lib/dsh-manager/dsh_manager/icons"
 cp -f "$MANAGER_DIR"/dsh_manager/icons/*.svg "$STAGE/usr/lib/dsh-manager/dsh_manager/icons/"
 cp -f "$MANAGER_DIR"/dsh_manager/icons/*.png "$STAGE/usr/lib/dsh-manager/dsh_manager/icons/" 2>/dev/null || true
 install -m 0644 "$MANAGER_DIR/dsh_manager/plugins.py"  "$STAGE/usr/lib/dsh-manager/dsh_manager/"
+install -m 0644 "$MANAGER_DIR/dsh_manager/tts.py"      "$STAGE/usr/lib/dsh-manager/dsh_manager/"
 install -m 0755 "$MANAGER_DIR/bin/dsh-manager"         "$STAGE/usr/bin/dsh-manager"
 
 # 2) 随包带的桌面窗口文件（新实例的 share/ 从这里取）
@@ -60,7 +61,7 @@ install -m 0755 "$LINUX_DIR/dsh-desktop"    "$STAGE/usr/lib/dsh-manager/share/ds
 # 会话窗口增强脚本：**与 Windows 同一份文件**（RELEASE-SYNC 规则），统一放到 share/web/
 WEB_SRC="$DESKTOP_DIR/../dsh-manager-win/web"
 mkdir -p "$STAGE/usr/lib/dsh-manager/share/web"
-for f in image-pan.js preview-menu.js text-menu.js folder-drop.js; do
+for f in image-pan.js preview-menu.js text-menu.js folder-drop.js chips-drawer.js; do
   if [ -f "$WEB_SRC/$f" ]; then
     install -m 0644 "$WEB_SRC/$f" "$STAGE/usr/lib/dsh-manager/share/web/$f"
   else
