@@ -2084,6 +2084,8 @@ public partial class MainWindow : Window
                 TtsToggleBtn.Content = running ? "停止服务" : "启动服务";
                 TtsToggleBtn.IsEnabled = running || (bins && models);
             }
+            if (TtsDownloadBox != null)
+                TtsDownloadBox.Visibility = models ? Visibility.Collapsed : Visibility.Visible;
 
             TtsPortText.Text = TtsService.Port.ToString();
             TtsModelText.Text = System.IO.Path.GetFileName(TtsService.BackbonePath) + "  +  " +
@@ -2296,6 +2298,38 @@ public partial class MainWindow : Window
             Toast(msg);
         }
         UpdateTtsCard();
+    }
+
+    private bool _ttsDownloading;
+
+    private async void OnTtsDownload(object sender, RoutedEventArgs e)
+    {
+        if (_ttsDownloading) return;
+        _ttsDownloading = true;
+        if (TtsDownloadBtn != null) TtsDownloadBtn.IsEnabled = false;
+        if (TtsDownloadBar != null) TtsDownloadBar.Value = 0;
+        try
+        {
+            var (ok, msg) = await TtsService.DownloadModelsAsync((done, total, name) =>
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (TtsDownloadBar != null && total > 0)
+                        TtsDownloadBar.Value = Math.Min(1.0, (double)done / total);
+                    if (TtsDownloadText != null)
+                        TtsDownloadText.Text = string.IsNullOrEmpty(name)
+                            ? "完成"
+                            : name + " " + (total > 0 ? (int)(done * 100.0 / total) + "%" : "");
+                }));
+            });
+            Toast(msg);
+        }
+        finally
+        {
+            _ttsDownloading = false;
+            if (TtsDownloadBtn != null) TtsDownloadBtn.IsEnabled = true;
+            UpdateTtsCard();
+        }
     }
 
     private void OnTtsCopyEndpoint(object sender, RoutedEventArgs e)

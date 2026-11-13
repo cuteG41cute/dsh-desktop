@@ -20,6 +20,22 @@ import uuid
 
 PORT = 8098
 
+# 模型下载源（ModelScope）。两个文件：LLM 主干 + 12Hz tokenizer。
+# 默认从我们的 GitHub Release 拉（codec.cpp 兼容的那一对）；可用 DSH_TTS_MODEL_BASE 换成
+# 你自己的 ModelScope 仓库（需放 codec.cpp 兼容的 GGUF，audio.cpp 那套 tokenizer 不行）。
+_GH = 'https://github.com/cuteG41cute/dsh-desktop/releases/download/models-v1/'
+# 依次尝试：用户指定（例如自己的 ModelScope 仓库）→ 国内加速镜像 → GitHub 原站
+MODEL_BASES = [b for b in [
+    os.environ.get('DSH_TTS_MODEL_BASE'),
+    'https://gh-proxy.com/' + _GH,
+    _GH,
+] if b]
+MODEL_BASE = MODEL_BASES[0]
+MODEL_FILES = [
+    ('qwen3-tts-0.6b-q8_0.gguf', 639442656),
+    ('codec-q8_0.gguf', 1309648800),
+]
+
 
 def service_root():
     """服务目录：~/.local/share/dsh-manager/services/tts（可用 DSH_TTS_DIR 覆盖）。"""
@@ -113,6 +129,72 @@ def _find_codec():
         if n.endswith('.gguf') and 'codec' in n.lower():
             return os.path.join(d, n)
     return None
+
+
+def download_models(progress=None):
+    """从 ModelScope 拉两个 GGUF；progress(done_bytes, total_bytes, filename) 会被反复调用。
+
+    返回 (ok, message)。断点续传：已存在的 .part 文件会接着下。
+    """
+    d = paths()['models']
+    os.makedirs(d, exist_ok=True)
+    total_all = sum(size for _n, size in MODEL_FILES if not _model_present(_n))
+    done_before = 0
+    for name, size in MODEL_FILES:
+        if _model_present(name):
+            continue
+        dst = os.path.join(d, name)
+        part = dst + '.part'
+        have = os.path.getsize(part) if os.path.exists(part) else 0
+        resp = None
+        last_err = None
+        for base in MODEL_BASES:
+            req = urllib.request.Request(base + name)
+            if have:
+                req.add_header('Range', 'bytes=%d-' % have)
+            try:
+                resp = urllib.request.urlopen(req, timeout=120)
+                break
+            except Exception as exc:
+                last_err = exc
+                continue
+        if resp is None:
+            return False, '下载 %s 失败：%s（试过 %d 个源）' % (name, last_err, len(MODEL_BASES))
+        mode = 'ab' if have and resp.status == 206 else 'wb'
+        if mode == 'wb':
+            have = 0
+        try:
+            with open(part, mode) as fh:
+                while True:
+                    chunk = resp.read(1 << 20)
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+                    have += len(chunk)
+                    if progress:
+                        progress(done_before + have, total_all or size, name)
+        except Exception as exc:
+            return False, '下载中断：%s（可重试续传）' % exc
+        finally:
+            try:
+                resp.close()
+            except Exception:
+                pass
+        os.replace(part, dst)
+        done_before += have
+    if progress:
+        progress(total_all, total_all, '')
+    return True, '模型下载完成'
+
+
+def _model_present(name):
+    d = paths()['models']
+    p = os.path.join(d, name)
+    if not os.path.isfile(p):
+        return False
+    # 小文件也做个最低体积判断，避免半截文件被当成完整
+    expect = dict(MODEL_FILES).get(name, 0)
+    return os.path.getsize(p) >= int(expect * 0.95)
 
 
 def start():

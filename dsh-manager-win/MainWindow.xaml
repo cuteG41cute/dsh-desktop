@@ -761,6 +761,16 @@
                         </Grid>
                     </Border>
 
+                    <StackPanel x:Name="TtsDownloadBox" Orientation="Horizontal" Margin="20,12,20,0"
+                                Visibility="Collapsed">
+                        <Button x:Name="TtsDownloadBtn" Content="下载模型" Style="{StaticResource BtnPrimary}"
+                                Height="30" Padding="14,0" FontSize="9.5" Click="OnTtsDownload" />
+                        <ProgressBar x:Name="TtsDownloadBar" Width="220" Height="6" Margin="12,0,0,0"
+                                     VerticalAlignment="Center" Minimum="0" Maximum="1" />
+                        <TextBlock x:Name="TtsDownloadText" Text="" FontSize="8.5" Margin="10,0,0,0"
+                                   VerticalAlignment="Center" Foreground="{DynamicResource Muted}" />
+                    </StackPanel>
+
                     <!-- 两栏工作区 -->
                     <Grid>
                         <Grid.ColumnDefinitions>

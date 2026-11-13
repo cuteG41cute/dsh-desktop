@@ -2224,6 +2224,16 @@ class ManagerWindow(Gtk.Window):
         self.lbl_tts_hint = self._label('', 'field-hint')
         self.lbl_tts_hint.set_margin_top(8)
         card.pack_start(self.lbl_tts_hint, False, False, 0)
+        self.tts_dl_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.tts_dl_box.set_margin_top(8)
+        self.btn_tts_download = self._button('', '下载模型', 'btn', 'btn-primary',
+                                             handler=self.on_tts_download)
+        self.tts_dl_box.pack_start(self.btn_tts_download, False, False, 0)
+        self.pb_tts = Gtk.ProgressBar()
+        self.pb_tts.set_hexpand(True)
+        self.pb_tts.set_valign(Gtk.Align.CENTER)
+        self.tts_dl_box.pack_start(self.pb_tts, True, True, 0)
+        card.pack_start(self.tts_dl_box, False, False, 0)
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         actions.set_margin_top(14)
@@ -2316,12 +2326,14 @@ class ManagerWindow(Gtk.Window):
             m = os.path.basename(tts_svc._find_codec() or '—')
             self.lbl_tts_model.set_text('%s + %s' % (b, m))
             self.lbl_tts_size.set_text('%d MB' % (tts_svc.models_bytes() // 1024 // 1024))
+            need_dl = not tts_svc.models_ready()
+            self.tts_dl_box.set_visible(need_dl)
+            if not need_dl:
+                self.pb_tts.set_fraction(0)
             if not tts_svc.binaries_ready():
-                self.lbl_tts_hint.set_text('缺少 run/tts-server：把编译好的服务程序放进 %s'
-                                           % tts_svc.paths()['run'])
-            elif not tts_svc.models_ready():
-                self.lbl_tts_hint.set_text('缺少模型：把 qwen3-tts*.gguf 与 codec*.gguf 放进 %s'
-                                           % tts_svc.paths()['models'])
+                self.lbl_tts_hint.set_text('缺少 tts-server：可执行文件没找到')
+            elif need_dl:
+                self.lbl_tts_hint.set_text('缺少模型：点下面「下载模型」自动下载（约 1.8 GB，支持断点续传）')
             else:
                 self.lbl_tts_hint.set_text('资源就绪 · 模型目录 %s' % tts_svc.paths()['models'])
             if running:
@@ -2364,6 +2376,34 @@ class ManagerWindow(Gtk.Window):
             combo.append_text(v['name'])
         if combo.get_active() < 0:
             combo.set_active(0)
+
+    def on_tts_download(self, *_):
+        if getattr(self, '_tts_downloading', False):
+            return
+        self._tts_downloading = True
+        self.btn_tts_download.set_sensitive(False)
+        self.btn_tts_download.set_label('下载中…')
+        self.pb_tts.set_fraction(0)
+
+        def progress(done, total, name):
+            frac = (done / total) if total else 0
+            label = '%s %.0f%%' % (name, frac * 100) if name else '完成'
+            GLib.idle_add(lambda: (self.pb_tts.set_fraction(min(1.0, frac)),
+                                   self.pb_tts.set_text(label), False)[2])
+
+        def job():
+            ok, msg = tts_svc.download_models(progress)
+
+            def done():
+                self._tts_downloading = False
+                self.btn_tts_download.set_sensitive(True)
+                self.btn_tts_download.set_label('下载模型')
+                self._toast(msg)
+                self._refresh_tts()
+                return False
+            GLib.idle_add(done)
+
+        self._tts_bg(job)
 
     def _tts_bg(self, fn):
         threading.Thread(target=fn, daemon=True).start()

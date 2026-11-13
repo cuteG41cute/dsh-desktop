@@ -6,6 +6,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Sockets;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace DshManager.Services;
@@ -30,8 +31,39 @@ public static class TtsService
     public const int DashboardPort = 8097;
 
     public static string ServerExe => Path.Combine(RunDir, "tts-server.exe");
-    public static string BackbonePath => Path.Combine(ModelsDir, "qwen3-tts-0.6b-q8_0.gguf");
-    public static string CodecPath => Path.Combine(ModelsDir, "codec-q8_0.gguf");
+    public static string BackbonePath => PickModel(
+        "qwen3-tts-0.6b-q8_0.gguf", "qwen3-tts-0.6b-f16.gguf");
+    public static string CodecPath => PickModel(
+        "codec-q8_0.gguf", "qwen3-tts-tokenizer-f16.gguf");
+
+    private static string PickModel(params string[] names)
+    {
+        foreach (var n in names)
+        {
+            var p = Path.Combine(ModelsDir, n);
+            if (File.Exists(p)) return p;
+        }
+        return Path.Combine(ModelsDir, names[0]);
+    }
+
+    // 依次尝试：用户指定（如自有 ModelScope 仓库）→ 国内加速镜像 → GitHub 原站
+    private const string GhBase = "https://github.com/cuteG41cute/dsh-desktop/releases/download/models-v1/";
+    public static readonly string[] ModelBases = BuildModelBases();
+
+    private static string[] BuildModelBases()
+    {
+        var list = new List<string>();
+        var custom = Environment.GetEnvironmentVariable("DSH_TTS_MODEL_BASE");
+        if (!string.IsNullOrEmpty(custom)) list.Add(custom);
+        list.Add("https://gh-proxy.com/" + GhBase);
+        list.Add(GhBase);
+        return list.ToArray();
+    }
+    public static readonly (string Name, long Size)[] ModelFiles =
+    {
+        ("qwen3-tts-0.6b-q8_0.gguf", 639442656L),
+        ("codec-q8_0.gguf", 1309648800L),
+    };
 
     /// <summary>模型两个文件都在，才算「已就绪」。</summary>
     public static bool ModelsReady => File.Exists(BackbonePath) && File.Exists(CodecPath);
@@ -192,6 +224,89 @@ public static class TtsService
         }
         catch { }
         return 0;
+    }
+
+    // ---------------------------------------------------------------- 模型下载（ModelScope）
+
+    /// <summary>从 ModelScope 拉两个 GGUF；progress(已下载字节, 总字节, 当前文件名)。</summary>
+    public static async Task<(bool Ok, string Message)> DownloadModelsAsync(
+        Action<long, long, string> progress, CancellationToken cancel = default)
+    {
+        Directory.CreateDirectory(ModelsDir);
+        long total = 0;
+        foreach (var (name, size) in ModelFiles)
+        {
+            if (ModelPresent(name)) continue;
+            total += size;
+        }
+        if (total == 0) return (true, "模型已存在");
+
+        long done = 0;
+        using var http = ProxyConfig.Configure(new SocketsHttpHandler()) is var handler && handler != null
+            ? new HttpClient(handler) : new HttpClient();
+        http.Timeout = TimeSpan.FromMinutes(30);
+        foreach (var (name, size) in ModelFiles)
+        {
+            if (ModelPresent(name)) continue;
+            var dst = Path.Combine(ModelsDir, name);
+            var part = dst + ".part";
+            long have = File.Exists(part) ? new FileInfo(part).Length : 0;
+            try
+            {
+                HttpResponseMessage resp = null;
+                Exception lastErr = null;
+                foreach (var b in ModelBases)
+                {
+                    try
+                    {
+                        var r = new HttpRequestMessage(HttpMethod.Get, b + name);
+                        if (have > 0) r.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(have, null);
+                        var got = await http.SendAsync(r, HttpCompletionOption.ResponseHeadersRead, cancel);
+                        if (got.IsSuccessStatusCode) { resp = got; break; }
+                        lastErr = new Exception("HTTP " + (int)got.StatusCode);
+                    }
+                    catch (Exception ex) { lastErr = ex; }
+                }
+                if (resp == null) throw lastErr ?? new Exception("所有下载源都失败");
+                if (resp.StatusCode != System.Net.HttpStatusCode.PartialContent) have = 0;
+                await using (var fs = new FileStream(part, have > 0 ? FileMode.Append : FileMode.Create,
+                                                     FileAccess.Write, FileShare.None))
+                await using (var src = await resp.Content.ReadAsStreamAsync(cancel))
+                {
+                    var buf = new byte[1 << 20];
+                    int n;
+                    while ((n = await src.ReadAsync(buf, cancel)) > 0)
+                    {
+                        await fs.WriteAsync(buf.AsMemory(0, n), cancel);
+                        have += n;
+                        progress?.Invoke(done + have, total, name);
+                    }
+                }
+                if (File.Exists(dst)) File.Delete(dst);
+                File.Move(part, dst);
+                done += have;
+            }
+            catch (OperationCanceledException) { return (false, "下载已取消"); }
+            catch (Exception ex)
+            {
+                return (false, "下载 " + name + " 失败：" + ex.Message + "（重试可续传）");
+            }
+        }
+        progress?.Invoke(total, total, "");
+        return (true, "模型下载完成");
+    }
+
+    public static bool ModelPresent(string name)
+    {
+        try
+        {
+            var p = Path.Combine(ModelsDir, name);
+            if (!File.Exists(p)) return false;
+            long expect = 0;
+            foreach (var (n, s) in ModelFiles) if (n == name) expect = s;
+            return expect == 0 || new FileInfo(p).Length >= expect * 0.95;
+        }
+        catch { return false; }
     }
 
     // ---------------------------------------------------------------- 管理页功能（内嵌）
