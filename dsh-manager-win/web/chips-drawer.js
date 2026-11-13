@@ -69,6 +69,15 @@
   }
 
   function collectChips() {
+    /* 已经收起时只认“之前标记过的芯片”，不再重新扫描：
+       否则用户点开某个插件面板后，面板里的「开关 / 关闭」按钮会被当成新芯片
+       收走、做成抽屉里的条目 —— 这正是之前面板按钮消失的原因。 */
+    if (document.body && document.body.classList.contains('dshcd-on')) {
+      var tagged = document.querySelectorAll('[data-dshcd-chip]');
+      var keep = [];
+      for (var t = 0; t < tagged.length; t++) keep.push(tagged[t]);
+      return keep;
+    }
     var util = utilities();
     var out = [];
     if (util) {
