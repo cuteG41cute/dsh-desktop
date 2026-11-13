@@ -29,6 +29,8 @@
   var MIN_CHIPS = 2;         // 至少两枚才值得收
   var STYLE_TEXT = [
     'body.dshcd-on [data-dshcd-chip]{display:none !important;}',
+    'body.dshcd-on.dshcd-open [data-dshcd-chip]{display:inline-flex !important;',
+    '  position:fixed !important; right:12px !important; z-index:2147483001 !important;}',
     '#dshcd-pill{position:fixed;z-index:2147483000;height:26px;padding:0 10px;border-radius:8px;',
     '  border:1px solid rgba(128,128,128,.45);background:rgba(20,20,24,.06);color:inherit;',
     '  font:inherit;font-size:11px;line-height:24px;cursor:pointer;display:none;align-items:center;gap:5px;}',
@@ -60,7 +62,7 @@
   installStyle();
 
 
-  var pill = null, panel = null;
+  var pill = null;
 
   function utilities() {
     return document.querySelector('div[class*="headerUtilities"], div[class*="HeaderUtilities"], [class*="_headerUtilities"]');
@@ -124,129 +126,76 @@
     pill.title = '收起顶栏芯片';
     pill.addEventListener('click', function (e) {
       e.stopPropagation();
-      togglePanel(panel && panel.classList.contains('dshcd-show') ? false : true);
+      toggleStack(!document.body.classList.contains('dshcd-open'));
     });
     document.body.appendChild(pill);
-
-    panel = document.createElement('div');
-    panel.id = 'dshcd-panel';
-    document.body.appendChild(panel);
-
-    document.addEventListener('click', function (e) {
-      if (panel && panel.classList.contains('dshcd-show') &&
-          !panel.contains(e.target) && e.target !== pill) {
-        togglePanel(false);
-      }
-    });
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') togglePanel(false);
+      if (e.key === 'Escape') toggleStack(false);
     });
     window.addEventListener('resize', schedule);
     return pill;
+  }
+
+  function topRightButtons() {
+    var out = [];
+    var bs = document.querySelectorAll('button, [role="button"]');
+    for (var i = 0; i < bs.length; i++) {
+      var b = bs[i];
+      if (b.id && b.id.indexOf('dshcd-') === 0) continue;
+      if (b.hasAttribute('data-dshcd-chip')) continue;
+      var r = b.getBoundingClientRect();
+      if (r.width < 6 || r.height < 6) continue;
+      if (r.top > 90) continue;                       /* 只看顶栏那一行 */
+      if (r.right < window.innerWidth - 320) continue; /* 只看靠右的一组 */
+      out.push(r);
+    }
+    return out;
   }
 
   function placePill() {
     if (!pill) return;
     var corner = document.querySelector('div[class*="_headerCorner"]');
     var r = corner ? corner.getBoundingClientRect() : null;
+    var rightLimit = null;
     if (r && r.width > 0) {
-      pill.style.top = Math.max(2, Math.round(r.top + 4)) + 'px';
-      pill.style.right = Math.max(4, Math.round(window.innerWidth - r.left + 8)) + 'px';
-      return;
-    }
-    var util = utilities();
-    if (util) {
-      var u = util.getBoundingClientRect();
-      pill.style.top = Math.max(2, Math.round(u.top + 4)) + 'px';
-      pill.style.right = Math.max(6, Math.round(window.innerWidth - u.right + 6)) + 'px';
-      return;
-    }
-    var chips = collectChips();
-    if (chips.length) {
-      var c0 = chips[0].getBoundingClientRect();
-      pill.style.top = Math.max(2, Math.round(c0.top)) + 'px';
-      pill.style.right = '12px';
-    }
-  }
-
-  function renderPanel(chips) {
-    if (!panel) return;
-    panel.innerHTML = '';
-    for (var i = 0; i < chips.length; i++) {
-      (function (chip) {
-        var b = document.createElement('button');
-        b.type = 'button';
-        var label = (chip.innerText || chip.textContent || '').trim();
-        b.textContent = label || '未命名';
-        b.title = label;
-        b.addEventListener('click', function (e) {
-          e.stopPropagation();
-          try { chip.click(); } catch (_) { }
-          refresh();   // 芯片文案（开/关、备份大小）会变，点完刷新一次
-        });
-        panel.appendChild(b);
-      })(chips[i]);
-    }
-  }
-
-  function togglePanel(open) {
-    if (!panel) return;
-    if (open) {
-      var chips = collectChips();
-      renderPanel(chips);
-      var r = pill.getBoundingClientRect();
-      panel.style.top = Math.round(r.bottom + 6) + 'px';
-      panel.style.right = Math.max(6, Math.round(window.innerWidth - r.right)) + 'px';
-      panel.classList.add('dshcd-show');
-      if (pill) pill.classList.add('dshcd-open');
+      rightLimit = r.left;
     } else {
-      panel.classList.remove('dshcd-show');
-      if (pill) pill.classList.remove('dshcd-open');
+      /* 没有 headerCorner 类名：取顶栏右侧那组按钮里最靠左的那个，药丸排在它左边 */
+      var rects = topRightButtons();
+      if (rects.length) {
+        var minLeft = Infinity, topMin = Infinity;
+        for (var i = 0; i < rects.length; i++) {
+          if (rects[i].left < minLeft) minLeft = rects[i].left;
+          if (rects[i].top < topMin) topMin = rects[i].top;
+        }
+        rightLimit = minLeft;
+        pill.style.top = Math.max(2, Math.round(topMin + 3)) + 'px';
+      }
+    }
+    if (rightLimit !== null && Math.round(window.innerWidth - rightLimit + 8) > 0) {
+      pill.style.right = Math.round(window.innerWidth - rightLimit + 8) + 'px';
+    }
+    if (!pill.style.top) pill.style.top = '12px';
+  }
+
+  /* 展开态：把真芯片竖排固定在药丸下方（不是复制按钮），
+     这样点开芯片弹出的面板仍然挂在芯片自己身上，内容/开关都在。 */
+  function layoutStack() {
+    if (!pill) return;
+    var chips = collectChips();
+    var y = pill.getBoundingClientRect().bottom + 8;
+    for (var i = 0; i < chips.length; i++) {
+      chips[i].style.setProperty('top', Math.round(y + i * 36) + 'px', 'important');
     }
   }
 
-  /* 芯片是否已经和顶栏里别的元素叠在一起（窗口够宽也可能因为标题/模式名太长而叠） */
-  function intersects(a, b) {
-    return a.width > 0 && b.width > 0 &&
-      a.left < b.right - 2 && a.right > b.left + 2 &&
-      a.top < b.bottom - 2 && a.bottom > b.top + 2;
-  }
-  function chipsOverlapHeader(util, chips) {
-    if (!chips.length) return false;
-    if (!util) {
-      /* 没有 headerUtilities 容器时：拿芯片的公共祖先当容器 */
-      util = chips[0].parentElement;
-      for (var a = 0; a < chips.length; a++) {
-        while (util && !util.contains(chips[a])) util = util.parentElement;
-      }
-    }
-    if (!util) return false;
-    var host = util.parentElement;
-    if (!host) return false;
-    /* 往上再走一层，尽量把标题和工具区包在同一个容器里（有的版本 header 只包住工具区） */
-    if ((host.textContent || '').trim() === (util.textContent || '').trim() && host.parentElement) {
-      host = host.parentElement;
-    }
-    var nodes = host.querySelectorAll('*');
-    for (var i = 0; i < nodes.length; i++) {
-      var el = nodes[i];
-      if (el === util || util.contains(el)) continue;
-      if (el.id && (el.id.indexOf('dshcd-') === 0 || el.id.indexOf('dshm-') === 0)) continue;
-      if (el.querySelector && el.querySelector('[data-dshcd-chip]')) continue;
-      var txt = (el.textContent || '').trim();
-      if (!txt) continue;
-      var r = el.getBoundingClientRect();
-      if (r.width < 6 || r.height < 6) continue;
-      for (var j = 0; j < chips.length; j++) {
-        if (chips[j] === el || chips[j].contains(el)) continue;
-        if (intersects(chips[j].getBoundingClientRect(), r)) return true;
-      }
-    }
-    return false;
+  function toggleStack(open) {
+    if (!document.body) return;
+    document.body.classList.toggle('dshcd-open', open);
+    if (pill) pill.classList.toggle('dshcd-open', open);
+    if (open) layoutStack();
   }
 
-  var lastCollapseWidth = 0;
-  var lastDiag = 0;
   function diag() {
     var now = Date.now();
     if (now - lastDiag < 30000) return;
@@ -274,8 +223,8 @@
   function apply() {
     if (mobilePillShowing()) {          // 手机端桥已经接管，别抢
       if (pill) pill.classList.remove('dshcd-show');
-      if (panel) panel.classList.remove('dshcd-show');
       document.body.classList.remove('dshcd-on');
+      document.body.classList.remove('dshcd-open');
       return;
     }
     var chips = collectChips();
@@ -297,13 +246,13 @@
       pill.textContent = '插件 ' + chips.length;
       pill.classList.add('dshcd-show');
       placePill();
-      if (panel && panel.classList.contains('dshcd-show')) renderPanel(chips);
+      if (document.body.classList.contains('dshcd-open')) layoutStack();
     } else {
       var tagged = document.querySelectorAll('[data-dshcd-chip]');
       for (var j = 0; j < tagged.length; j++) tagged[j].removeAttribute('data-dshcd-chip');
       document.body.classList.remove('dshcd-on');
       if (pill) pill.classList.remove('dshcd-show');
-      if (panel) panel.classList.remove('dshcd-show');
+      document.body.classList.remove('dshcd-open');
     }
     diag();
   }
