@@ -33,6 +33,7 @@
     <EmbeddedResource Include="web\preview-menu.js" />
     <EmbeddedResource Include="web\folder-drop.js" />
     <EmbeddedResource Include="web\text-menu.js" />
+    <EmbeddedResource Include="web\chips-drawer.js" />
     <Resource Include="app.ico" />
   </ItemGroup>
 

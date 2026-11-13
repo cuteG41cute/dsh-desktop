@@ -91,7 +91,15 @@ namespace DshManager
                     }
                     if (Services.AppSettings.WebDragOut)
                     {
-                        var dragScript = LoadPreviewScript("file-dragout.js");
+                        // 顶栏插件芯片：窗口窄时收进「插件」抽屉
+        var chipsScript = LoadPreviewScript("chips-drawer.js");
+        if (!string.IsNullOrEmpty(chipsScript))
+        {
+            _ = core.AddScriptToExecuteOnDocumentCreatedAsync(chipsScript);
+            Diag("chips-drawer injected");
+        }
+
+        var dragScript = LoadPreviewScript("file-dragout.js");
                         if (!string.IsNullOrEmpty(dragScript))
                         {
                             _ = core.AddScriptToExecuteOnDocumentCreatedAsync(dragScript);
