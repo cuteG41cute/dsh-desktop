@@ -16,7 +16,16 @@
   if (window.__dshChipsDrawer) return;
   window.__dshChipsDrawer = true;
 
-  var BREAK = 1180;          // 窄于此宽度才收
+  function post(obj) {
+    try {
+      if (window.chrome && chrome.webview && chrome.webview.postMessage) {
+        chrome.webview.postMessage(JSON.stringify(obj));
+      }
+    } catch (_) { }
+  }
+  post({ dshcd: 'boot', ready: document.readyState, body: !!document.body });
+
+  var BREAK = 1500;          // 窄于此宽度才收（1440 时顶栏已经放不下了）
   var MIN_CHIPS = 2;         // 至少两枚才值得收
   var style = document.createElement('style');
   style.id = 'dshcd-style';
@@ -280,7 +289,7 @@
   }
 
   function refresh() {
-    try { apply(); } catch (_) { }
+    try { apply(); } catch (e) { post({ dshcd: 'apply-error', m: String((e && e.message) || e) }); }
   }
 
   var timer = null;
@@ -298,5 +307,5 @@
     window.addEventListener('resize', schedule);
   }
 
-  boot();
+  try { boot(); } catch (e) { post({ dshcd: 'fatal', m: String((e && e.message) || e) }); }
 })();
