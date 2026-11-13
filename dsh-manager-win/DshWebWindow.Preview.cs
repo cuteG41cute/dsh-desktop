@@ -168,6 +168,12 @@ namespace DshManager
             try { json = e.TryGetWebMessageAsString(); } catch { }
             if (string.IsNullOrWhiteSpace(json)) return;
 
+            if (json.Contains("\"dshcd\""))
+            {
+                Diag("chips-drawer: " + json);
+                return;
+            }
+
             if (json.Contains("\"dsh-dom-probe\""))
             {
                 Diag("dom probe: " + (json.Length > 400 ? json.Substring(0, 400) : json));

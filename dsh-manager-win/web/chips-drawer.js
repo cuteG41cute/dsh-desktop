@@ -41,7 +41,25 @@
 
   var pill = null, panel = null;
 
-  function utilities() { return document.querySelector('div[class*="_headerUtilities"]'); }
+  function utilities() {
+    return document.querySelector('div[class*="headerUtilities"], div[class*="HeaderUtilities"], [class*="_headerUtilities"]');
+  }
+  var CHIP_TEXT_RE = /^(时间戳|网络|朗读|记忆库|备份|语音|记忆)/;
+  function fallbackChips() {
+    var out = [];
+    var bs = document.querySelectorAll('button, [role="button"], a[href]');
+    for (var i = 0; i < bs.length; i++) {
+      var b = bs[i];
+      if (b.id && (b.id.indexOf('dshcd-') === 0 || b.id.indexOf('dshm-') === 0)) continue;
+      var t = (b.innerText || b.textContent || '').trim();
+      if (!t || t.length > 24) continue;
+      if (!CHIP_TEXT_RE.test(t)) continue;
+      var r = b.getBoundingClientRect();
+      if (r.width < 8) continue;
+      out.push(b);
+    }
+    return out;
+  }
 
   function inFloatingPanel(node, util) {
     var p = node.parentElement;
@@ -62,7 +80,7 @@
   function collectChips() {
     var util = utilities();
     var out = [];
-    if (!util) return out;
+    if (!util) return fallbackChips();
     var nodes = util.querySelectorAll('button, [role="button"], a[href]');
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
@@ -120,6 +138,13 @@
       var u = util.getBoundingClientRect();
       pill.style.top = Math.max(2, Math.round(u.top + 4)) + 'px';
       pill.style.right = Math.max(6, Math.round(window.innerWidth - u.right + 6)) + 'px';
+      return;
+    }
+    var chips = collectChips();
+    if (chips.length) {
+      var c0 = chips[0].getBoundingClientRect();
+      pill.style.top = Math.max(2, Math.round(c0.top)) + 'px';
+      pill.style.right = '12px';
     }
   }
 
@@ -167,6 +192,14 @@
   }
   function chipsOverlapHeader(util, chips) {
     if (!chips.length) return false;
+    if (!util) {
+      /* 没有 headerUtilities 容器时：拿芯片的公共祖先当容器 */
+      util = chips[0].parentElement;
+      for (var a = 0; a < chips.length; a++) {
+        while (util && !util.contains(chips[a])) util = util.parentElement;
+      }
+    }
+    if (!util) return false;
     var host = util.parentElement;
     if (!host) return false;
     /* 往上再走一层，尽量把标题和工具区包在同一个容器里（有的版本 header 只包住工具区） */
@@ -189,6 +222,31 @@
       }
     }
     return false;
+  }
+
+  var lastDiag = 0;
+  function diag() {
+    var now = Date.now();
+    if (now - lastDiag < 30000) return;
+    lastDiag = now;
+    try {
+      if (!(window.chrome && chrome.webview && chrome.webview.postMessage)) return;
+      var util = utilities();
+      var sample = [];
+      var bs = document.querySelectorAll('button, [role="button"]');
+      for (var i = 0; i < bs.length && sample.length < 8; i++) {
+        var t = (bs[i].innerText || '').trim();
+        if (t) sample.push(t.slice(0, 14));
+      }
+      chrome.webview.postMessage(JSON.stringify({
+        dshcd: 'diag',
+        util: !!util,
+        utilClass: util ? String(util.className) : null,
+        width: innerWidth,
+        chips: collectChips().length,
+        sample: sample
+      }));
+    } catch (_) { }
   }
 
   function apply() {
@@ -218,6 +276,7 @@
       if (pill) pill.classList.remove('dshcd-show');
       if (panel) panel.classList.remove('dshcd-show');
     }
+    diag();
   }
 
   function refresh() {
