@@ -57,10 +57,21 @@
   }
 
   function findChips() {
-    var all = document.querySelectorAll('button, [role="button"], a[href]');
     var out = [];
+    var seen = [];
+    /* 已收起时芯片是 display:none，量不到尺寸 —— 先把上一轮标记过的收回来，
+       否则这一轮会以为「没有芯片」而取消收起，下一秒又收起来，来回闪。 */
+    if (document.body && document.body.classList.contains('dshcd-on')) {
+      var tagged = document.querySelectorAll('[data-dshcd-item]');
+      for (var t = 0; t < tagged.length; t++) {
+        if (tagged[t].isConnected) { out.push(tagged[t]); seen.push(tagged[t]); }
+      }
+    }
+    var all = document.querySelectorAll('button, [role="button"], a[href]');
     for (var i = 0; i < all.length; i++) {
-      if (isChip(all[i])) out.push(all[i]);
+      var el = all[i];
+      if (seen.indexOf(el) >= 0) continue;
+      if (isChip(el)) out.push(el);
     }
     return out;
   }
