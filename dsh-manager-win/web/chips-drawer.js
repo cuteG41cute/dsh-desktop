@@ -29,8 +29,7 @@
   var MIN_CHIPS = 2;         // 至少两枚才值得收
   var STYLE_TEXT = [
     'body.dshcd-on [data-dshcd-chip]{display:none !important;}',
-    'body.dshcd-on.dshcd-open [data-dshcd-chip]{display:inline-flex !important;',
-    '  position:fixed !important; right:12px !important; z-index:2147483001 !important;}',
+    'body.dshcd-on.dshcd-open [data-dshcd-chip]{display:inline-flex !important;}',
     '#dshcd-pill{position:fixed;z-index:2147483000;height:26px;padding:0 10px;border-radius:8px;',
     '  border:1px solid rgba(128,128,128,.45);background:rgba(20,20,24,.06);color:inherit;',
     '  font:inherit;font-size:11px;line-height:24px;cursor:pointer;display:none;align-items:center;gap:5px;}',
@@ -136,64 +135,106 @@
     return pill;
   }
 
-  function topRightButtons() {
-    var out = [];
+  function findMoreButton() {
     var bs = document.querySelectorAll('button, [role="button"]');
     for (var i = 0; i < bs.length; i++) {
       var b = bs[i];
       if (b.id && b.id.indexOf('dshcd-') === 0) continue;
       if (b.hasAttribute('data-dshcd-chip')) continue;
+      var t = (b.innerText || '').trim();
+      var aria = (b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '');
+      var isMore = /^(⋯|…|\.\.\.|···)$/.test(t) || /更多|more|操作|more actions/i.test(aria);
+      if (!isMore) continue;
       var r = b.getBoundingClientRect();
-      if (r.width < 6 || r.height < 6) continue;
-      if (r.top > 90) continue;                       /* 只看顶栏那一行 */
-      if (r.right < window.innerWidth - 320) continue; /* 只看靠右的一组 */
-      out.push(r);
+      if (r.width < 6 || r.top > 90) continue;
+      return r;
     }
-    return out;
+    return null;
   }
 
   function placePill() {
     if (!pill) return;
+    var more = findMoreButton();
+    if (more) {
+      pill.style.top = Math.max(2, Math.round(more.top + (more.height - 26) / 2)) + 'px';
+      pill.style.right = Math.round(window.innerWidth - more.left + 8) + 'px';
+      /* 兜底：万一还压到，就再往左让出药丸自身宽度 + 6px */
+      var pr = pill.getBoundingClientRect();
+      if (pr.right > more.left - 2) {
+        pill.style.right = (parseFloat(pill.style.right || '0') + (pr.right - more.left + 6)) + 'px';
+      }
+      return;
+    }
     var corner = document.querySelector('div[class*="_headerCorner"]');
     var r = corner ? corner.getBoundingClientRect() : null;
-    var rightLimit = null;
     if (r && r.width > 0) {
-      rightLimit = r.left;
-    } else {
-      /* 没有 headerCorner 类名：取顶栏右侧那组按钮里最靠左的那个，药丸排在它左边 */
-      var rects = topRightButtons();
-      if (rects.length) {
-        var minLeft = Infinity, topMin = Infinity;
-        for (var i = 0; i < rects.length; i++) {
-          if (rects[i].left < minLeft) minLeft = rects[i].left;
-          if (rects[i].top < topMin) topMin = rects[i].top;
-        }
-        rightLimit = minLeft;
-        pill.style.top = Math.max(2, Math.round(topMin + 3)) + 'px';
-      }
+      pill.style.top = Math.max(2, Math.round(r.top + 4)) + 'px';
+      pill.style.right = Math.round(window.innerWidth - r.left + 8) + 'px';
+      return;
     }
-    if (rightLimit !== null && Math.round(window.innerWidth - rightLimit + 8) > 0) {
-      pill.style.right = Math.round(window.innerWidth - rightLimit + 8) + 'px';
+    var chips = collectChips();
+    if (chips.length) {
+      var c0 = chips[0].getBoundingClientRect();
+      pill.style.top = Math.max(2, Math.round(c0.top)) + 'px';
+      pill.style.right = '12px';
     }
-    if (!pill.style.top) pill.style.top = '12px';
   }
 
-  /* 展开态：把真芯片竖排固定在药丸下方（不是复制按钮），
-     这样点开芯片弹出的面板仍然挂在芯片自己身上，内容/开关都在。 */
-  function layoutStack() {
-    if (!pill) return;
+  /* 展开态：把芯片所在的容器整体浮到顶栏下方（背景条 + 自动换行），
+     芯片仍是原节点，点开面板的锚点、内容、开关全都不变。 */
+  var chipHost = null;
+  var chipHostStyle = '';
+
+  function chipsHost() {
+    var util = utilities();
+    if (util) return util;
     var chips = collectChips();
-    var y = pill.getBoundingClientRect().bottom + 8;
+    if (!chips.length) return null;
+    var host = chips[0].parentElement;
     for (var i = 0; i < chips.length; i++) {
-      chips[i].style.setProperty('top', Math.round(y + i * 36) + 'px', 'important');
+      while (host && !host.contains(chips[i])) host = host.parentElement;
     }
+    return host;
+  }
+
+  function openStrip() {
+    var host = chipsHost();
+    if (!host) return;
+    chipHost = host;
+    chipHostStyle = host.getAttribute('style') || '';
+    var bar = document.querySelector('div[class*="_headerBar"], div[class*="_header"]');
+    var top = 56;
+    if (bar) { var br = bar.getBoundingClientRect(); if (br.height > 20 && br.height < 120) top = Math.round(br.bottom); }
+    var cs = window.getComputedStyle(host);
+    var dark = document.body.classList.contains('dsh-dark');
+    host.style.setProperty('position', 'fixed', 'important');
+    host.style.setProperty('top', top + 'px', 'important');
+    host.style.setProperty('left', '8px', 'important');
+    host.style.setProperty('right', '8px', 'important');
+    host.style.setProperty('z-index', '2147483002', 'important');
+    host.style.setProperty('display', 'flex', 'important');
+    host.style.setProperty('flex-wrap', 'wrap', 'important');
+    host.style.setProperty('gap', '8px', 'important');
+    host.style.setProperty('padding', '8px', 'important');
+    host.style.setProperty('border-radius', '10px', 'important');
+    host.style.setProperty('box-shadow', '0 8px 24px rgba(0,0,0,.18)', 'important');
+    host.style.setProperty('background', dark ? 'rgba(30,30,34,.97)' : 'rgba(255,255,255,.98)', 'important');
+    host.style.setProperty('border', '1px solid rgba(128,128,128,.28)', 'important');
+    host.style.setProperty('width', 'auto', 'important');
+    if (cs.visibility === 'hidden') host.style.setProperty('visibility', 'visible', 'important');
+  }
+
+  function closeStrip() {
+    if (!chipHost) return;
+    chipHost.setAttribute('style', chipHostStyle);
+    chipHost = null;
   }
 
   function toggleStack(open) {
     if (!document.body) return;
     document.body.classList.toggle('dshcd-open', open);
     if (pill) pill.classList.toggle('dshcd-open', open);
-    if (open) layoutStack();
+    if (open) openStrip(); else closeStrip();
   }
 
   function diag() {
@@ -246,7 +287,7 @@
       pill.textContent = '插件 ' + chips.length;
       pill.classList.add('dshcd-show');
       placePill();
-      if (document.body.classList.contains('dshcd-open')) layoutStack();
+      if (document.body.classList.contains('dshcd-open')) openStrip();
     } else {
       var tagged = document.querySelectorAll('[data-dshcd-chip]');
       for (var j = 0; j < tagged.length; j++) tagged[j].removeAttribute('data-dshcd-chip');
