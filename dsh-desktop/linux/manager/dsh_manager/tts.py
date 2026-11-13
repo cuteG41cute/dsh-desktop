@@ -43,7 +43,17 @@ def paths():
 
 
 def _server_exe():
-    return os.path.join(paths()['run'], 'tts-server')
+    """服务程序优先级：用户目录 run/ → 随包装的 /usr/lib/dsh-manager/tts/ → 模块旁的 share/tts/。"""
+    cands = [
+        os.path.join(paths()['run'], 'tts-server'),
+        '/usr/lib/dsh-manager/tts/tts-server',
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'share', 'tts', 'tts-server'),
+    ]
+    for p in cands:
+        p = os.path.normpath(p)
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return cands[0]
 
 
 def binaries_ready():
@@ -116,6 +126,7 @@ def start():
     if not backbone or not codec:
         return False, 'models/ 里缺少模型（需要 qwen3-tts*.gguf + codec*.gguf）'
     p = paths()
+    os.makedirs(p['run'], exist_ok=True)
     os.makedirs(p['logs'], exist_ok=True)
     os.makedirs(p['voices'], exist_ok=True)
     os.makedirs(p['samples'], exist_ok=True)
@@ -214,6 +225,8 @@ def _multipart(fields, files):
 def create_voice(name, wav_path):
     if not running():
         return False, '服务没在运行'
+    if not wav_path or not os.path.isfile(wav_path):
+        return False, '没有可用的 wav 参考音频'
     try:
         with open(wav_path, 'rb') as fh:
             content = fh.read()
