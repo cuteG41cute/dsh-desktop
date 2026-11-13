@@ -2049,51 +2049,238 @@ public partial class MainWindow : Window
         UpdateTtsCard();
     }
 
+    private System.Windows.Media.MediaPlayer _ttsPlayer;
+    private string _ttsPlayingName = "";
+    private string _ttsPickedFile = "";
+    private bool _ttsVoicesBusy;
+
     private void UpdateTtsCard()
     {
         try
         {
-            if (TtsStateText == null) return;
+            if (TtsStatusText == null) return;
             var running = TtsService.Running;
-            var dash = TtsService.DashboardRunning;
-            var models = TtsService.ModelsReady;
             var bins = TtsService.BinariesReady;
+            var models = TtsService.ModelsReady;
 
-            TtsStateText.Text = running ? "运行中" : "已停止";
-            TtsStateBadge.Background = running
+            TtsStatusText.Text = running ? "运行中" : "已停止";
+            TtsStatusBadge.Background = running
                 ? (Brush)FindResource("AccentSoft")
                 : (Brush)FindResource("InnerBorder");
-            TtsStateText.Foreground = running
+            TtsStatusText.Foreground = running
                 ? (Brush)FindResource("Accent")
                 : (Brush)FindResource("Muted");
 
-            TtsPortText.Text = TtsService.Port.ToString();
-            TtsModelText.Text = System.IO.Path.GetFileName(TtsService.BackbonePath) + " + " +
-                                System.IO.Path.GetFileName(TtsService.CodecPath);
-            TtsSizeText.Text = bins
-                ? (TtsService.ModelsBytes / 1024 / 1024) + " MB"
-                : "—";
-
-            if (!bins) TtsDetail.Text = "缺少 tts-server.exe（services\\tts\\run），需要先放到该目录";
-            else if (!models) TtsDetail.Text = "模型未就绪：services\\tts\\models 需要两个 GGUF";
-            else if (running) TtsDetail.Text = "管理页 " + (dash ? "已打开" : "未打开") + " · 可直接用于会话朗读";
-            else TtsDetail.Text = "已就绪，点「启动服务」拉起";
+            if (TtsReadyDot != null)
+            {
+                TtsReadyDot.Fill = running
+                    ? new SolidColorBrush(Color.FromRgb(0x3C, 0xC1, 0x7C))
+                    : (Brush)FindResource("Subtle");
+                TtsReadyText.Text = running ? "服务可用" : "服务未运行";
+            }
 
             if (TtsToggleBtn != null)
             {
-                TtsToggleBtn.Content = running ? "停止" : "启动";
+                TtsToggleBtn.Content = running ? "停止服务" : "启动服务";
                 TtsToggleBtn.IsEnabled = running || (bins && models);
-                TtsToggleBtn.Background = running
-                    ? (Brush)FindResource("Card")
-                    : (Brush)FindResource("Accent");
-                TtsToggleBtn.Foreground = running
-                    ? (Brush)FindResource("Text")
-                    : (Brush)FindResource("OnAccent");
+            }
+
+            TtsPortText.Text = TtsService.Port.ToString();
+            TtsModelText.Text = System.IO.Path.GetFileName(TtsService.BackbonePath) + "  +  " +
+                                System.IO.Path.GetFileName(TtsService.CodecPath);
+            TtsModelText.ToolTip = TtsModelText.Text;
+            TtsSizeText.Text = bins ? (TtsService.ModelsBytes / 1024 / 1024) + " MB" : "—";
+
+            if (TtsEndpointBox != null) TtsEndpointBox.Text = "http://127.0.0.1:" + TtsService.Port + "/v1";
+            if (TtsModelBox != null) TtsModelBox.Text = "codec-q8_0";
+
+            if (TtsSpeedCombo != null && TtsSpeedCombo.Items.Count == 0)
+            {
+                foreach (var v in new[] { "0.8", "1.0", "1.2", "1.5" })
+                    TtsSpeedCombo.Items.Add(new ComboBoxItem { Content = v + "×", Tag = v });
+                TtsSpeedCombo.SelectedIndex = 1;
             }
 
             if (running && !_ttsVoicesBusy) _ = RefreshTtsVoicesAsync();
         }
         catch { }
+    }
+
+    private string TtsSpeed()
+    {
+        if (TtsSpeedCombo?.SelectedItem is ComboBoxItem item && item.Tag is string tag) return tag;
+        return "1.0";
+    }
+
+    private async System.Threading.Tasks.Task RefreshTtsVoicesAsync()
+    {
+        if (TtsVoiceList == null) return;
+        _ttsVoicesBusy = true;
+        try
+        {
+            var (ok, err, voices) = await TtsService.ListVoicesAsync();
+            TtsVoiceList.Children.Clear();
+            var selected = TtsVoiceCombo?.SelectedItem as string;
+            TtsVoiceCombo?.Items.Clear();
+            if (TtsVoiceCount != null) TtsVoiceCount.Text = ok ? voices.Count.ToString() : "0";
+            if (!ok)
+            {
+                TtsVoiceList.Children.Add(new TextBlock
+                {
+                    Text = err, FontSize = 8.5, Margin = new Thickness(2, 6, 2, 6),
+                    Foreground = (Brush)FindResource("Subtle"),
+                });
+                return;
+            }
+            if (voices.Count == 0)
+            {
+                TtsVoiceList.Children.Add(new TextBlock
+                {
+                    Text = "还没有音色", FontSize = 8.5, Margin = new Thickness(2, 6, 2, 6),
+                    Foreground = (Brush)FindResource("Subtle"),
+                });
+                return;
+            }
+            foreach (var v in voices)
+            {
+                TtsVoiceList.Children.Add(BuildVoiceRow(v));
+                TtsVoiceCombo?.Items.Add(v.Name);
+            }
+            if (TtsVoiceCombo != null && TtsVoiceCombo.Items.Count > 0)
+            {
+                TtsVoiceCombo.SelectedItem = selected != null && TtsVoiceCombo.Items.Contains(selected)
+                    ? selected : TtsVoiceCombo.Items[0];
+            }
+        }
+        catch { }
+        finally { _ttsVoicesBusy = false; }
+    }
+
+    private Border BuildVoiceRow(TtsService.VoiceInfo v)
+    {
+        var border = new Border
+        {
+            CornerRadius = new CornerRadius(9),
+            BorderThickness = new Thickness(1),
+            BorderBrush = (Brush)FindResource("InnerBorder"),
+            Background = (Brush)FindResource("Card"),
+            Margin = new Thickness(0, 0, 0, 7),
+            Padding = new Thickness(10, 7, 10, 7),
+        };
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var avatar = new Border
+        {
+            Width = 28, Height = 28, CornerRadius = new CornerRadius(8),
+            Background = (Brush)FindResource("AccentSoft"), VerticalAlignment = VerticalAlignment.Center,
+        };
+        var micPath = new System.Windows.Shapes.Path
+        {
+            Data = (Geometry)FindResource("Icon.mic"),
+            Stroke = (Brush)FindResource("Accent"),
+            StrokeThickness = 1.5, StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round,
+            Width = 14, Height = 14, Stretch = Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        avatar.Child = micPath;
+
+        var meta = new StackPanel { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        meta.Children.Add(new TextBlock
+        {
+            Text = v.Name, FontSize = 10.5, FontWeight = FontWeights.SemiBold,
+            Foreground = (Brush)FindResource("Text"),
+        });
+        meta.Children.Add(new TextBlock
+        {
+            Text = v.Id, FontSize = 8, Margin = new Thickness(0, 2, 0, 0),
+            FontFamily = new FontFamily("Consolas"),
+            Foreground = (Brush)FindResource("Subtle"),
+        });
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        var listen = new Button
+        {
+            Style = (Style)FindResource("BtnCompact"), Height = 27, Padding = new Thickness(10, 0, 10, 0),
+            FontSize = 9, Content = "试听", Margin = new Thickness(0, 0, 6, 0),
+        };
+        var rename = new Button
+        {
+            Style = (Style)FindResource("BtnCompact"), Height = 27, Padding = new Thickness(9, 0, 9, 0),
+            FontSize = 9, Content = "改名", Margin = new Thickness(0, 0, 6, 0),
+        };
+        var del = new Button
+        {
+            Style = (Style)FindResource("BtnCompact"), Height = 27, Padding = new Thickness(9, 0, 9, 0),
+            FontSize = 9, Content = "删除",
+        };
+        var voiceName = v.Name;
+        var voiceId = v.Id;
+
+        listen.Click += async (_, _) =>
+        {
+            if (_ttsPlayingName == voiceName)
+            {
+                _ttsPlayer?.Stop();
+                _ttsPlayingName = "";
+                listen.Content = "试听";
+                return;
+            }
+            listen.IsEnabled = false;
+            listen.Content = "合成中";
+            if (TtsSynthStatus != null) TtsSynthStatus.Text = "正在合成「" + voiceName + "」…";
+            var (pok, perr, pwav, psecs, pelapsed) = await TtsService.SynthesizeAsync(
+                "你好，这是这个音色的试听。", voiceName);
+            listen.IsEnabled = true;
+            if (!pok)
+            {
+                listen.Content = "试听";
+                if (TtsSynthStatus != null) TtsSynthStatus.Text = "试听失败：" + perr;
+                return;
+            }
+            _ttsPlayingName = voiceName;
+            listen.Content = "停止";
+            if (TtsSynthStatus != null)
+                TtsSynthStatus.Text = $"「{voiceName}」{psecs:F1}s 音频 · 用时 {pelapsed.TotalSeconds:F1}s";
+            PlayTtsWav(pwav, () =>
+            {
+                if (_ttsPlayingName == voiceName) _ttsPlayingName = "";
+                listen.Content = "试听";
+            });
+        };
+
+        rename.Click += async (_, _) =>
+        {
+            var next = PromptText("音色改名", "新的音色名字（朗读设置里直接填这个名字）", voiceName);
+            if (string.IsNullOrWhiteSpace(next) || next.Trim() == voiceName) return;
+            var (rok, rmsg) = await TtsService.RenameVoiceAsync(voiceId, next.Trim());
+            Toast(rok ? ("已改名为 " + next.Trim()) : rmsg);
+            if (rok) await RefreshTtsVoicesAsync();
+        };
+
+        del.Click += async (_, _) =>
+        {
+            if (!Confirm("删除音色", $"确定删除「{voiceName}」？该音色将从列表移除，已使用这个名字的朗读配置会失效。")) return;
+            var (dok, dmsg) = await TtsService.DeleteVoiceAsync(voiceId);
+            Toast(dok ? "已删除" : dmsg);
+            if (dok) await RefreshTtsVoicesAsync();
+        };
+
+        actions.Children.Add(listen);
+        actions.Children.Add(rename);
+        actions.Children.Add(del);
+        Grid.SetColumn(avatar, 0);
+        Grid.SetColumn(meta, 1);
+        Grid.SetColumn(actions, 2);
+        grid.Children.Add(avatar);
+        grid.Children.Add(meta);
+        grid.Children.Add(actions);
+        border.Child = grid;
+        return border;
     }
 
     private void OnTtsToggle(object sender, RoutedEventArgs e)
@@ -2111,183 +2298,174 @@ public partial class MainWindow : Window
         UpdateTtsCard();
     }
 
-    private void OnTtsStart(object sender, RoutedEventArgs e)
+    private void OnTtsCopyEndpoint(object sender, RoutedEventArgs e)
     {
-        var (ok, msg) = TtsService.Start();
-        Toast(msg);
-        if (!ok) return;
-        System.Threading.Tasks.Task.Delay(1500).ContinueWith(_ => Dispatcher.BeginInvoke(new Action(UpdateTtsCard)));
-    }
-
-    private void OnTtsStop(object sender, RoutedEventArgs e)
-    {
-        var (ok, msg) = TtsService.Stop();
-        Toast(msg);
-        if (!ok) return;
-        System.Threading.Tasks.Task.Delay(800).ContinueWith(_ => Dispatcher.BeginInvoke(new Action(UpdateTtsCard)));
-    }
-
-    // ---------------------------------------------------------------- 本地语音：音色 / 试听
-    private bool _ttsVoicesBusy;
-    private string _ttsPickedFile = "";
-    private System.Windows.Media.MediaPlayer _ttsPlayer;
-
-    private async System.Threading.Tasks.Task RefreshTtsVoicesAsync()
-    {
-        if (TtsVoiceList == null) return;
-        _ttsVoicesBusy = true;
         try
         {
-            var (ok, err, voices) = await TtsService.ListVoicesAsync();
-            TtsVoiceList.Children.Clear();
-            TtsVoiceCombo.Items.Clear();
-            if (!ok)
-            {
-                TtsVoiceList.Children.Add(new TextBlock
-                {
-                    Text = err, FontSize = 8.5,
-                    Foreground = (Brush)FindResource("Subtle"),
-                });
-                return;
-            }
-            if (voices.Count == 0)
-            {
-                TtsVoiceList.Children.Add(new TextBlock
-                {
-                    Text = "还没有音色", FontSize = 8.5,
-                    Foreground = (Brush)FindResource("Subtle"),
-                });
-                return;
-            }
-            foreach (var v in voices)
-            {
-                var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-                var name = new TextBlock
-                {
-                    Text = v.Name, FontSize = 10, Width = 120,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Foreground = (Brush)FindResource("Text"),
-                };
-                var id = new TextBlock
-                {
-                    Text = v.Id, FontSize = 8.5,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Foreground = (Brush)FindResource("Subtle"),
-                };
-                var rename = new Button
-                {
-                    Content = "改名", Style = (Style)FindResource("BtnCompact"),
-                    Height = 26, Padding = new Thickness(10, 0, 10, 0), FontSize = 9,
-                    Margin = new Thickness(0, 0, 8, 0),
-                };
-                var voiceName = v.Name;
-                var voiceId = v.Id;
-                rename.Click += async (_, _) =>
-                {
-                    var next = PromptText("音色改名", "新的音色名字（朗读设置里直接填这个名字）", voiceName);
-                    if (string.IsNullOrWhiteSpace(next) || next.Trim() == voiceName) return;
-                    var (rok, rmsg) = await TtsService.RenameVoiceAsync(voiceId, next.Trim());
-                    Toast(rok ? ("已改名为 " + next.Trim()) : rmsg);
-                    if (rok) await RefreshTtsVoicesAsync();
-                };
-                var preview = new Button
-                {
-                    Content = "试听", Style = (Style)FindResource("BtnCompact"),
-                    Height = 26, Padding = new Thickness(10, 0, 10, 0), FontSize = 9,
-                    Margin = new Thickness(0, 0, 8, 0),
-                };
-                var previewName = v.Name;
-                preview.Click += async (_, _) =>
-                {
-                    if (TtsSynthStatus != null) TtsSynthStatus.Text = "正在合成「" + previewName + "」的试听…";
-                    var (pok, perr, pwav, psecs, pelapsed) = await TtsService.SynthesizeAsync(
-                        "你好，这是这个音色的试听。", previewName);
-                    if (!pok)
-                    {
-                        if (TtsSynthStatus != null) TtsSynthStatus.Text = "试听失败：" + perr;
-                        return;
-                    }
-                    if (TtsSynthStatus != null)
-                        TtsSynthStatus.Text = $"「{previewName}」试听：音频 {psecs:F1}s · 用时 {pelapsed.TotalSeconds:F1}s";
-                    PlayTtsWav(pwav);
-                };
-                var del = new Button
-                {
-                    Content = "删除", Style = (Style)FindResource("BtnCompact"),
-                    Height = 26, Padding = new Thickness(10, 0, 10, 0), FontSize = 9,
-                };
-                del.Click += async (_, _) =>
-                {
-                    var (dok, dmsg) = await TtsService.DeleteVoiceAsync(voiceId);
-                    Toast(dmsg);
-                    if (dok) await RefreshTtsVoicesAsync();
-                };
-                Grid.SetColumn(name, 0);
-                Grid.SetColumn(id, 1);
-                var actions = new StackPanel { Orientation = Orientation.Horizontal };
-                actions.Children.Add(preview);
-                actions.Children.Add(rename);
-                actions.Children.Add(del);
-                Grid.SetColumn(actions, 2);
-                row.Children.Add(name);
-                row.Children.Add(id);
-                row.Children.Add(actions);
-                TtsVoiceList.Children.Add(row);
-                TtsVoiceCombo.Items.Add(v.Name);
-            }
-            if (TtsVoiceCombo.SelectedIndex < 0 && TtsVoiceCombo.Items.Count > 0)
-                TtsVoiceCombo.SelectedIndex = 0;
+            Clipboard.SetText(TtsEndpointBox?.Text ?? "");
+            Toast("已复制接口地址");
         }
-        catch { }
-        finally { _ttsVoicesBusy = false; }
+        catch (Exception ex) { Toast("复制失败：" + ex.Message); }
     }
 
-    private void PlayTtsWav(string wav)
+    private void OnTtsNewVoice(object sender, RoutedEventArgs e)
+    {
+        var name = PromptText("新建音色", "音色名字（会出现在音色列表与朗读设置里）", "");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "选择参考音频（5–20 秒干净人声，WAV/MP3 均可）",
+            Filter = "音频文件 (*.wav;*.mp3;*.m4a;*.flac)|*.wav;*.mp3;*.m4a;*.flac|所有文件 (*.*)|*.*",
+        };
+        if (dlg.ShowDialog() != true) return;
+        UploadVoice(name.Trim(), dlg.FileName);
+    }
+
+    private async void UploadVoice(string name, string path)
+    {
+        if (TtsSynthStatus != null) TtsSynthStatus.Text = "正在准备上传…";
+        var wav = path;
+        if (!path.ToLowerInvariant().EndsWith(".wav"))
+        {
+            var err = TranscodeToWav(path, out var converted);
+            if (err != null)
+            {
+                if (TtsSynthStatus != null) TtsSynthStatus.Text = "转码失败：" + err;
+                return;
+            }
+            wav = converted;
+        }
+        if (TtsSynthStatus != null) TtsSynthStatus.Text = "正在上传并克隆音色…";
+        var (ok, msg) = await TtsService.CreateVoiceAsync(name, wav);
+        Toast(msg);
+        if (TtsSynthStatus != null) TtsSynthStatus.Text = ok ? "音色已创建：" + name : "创建失败：" + msg;
+        if (ok) await RefreshTtsVoicesAsync();
+    }
+
+    private async void OnTtsSynth(object sender, RoutedEventArgs e)
+    {
+        var text = (TtsSynthText?.Text ?? "").Trim();
+        if (text.Length == 0) { Toast("先输入要合成的文字"); return; }
+        var voice = (TtsVoiceCombo?.SelectedItem as string) ?? "";
+        var speed = TtsSpeed();
+        if (TtsSynthStatus != null) TtsSynthStatus.Text = "合成中…（CPU 约 0.3 倍速）";
+        if (TtsSynthBtn != null) TtsSynthBtn.IsEnabled = false;
+        var (ok, err, wav, secs, elapsed) = await TtsService.SynthesizeAsync(text, voice);
+        if (TtsSynthBtn != null) TtsSynthBtn.IsEnabled = true;
+        if (!ok)
+        {
+            if (TtsSynthStatus != null) TtsSynthStatus.Text = "失败：" + err;
+            return;
+        }
+        var play = wav;
+        if (speed != "1.0")
+        {
+            var e2 = ApplySpeed(wav, speed, out var sped);
+            if (e2 == null) play = sped;
+        }
+        if (TtsSynthStatus != null)
+            TtsSynthStatus.Text = $"完成：音频 {secs:F1}s · 用时 {elapsed.TotalSeconds:F1}s" + (speed != "1.0" ? " · " + speed + "×" : "");
+        PlayTtsWav(play, null);
+    }
+
+    private void PlayTtsWav(string wav, Action ended)
     {
         try
         {
             _ttsPlayer ??= new System.Windows.Media.MediaPlayer();
+            _ttsPlayer.Stop();
             _ttsPlayer.Open(new Uri(wav));
+            if (TtsMediaEndedHandler != null) _ttsPlayer.MediaEnded -= TtsMediaEndedHandler;
+            TtsMediaEndedHandler = (_, __) => ended?.Invoke();
+            _ttsPlayer.MediaEnded += TtsMediaEndedHandler;
             _ttsPlayer.Play();
         }
         catch (Exception ex) { Toast("播放失败：" + ex.Message); }
     }
 
-    private void OnTtsPickFile(object sender, RoutedEventArgs e)
+    private EventHandler TtsMediaEndedHandler;
+
+    // ---------------------------------------------------------------- ffmpeg 辅助
+    private static string FfmpegPath()
     {
-        var dlg = new Microsoft.Win32.OpenFileDialog
+        var found = System.IO.Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
+        if (System.IO.File.Exists(found)) return found;
+        try
         {
-            Title = "选择参考音频（wav，5–20 秒为宜）",
-            Filter = "WAV 音频 (*.wav)|*.wav|所有文件 (*.*)|*.*",
-        };
-        if (dlg.ShowDialog() == true)
-        {
-            _ttsPickedFile = dlg.FileName;
-            if (TtsVoiceNameHint != null) TtsVoiceNameHint.Visibility = Visibility.Collapsed;
-            if (TtsVoiceFile != null) TtsVoiceFile.Text = System.IO.Path.GetFileName(dlg.FileName);
-            if (TtsVoiceName != null && string.IsNullOrWhiteSpace(TtsVoiceName.Text))
-                TtsVoiceName.Text = System.IO.Path.GetFileNameWithoutExtension(dlg.FileName);
+            foreach (var p in Environment.GetEnvironmentVariable("PATH")?.Split(';') ?? Array.Empty<string>())
+            {
+                var cand = System.IO.Path.Combine(p.Trim(), "ffmpeg.exe");
+                if (System.IO.File.Exists(cand)) return cand;
+            }
         }
+        catch { }
+        try
+        {
+            var root = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Microsoft", "WinGet", "Packages");
+            if (System.IO.Directory.Exists(root))
+            {
+                foreach (var dir in System.IO.Directory.GetDirectories(root, "*FFmpeg*"))
+                {
+                    var hit = System.IO.Directory.GetFiles(dir, "ffmpeg.exe", System.IO.SearchOption.AllDirectories);
+                    if (hit.Length > 0) return hit[0];
+                }
+            }
+        }
+        catch { }
+        return null;
     }
 
-    private void OnTtsToggleNewVoice(object sender, RoutedEventArgs e)
+    private static string RunQuiet(string exe, string args)
     {
-        if (TtsNewVoicePanel == null) return;
-        var show = TtsNewVoicePanel.Visibility != Visibility.Visible;
-        TtsNewVoicePanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        if (TtsNewVoiceToggle != null) TtsNewVoiceToggle.Content = show ? "收起" : "新建音色";
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(exe, args)
+            {
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardError = true, RedirectStandardOutput = true,
+            };
+            using var proc = System.Diagnostics.Process.Start(psi);
+            var err = proc.StandardError.ReadToEnd();
+            proc.WaitForExit(120000);
+            return proc.ExitCode == 0 ? null : err;
+        }
+        catch (Exception ex) { return ex.Message; }
     }
 
-    /// <summary>极简输入对话框（改名用）。</summary>
+    private static string TranscodeToWav(string src, out string outPath)
+    {
+        outPath = null;
+        var ff = FfmpegPath();
+        if (ff == null) return "找不到 ffmpeg.exe";
+        var dst = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+            "dsh-tts-" + Guid.NewGuid().ToString("N") + ".wav");
+        var err = RunQuiet(ff, $"-y -i \"{src}\" -ac 1 -ar 24000 -c:a pcm_s16le \"{dst}\"");
+        if (err != null) return err;
+        outPath = dst;
+        return null;
+    }
+
+    private static string ApplySpeed(string wav, string speed, out string outPath)
+    {
+        outPath = null;
+        var ff = FfmpegPath();
+        if (ff == null) return "找不到 ffmpeg.exe";
+        var dst = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+            "dsh-tts-speed-" + Guid.NewGuid().ToString("N") + ".wav");
+        var err = RunQuiet(ff, $"-y -i \"{wav}\" -filter:a atempo={speed} \"{dst}\"");
+        if (err != null) return err;
+        outPath = dst;
+        return null;
+    }
+
+    /// <summary>极简输入对话框（新建音色 / 改名用）。</summary>
     private string PromptText(string title, string label, string initial)
     {
         var win = new Window
         {
-            Title = title, Width = 380, SizeToContent = SizeToContent.Height,
+            Title = title, Width = 400, SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = this,
             ResizeMode = ResizeMode.NoResize, WindowStyle = WindowStyle.ToolWindow,
             Background = (Brush)FindResource("WindowBackground"),
@@ -2295,7 +2473,7 @@ public partial class MainWindow : Window
         var root = new StackPanel { Margin = new Thickness(18) };
         root.Children.Add(new TextBlock
         {
-            Text = label, FontSize = 10, Margin = new Thickness(0, 0, 0, 8),
+            Text = label, FontSize = 10, Margin = new Thickness(0, 0, 0, 8), TextWrapping = TextWrapping.Wrap,
             Foreground = (Brush)FindResource("Muted"),
         });
         var box = new TextBox { Text = initial, FontSize = 12, Height = 32, Padding = new Thickness(8, 0, 8, 0), VerticalContentAlignment = VerticalAlignment.Center };
@@ -2313,53 +2491,33 @@ public partial class MainWindow : Window
         return win.ShowDialog() == true ? box.Text : null;
     }
 
-    private void OnTtsVoiceNameChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    private bool Confirm(string title, string message)
     {
-        if (TtsVoiceNameHint == null) return;
-        TtsVoiceNameHint.Visibility = string.IsNullOrEmpty(TtsVoiceName.Text)
-            ? Visibility.Visible : Visibility.Collapsed;
+        var win = new Window
+        {
+            Title = title, Width = 420, SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = this,
+            ResizeMode = ResizeMode.NoResize, WindowStyle = WindowStyle.ToolWindow,
+            Background = (Brush)FindResource("WindowBackground"),
+        };
+        var root = new StackPanel { Margin = new Thickness(18) };
+        root.Children.Add(new TextBlock
+        {
+            Text = message, FontSize = 10.5, TextWrapping = TextWrapping.Wrap, LineHeight = 17,
+            Foreground = (Brush)FindResource("Muted"),
+        });
+        var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+        var del = new Button { Content = "删除", Style = (Style)FindResource("BtnPrimary"), Height = 30, Padding = new Thickness(16, 0, 16, 0) };
+        var cancel = new Button { Content = "取消", Style = (Style)FindResource("BtnCompact"), Height = 30, Padding = new Thickness(14, 0, 14, 0), Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
+        del.Click += (_, _) => { win.DialogResult = true; };
+        row.Children.Add(del);
+        row.Children.Add(cancel);
+        root.Children.Add(row);
+        win.Content = root;
+        return win.ShowDialog() == true;
     }
 
-    private async void OnTtsUpload(object sender, RoutedEventArgs e)
-    {
-        if (string.IsNullOrWhiteSpace(_ttsPickedFile) || !System.IO.File.Exists(_ttsPickedFile))
-        {
-            Toast("先选一段参考音频");
-            return;
-        }
-        var name = (TtsVoiceName?.Text ?? "").Trim();
-        if (name.Length == 0) { Toast("给音色起个名字"); return; }
-        Toast("上传中…（要重新编码参考音频）");
-        var (ok, msg) = await TtsService.CreateVoiceAsync(name, _ttsPickedFile);
-        Toast(msg);
-        if (ok)
-        {
-            _ttsPickedFile = "";
-            if (TtsVoiceFile != null) TtsVoiceFile.Text = "未选择文件";
-            if (TtsVoiceName != null) TtsVoiceName.Text = "";
-            await RefreshTtsVoicesAsync();
-        }
-    }
-
-    private async void OnTtsSynth(object sender, RoutedEventArgs e)
-    {
-        var text = (TtsSynthText?.Text ?? "").Trim();
-        if (text.Length == 0) { Toast("先输入要合成的文字"); return; }
-        var voice = (TtsVoiceCombo?.SelectedItem as string) ?? "";
-        if (TtsSynthStatus != null) TtsSynthStatus.Text = "合成中…（CPU 约 0.3 倍速）";
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        var (ok, err, wav, secs, elapsed) = await TtsService.SynthesizeAsync(text, voice);
-        sw.Stop();
-        if (!ok)
-        {
-            if (TtsSynthStatus != null) TtsSynthStatus.Text = "失败：" + err;
-            return;
-        }
-        if (TtsSynthStatus != null)
-            TtsSynthStatus.Text = $"完成：音频 {secs:F1}s · 用时 {elapsed.TotalSeconds:F1}s";
-        PlayTtsWav(wav);
-    }
-
+    // ---------------------------------------------------------------- 本地语音：目录与日志
     private void OnTtsFolder(object sender, RoutedEventArgs e)
     {
         try
@@ -2384,15 +2542,6 @@ public partial class MainWindow : Window
             ShowTextWindow("本地语音日志", text, null);
         }
         catch (Exception ex) { Toast("读取日志失败：" + ex.Message); }
-    }
-
-    private void OnTtsOpen(object sender, RoutedEventArgs e)
-    {
-        var (ok, url) = TtsService.EnsureDashboard();
-        if (!ok) { Toast(url); return; }
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch (Exception ex) { Toast("打开管理页失败：" + ex.Message); }
-        Toast("管理页：" + url);
     }
 
     private void OnQuickToken(object sender, MouseButtonEventArgs e) => OnShowToken();
