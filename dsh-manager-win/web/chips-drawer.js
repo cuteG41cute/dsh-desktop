@@ -181,19 +181,8 @@
 
   function placePill() {
     if (!pill) return;
-    if (reserved) {
-      var rr = reserved.getBoundingClientRect();
-      pill.style.top = Math.max(2, Math.round(rr.top + (rr.height - 26) / 2)) + 'px';
-      pill.style.right = '8px';
-      return;
-    }
     var corner = document.querySelector('div[class*="_headerCorner"]');
     var cr = corner ? corner.getBoundingClientRect() : null;
-    if (cr && cr.width > 0) {
-      pill.style.top = Math.max(2, Math.round(cr.top + (cr.height - 26) / 2)) + 'px';
-      pill.style.right = '8px';
-      return;
-    }
     var more = findMoreButton();
     if (cr && cr.width > 0) {
       pill.style.top = Math.max(2, Math.round(cr.top + (cr.height - 26) / 2)) + 'px';
@@ -214,41 +203,6 @@
     if (anchor && pr.right > anchor.left - 2) {
       pill.style.right = (parseFloat(pill.style.right || '0') + (pr.right - anchor.left + 6)) + 'px';
     }
-  }
-
-  var reserved = null;
-  var reservedStyle = '';
-
-  /* 顶栏右侧那组控件（文件夹下拉 / ⋯ / 右侧边栏）整体左移，给药丸腾出位置，
-     这样三者不会互相压住。 */
-  function reserveSpace() {
-    var corner = document.querySelector('div[class*="_headerCorner"]');
-    var target = corner;
-    if (!target) {
-      var bs = document.querySelectorAll('button, [role="button"]');
-      var best = null, bestRight = -1;
-      for (var i = 0; i < bs.length; i++) {
-        var b = bs[i];
-        if (b.id && b.id.indexOf('dshcd-') === 0) continue;
-        if (b.hasAttribute('data-dshcd-chip')) continue;
-        var r = b.getBoundingClientRect();
-        if (r.width < 6 || r.top > 90) continue;
-        if (r.right > bestRight) { bestRight = r.right; best = b; }
-      }
-      target = best ? (best.parentElement || best) : null;
-    }
-    if (!target || target === reserved) return;
-    if (reserved) reserved.setAttribute('style', reservedStyle);
-    reserved = target;
-    reservedStyle = target.getAttribute('style') || '';
-    var pad = (pill ? pill.offsetWidth : 60) + 20;
-    target.style.setProperty('margin-right', pad + 'px', 'important');
-  }
-
-  function releaseSpace() {
-    if (!reserved) return;
-    reserved.setAttribute('style', reservedStyle);
-    reserved = null;
   }
 
   function layoutPanel() {
@@ -303,7 +257,6 @@
       ensurePill();
       pill.textContent = '插件 ' + chips.length;
       pill.classList.add('dshcd-show');
-      reserveSpace();
       placePill();
       if (document.body.classList.contains('dshcd-open')) layoutPanel();
     } else {
@@ -315,7 +268,6 @@
         pill.classList.remove('dshcd-show');
         pill.classList.remove('dshcd-open');
       }
-      releaseSpace();
     }
     diag(null);
   }
