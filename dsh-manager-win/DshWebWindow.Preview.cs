@@ -92,10 +92,8 @@ namespace DshManager
                     if (Services.AppSettings.WebDragOut)
                     {
                         // 顶栏插件芯片：窗口窄时收进「插件」抽屉
-        // 顶栏芯片抽屉：默认关闭。之前几版会改动页面容器布局，风险大于收益；
-        // 想再试时用环境变量 DSH_CHIPS_DRAWER=1 打开。
-        var chipsScript = Environment.GetEnvironmentVariable("DSH_CHIPS_DRAWER") == "1"
-            ? LoadPreviewScript("chips-drawer.js") : null;
+        // 顶栏芯片抽屉：逻辑照抄手机端（芯片本体固定定位，不改容器）
+        var chipsScript = LoadPreviewScript("chips-drawer.js");
         if (!string.IsNullOrEmpty(chipsScript))
         {
             _ = core.AddScriptToExecuteOnDocumentCreatedAsync(chipsScript);
