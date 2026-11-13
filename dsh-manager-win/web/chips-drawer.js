@@ -159,6 +159,38 @@
     }
   }
 
+  /* 芯片是否已经和顶栏里别的元素叠在一起（窗口够宽也可能因为标题/模式名太长而叠） */
+  function intersects(a, b) {
+    return a.width > 0 && b.width > 0 &&
+      a.left < b.right - 2 && a.right > b.left + 2 &&
+      a.top < b.bottom - 2 && a.bottom > b.top + 2;
+  }
+  function chipsOverlapHeader(util, chips) {
+    if (!chips.length) return false;
+    var host = util.parentElement;
+    if (!host) return false;
+    /* 往上再走一层，尽量把标题和工具区包在同一个容器里（有的版本 header 只包住工具区） */
+    if ((host.textContent || '').trim() === (util.textContent || '').trim() && host.parentElement) {
+      host = host.parentElement;
+    }
+    var nodes = host.querySelectorAll('*');
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (el === util || util.contains(el)) continue;
+      if (el.id && (el.id.indexOf('dshcd-') === 0 || el.id.indexOf('dshm-') === 0)) continue;
+      if (el.querySelector && el.querySelector('[data-dshcd-chip]')) continue;
+      var txt = (el.textContent || '').trim();
+      if (!txt) continue;
+      var r = el.getBoundingClientRect();
+      if (r.width < 6 || r.height < 6) continue;
+      for (var j = 0; j < chips.length; j++) {
+        if (chips[j] === el || chips[j].contains(el)) continue;
+        if (intersects(chips[j].getBoundingClientRect(), r)) return true;
+      }
+    }
+    return false;
+  }
+
   function apply() {
     if (mobilePillShowing()) {          // 手机端桥已经接管，别抢
       if (pill) pill.classList.remove('dshcd-show');
@@ -168,7 +200,9 @@
     }
     var chips = collectChips();
     var narrow = window.innerWidth < BREAK;
-    var on = narrow && chips.length >= MIN_CHIPS;
+    var util0 = utilities();
+    var squeezed = narrow || chipsOverlapHeader(util0, chips);
+    var on = squeezed && chips.length >= MIN_CHIPS;
     if (on) {
       for (var i = 0; i < chips.length; i++) chips[i].setAttribute('data-dshcd-chip', '1');
       document.body.classList.add('dshcd-on');
