@@ -15,9 +15,9 @@
     <!-- 图标沿用旧启动器的黑色鲸鱼（exe / 快捷方式 / 任务栏都用它） -->
     <ApplicationIcon>app.ico</ApplicationIcon>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <Version>3.3.0</Version>
-    <FileVersion>3.3.0.0</FileVersion>
-    <AssemblyVersion>3.3.0.0</AssemblyVersion>
+    <Version>3.3.1</Version>
+    <FileVersion>3.3.1.0</FileVersion>
+    <AssemblyVersion>3.3.1.0</AssemblyVersion>
     <Product>DeepSeek Harness 管理器</Product>
     <AssemblyTitle>DeepSeek Harness 管理器</AssemblyTitle>
     <Company>cuteG41cute</Company>
@@ -35,6 +35,9 @@
     <EmbeddedResource Include="web\text-menu.js" />
     <EmbeddedResource Include="web\chips-drawer.js" />
     <Resource Include="app.ico" />
+    <!-- 内置 audio.cpp 运行时（带静态 eSpeak，英文 Kokoro 音色需要）；由 build-win.ps1 放进 runtime\ -->
+    <EmbeddedResource Include="runtime\audiocpp_server.exe" Condition="Exists('runtime\audiocpp_server.exe')" />
+    <EmbeddedResource Include="runtime\espeak-ng-data.bin" Condition="Exists('runtime\espeak-ng-data.bin')" />
   </ItemGroup>
 
   <ItemGroup>

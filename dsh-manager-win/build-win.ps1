@@ -5,7 +5,8 @@
 [CmdletBinding()]
 param(
     [string]$Configuration = 'Release',
-    [switch]$FrameworkDependent
+    [switch]$FrameworkDependent,
+    [string]$AudioCppBin = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,6 +18,19 @@ $dotnet = Join-Path $env:LOCALAPPDATA 'dotnet-sdk\dotnet.exe'
 if (-not (Test-Path $dotnet)) {
     $c = Get-Command dotnet.exe -ErrorAction SilentlyContinue
     if ($c) { $dotnet = $c.Source } else { throw 'dotnet.exe not found' }
+}
+
+# Bundle the audio.cpp runtime with static eSpeak (English Kokoro voices need it).
+# Source can be overridden with -AudioCppBin.
+$runtimeSrc = if ($AudioCppBin) { $AudioCppBin } else { 'C:\Users\twinblade\Documents\audio.cpp\build-espeak-win\bin' }
+$runtimeDst = Join-Path $here 'runtime'
+if (Test-Path (Join-Path $runtimeSrc 'audiocpp_server.exe')) {
+    New-Item -ItemType Directory -Path $runtimeDst -Force | Out-Null
+    Copy-Item (Join-Path $runtimeSrc 'audiocpp_server.exe') (Join-Path $runtimeDst 'audiocpp_server.exe') -Force
+    Copy-Item (Join-Path $runtimeSrc 'espeak-ng-data.bin') (Join-Path $runtimeDst 'espeak-ng-data.bin') -Force
+    Write-Host "bundled runtime from $runtimeSrc"
+} else {
+    Write-Host "WARN: no audio.cpp runtime at $runtimeSrc; exe will download the official one instead"
 }
 
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }

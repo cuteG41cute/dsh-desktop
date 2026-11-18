@@ -68,6 +68,40 @@ public static class AudioCppService
 
     public static bool RuntimeReady => File.Exists(ServerExe);
 
+    /// <summary>
+    /// 安装包里内嵌了 audio.cpp 运行时（带静态 eSpeak）。首次启动时释放到 bin/，
+    /// 没有内嵌资源（开发构建）就什么都不做。
+    /// </summary>
+    public static void EnsureBundledRuntime()
+    {
+        try
+        {
+            Directory.CreateDirectory(BinDir);
+            var asm = System.Reflection.Assembly.GetExecutingAssembly();
+            var names = asm.GetManifestResourceNames();
+            var exeName = names.FirstOrDefault(n => n.EndsWith("audiocpp_server.exe", StringComparison.OrdinalIgnoreCase));
+            var dataName = names.FirstOrDefault(n => n.EndsWith("espeak-ng-data.bin", StringComparison.OrdinalIgnoreCase));
+            if (exeName == null) return;   // 开发构建没带运行时
+
+            var marker = Path.Combine(BinDir, "runtime.version");
+            const string want = "audiocpp-espeak-v1";
+            if (File.Exists(marker) && File.ReadAllText(marker).Trim() == want && File.Exists(ServerExe))
+                return;
+
+            using (var src = asm.GetManifestResourceStream(exeName))
+            using (var dst = File.Create(ServerExe))
+                src.CopyTo(dst);
+            if (dataName != null)
+            {
+                using var src = asm.GetManifestResourceStream(dataName);
+                using var dst = File.Create(Path.Combine(BinDir, "espeak-ng-data.bin"));
+                src.CopyTo(dst);
+            }
+            File.WriteAllText(marker, want);
+        }
+        catch { }
+    }
+
     public static string ModelPath(Model m) => Path.Combine(ModelsDir, m.File);
 
     public static bool ModelReady(Model m)

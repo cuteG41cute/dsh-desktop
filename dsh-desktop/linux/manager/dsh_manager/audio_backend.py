@@ -139,9 +139,19 @@ def paths():
     }
 
 
+SYSTEM_DIR = '/usr/lib/dsh-manager/audio-cpp'
+
+
 def server_exe():
+    """优先用用户目录里下载/释放的运行时，其次用 deb 里自带的（带静态 eSpeak）。"""
     name = 'audiocpp_server.exe' if os.name == 'nt' else 'audiocpp_server'
-    return os.path.join(paths()['bin'], name)
+    user = os.path.join(paths()['bin'], name)
+    if os.path.isfile(user):
+        return user
+    system = os.path.join(SYSTEM_DIR, name)
+    if os.path.isfile(system):
+        return system
+    return user
 
 
 def ready():
@@ -416,7 +426,7 @@ def start(active_ids):
     log = open(os.path.join(p['logs'], 'server.log'), 'ab')
     cmd = [server_exe(), '--config', p['config']]
     try:
-        subprocess.Popen(cmd, cwd=p['bin'], stdout=log, stderr=log,
+        subprocess.Popen(cmd, cwd=os.path.dirname(server_exe()), stdout=log, stderr=log,
                          start_new_session=(os.name != 'nt'))
     except OSError as exc:
         return False, '启动失败：%s' % exc

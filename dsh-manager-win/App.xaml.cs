@@ -99,6 +99,9 @@ public partial class App : Application
                 return;
             }
 
+            // 安装包里内嵌的 audio.cpp 运行时（带 eSpeak）——首次启动释放出来
+            System.Threading.Tasks.Task.Run(() => Services.AudioCppService.EnsureBundledRuntime());
+
             base.OnStartup(e);
             // WPF 的 UI 线程异常默认会**直接结束进程**，而且不走 AppDomain 处理器 →
             // 之前「点停止，管理器自己没了」就是这条通道，崩溃日志里一个字都没有。
