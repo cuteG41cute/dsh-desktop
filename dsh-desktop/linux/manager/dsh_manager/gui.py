@@ -2378,6 +2378,12 @@ class ManagerWindow(Gtk.Window):
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             row.set_size_request(-1, 30)
             ready_m = acpp.model_ready(m)
+            radio = Gtk.RadioButton.new_with_label_from_widget(None, '')
+            radio.set_active(m['id'] == acpp.active_model())
+            radio.set_sensitive(ready_m)
+            radio.set_tooltip_text('设为当前使用的模型')
+            radio.connect('toggled', lambda _r, mm=m: self.on_tts_pick_model(mm))
+            row.pack_start(radio, False, False, 0)
             name_lbl = self._label(m['label'], 'card-sub')
             name_lbl.set_hexpand(True)
             name_lbl.set_halign(Gtk.Align.START)
@@ -2534,12 +2540,24 @@ class ManagerWindow(Gtk.Window):
                         if not ok0:
                             GLib.idle_add(lambda: (self._toast(msg0), False)[1])
                             return
-                    ids = [m['id'] for m in acpp.installed_models()]
-                    ok, msg = acpp.start(ids)
+                    act = acpp.active_model()
+                    ok, msg = acpp.start([act] if act else [])
             else:
                 ok, msg = (tts_svc.stop() if tts_svc.running() else tts_svc.start())
             GLib.idle_add(lambda: (self._toast(msg), self._refresh_tts(), False)[2])
         self._tts_bg(job)
+
+    def on_tts_pick_model(self, model):
+        if not model.get('id'):
+            return
+        acpp.set_active_model(model['id'])
+        if acpp.running():
+            acpp.stop()
+            ok, msg = acpp.start([model['id']])
+            self._toast('已切换到 %s，服务已重启' % model['id'])
+        else:
+            self._toast('已选择 %s，启动服务后生效' % model['id'])
+        self._refresh_tts()
 
     def on_tts_download_runtime(self, *_):
         self.btn_tts_runtime.set_sensitive(False)
@@ -2753,8 +2771,7 @@ class ManagerWindow(Gtk.Window):
 
         def job():
             if self._active_backend() == 'audiocpp':
-                ids = [m['id'] for m in acpp.installed_models()]
-                mid = ids[0] if ids else ''
+                mid = acpp.active_model()
                 ok, err, wav, secs, _el = acpp.synthesize(text, mid, voice)
                 if not ok:
                     GLib.idle_add(lambda: (self.lbl_tts_play.set_text('失败：' + err), False)[1])

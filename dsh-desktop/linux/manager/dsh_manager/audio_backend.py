@@ -156,6 +156,30 @@ def model_ready(model):
     return os.path.isfile(p) and os.path.getsize(p) >= model['size'] * 0.9
 
 
+def _active_file():
+    return os.path.join(paths()['root'], 'active.json')
+
+
+def active_model():
+    """当前选中的模型 id（没设置或模型被删了就回退到第一个已安装的）。"""
+    try:
+        with open(_active_file(), 'r', encoding='utf-8') as fh:
+            mid = (json.load(fh) or {}).get('id') or ''
+    except (OSError, ValueError):
+        mid = ''
+    installed = [m['id'] for m in installed_models()]
+    if mid in installed:
+        return mid
+    return installed[0] if installed else ''
+
+
+def set_active_model(mid):
+    os.makedirs(paths()['root'], exist_ok=True)
+    with open(_active_file(), 'w', encoding='utf-8') as fh:
+        json.dump({'id': mid}, fh)
+
+
+
 def installed_models():
     return [m for m in MODELS if model_ready(m)]
 

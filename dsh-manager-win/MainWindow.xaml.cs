@@ -2128,15 +2128,31 @@ public partial class MainWindow : Window
             if (TtsRuntimeBtn != null)
                 TtsRuntimeBtn.Visibility = ready ? Visibility.Collapsed : Visibility.Visible;
 
+            var activeId = ActiveAudioModel(inst);
             if (TtsModelList != null)
             {
                 TtsModelList.Children.Clear();
                 foreach (var m in Services.AudioCppService.Models)
                 {
                     var row = new Grid { Margin = new Thickness(0, 3, 0, 3), MinHeight = 26 };
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(84) });
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                    var mid = m.Id;
+                    var radio = new RadioButton
+                    {
+                        GroupName = "ttsActiveModel",
+                        IsChecked = mid == activeId,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(0, 0, 8, 0),
+                        IsEnabled = Services.AudioCppService.ModelReady(m),
+                        ToolTip = "设为当前使用的模型",
+                    };
+                    radio.Checked += (_, _) => ActivateAudioModel(mid);
+                    Grid.SetColumn(radio, 0);
+                    row.Children.Add(radio);
 
                     var name = new TextBlock
                     {
@@ -2151,8 +2167,8 @@ public partial class MainWindow : Window
                         VerticalAlignment = VerticalAlignment.Center,
                         Foreground = (Brush)FindResource("Subtle"),
                     };
-                    Grid.SetColumn(name, 0);
-                    Grid.SetColumn(size, 1);
+                    Grid.SetColumn(name, 1);
+                    Grid.SetColumn(size, 2);
                     row.Children.Add(name);
                     row.Children.Add(size);
 
@@ -2177,7 +2193,7 @@ public partial class MainWindow : Window
                         box.Children.Add(bar);
                         box.Children.Add(txt);
                         _audioDlUi[m.Id] = (bar, txt);
-                        Grid.SetColumn(box, 2);
+                        Grid.SetColumn(box, 3);
                         row.Children.Add(box);
                     }
                     else if (Services.AudioCppService.ModelReady(m))
@@ -2194,7 +2210,7 @@ public partial class MainWindow : Window
                             Text = "已下载", FontSize = 8,
                             Foreground = (Brush)FindResource("Accent"),
                         };
-                        Grid.SetColumn(badge, 2);
+                        Grid.SetColumn(badge, 3);
                         row.Children.Add(badge);
                     }
                     else
@@ -2206,7 +2222,7 @@ public partial class MainWindow : Window
                         };
                         var model = m;
                         b.Click += async (_, _) => await DownloadAudioModel(model);
-                        Grid.SetColumn(b, 2);
+                        Grid.SetColumn(b, 3);
                         row.Children.Add(b);
                     }
                     TtsModelList.Children.Add(row);
@@ -2223,10 +2239,40 @@ public partial class MainWindow : Window
             if (TtsEndpointBox != null)
                 TtsEndpointBox.Text = "http://127.0.0.1:" + Services.AudioCppService.Port + "/v1";
             if (TtsModelBox != null)
-                TtsModelBox.Text = inst.Count > 0 ? inst[0].Id : "—";
+                TtsModelBox.Text = string.IsNullOrEmpty(activeId) ? "—" : activeId;
             if (running && !_ttsVoicesBusy) _ = RefreshAudioVoicesAsync(inst);
         }
         catch { }
+    }
+
+    private string ActiveAudioModel(List<Services.AudioCppService.Model> inst)
+    {
+        var id = Services.AppSettings.TtsModel;
+        if (!string.IsNullOrEmpty(id) && inst.Exists(m => m.Id == id)) return id;
+        return inst.Count > 0 ? inst[0].Id : "";
+    }
+
+    private void ActivateAudioModel(string id)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(id) || Services.AppSettings.TtsModel == id) return;
+            Services.AppSettings.TtsModel = id;
+            Services.AppSettings.Save();
+            var wasRunning = Services.AudioCppService.Running;
+            if (wasRunning)
+            {
+                Services.AudioCppService.Stop();
+                Services.AudioCppService.Start(new[] { id });
+                Toast("已切换到 " + id + "，服务已重启");
+            }
+            else
+            {
+                Toast("已选择 " + id + "，启动服务后生效");
+            }
+        }
+        catch (Exception ex) { Toast("切换失败：" + ex.Message); }
+        UpdateTtsCard();
     }
 
     private async System.Threading.Tasks.Task RefreshAudioVoicesAsync(List<Services.AudioCppService.Model> inst)
@@ -2667,7 +2713,7 @@ public partial class MainWindow : Window
         if (TtsBackend == "audiocpp")
         {
             var inst = Services.AudioCppService.Installed();
-            var mid = inst.Count > 0 ? inst[0].Id : "";
+            var mid = ActiveAudioModel(inst);
             if (TtsSynthStatus != null) TtsSynthStatus.Text = "合成中…（audio.cpp）";
             var (aok, aerr, awav, asecs, ael) = await Services.AudioCppService.SynthesizeAsync(text, mid, voice);
             if (!aok)

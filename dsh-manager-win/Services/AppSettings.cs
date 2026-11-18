@@ -18,12 +18,16 @@ public static class AppSettings
     /// <summary>本地语音的推理后端：audiocpp / codec。</summary>
     public static string TtsBackend { get; set; } = "audiocpp";
 
+    /// <summary>audio.cpp 后端里当前选中的模型 id（空 = 用第一个已下载的）。</summary>
+    public static string TtsModel { get; set; } = "";
+
     private sealed class Model
     {
         public int LogLines { get; set; } = 800;
         public bool WebPan { get; set; } = true;
         public bool WebDragOut { get; set; } = true;
         public string TtsBackend { get; set; } = "audiocpp";
+        public string TtsModel { get; set; } = "";
     }
 
     private static string PathFile => Path.Combine(
@@ -44,6 +48,7 @@ public static class AppSettings
                 WebPan = m.WebPan;
                 WebDragOut = m.WebDragOut;
                 if (!string.IsNullOrEmpty(m.TtsBackend)) TtsBackend = m.TtsBackend;
+                if (!string.IsNullOrEmpty(m.TtsModel)) TtsModel = m.TtsModel;
             }
         }
         catch { }
@@ -61,6 +66,7 @@ public static class AppSettings
                 WebPan = WebPan,
                 WebDragOut = WebDragOut,
                 TtsBackend = TtsBackend,
+                TtsModel = TtsModel,
             },
                 new JsonSerializerOptions { WriteIndented = true }));
         }
