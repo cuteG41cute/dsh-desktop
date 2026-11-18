@@ -9,6 +9,7 @@ audio.cpp 是一个 ggml 原生的多模型音频推理引擎（143 个模型族
   <data>/dsh-manager/services/audiocpp/models/  -> 各个 GGUF 模型
   <data>/dsh-manager/services/audiocpp/server.json -> 按当前选中的模型生成
 """
+import io
 import json
 import os
 import shutil
@@ -160,6 +161,51 @@ def _active_file():
     return os.path.join(paths()['root'], 'active.json')
 
 
+
+
+KOKORO_VOICES = [
+    'af_heart', 'af_alloy', 'af_aoede', 'af_bella', 'af_jessica', 'af_kore', 'af_nicole',
+    'af_nova', 'af_river', 'af_sarah', 'af_sky',
+    'am_adam', 'am_echo', 'am_eric', 'am_fenrir', 'am_liam', 'am_michael', 'am_onyx',
+    'am_puck', 'am_santa',
+    'bf_alice', 'bf_emma', 'bf_isabella', 'bf_lily',
+    'bm_daniel', 'bm_fable', 'bm_george', 'bm_lewis',
+    'ef_dora', 'em_alex', 'ff_siwis',
+    'hf_alpha', 'hf_beta', 'hm_omega', 'hm_psi',
+    'if_sara', 'im_nicola',
+    'jf_alpha', 'jf_gongitsune', 'jf_nezumi', 'jf_tebukuro', 'jm_kumo',
+    'pf_dora', 'pm_alex', 'pm_santa',
+    'zf_xiaobei', 'zf_xiaoni', 'zf_xiaoxiao', 'zf_xiaoyi',
+    'zm_yunjian', 'zm_yunxi', 'zm_yunxia', 'zm_yunyang',
+]
+
+
+def preset_voices(mid):
+    return list(KOKORO_VOICES) if mid == 'kokoro' else []
+
+
+def add_voice(name, wav_path, ref_text=''):
+    """把一个参考音频登记成 audio.cpp 的音色：voices/<name>.wav + prompt_text 里 name|文本。"""
+    p = paths()
+    os.makedirs(p['voices'], exist_ok=True)
+    dest = os.path.join(p['voices'], name + '.wav')
+    shutil.copyfile(wav_path, dest)
+    prompt = os.path.join(p['voices'], 'prompt_text')
+    lines = []
+    if os.path.isfile(prompt):
+        for line in io.open(prompt, encoding='utf-8', errors='replace'):
+            line = line.rstrip('\n')
+            if not line.strip():
+                continue
+            if line.split('|')[0].strip().lower() == name.lower():
+                continue
+            lines.append(line)
+    lines.append('%s|%s' % (name, (ref_text or '').strip()))
+    with io.open(prompt, 'w', encoding='utf-8') as fh:
+        fh.write('\n'.join(lines) + '\n')
+    return True, '音色已创建：%s' % name
+
+
 def active_model():
     """当前选中的模型 id（没设置或模型被删了就回退到第一个已安装的）。"""
     try:
@@ -197,7 +243,7 @@ def running():
     return port_open()
 
 
-def _download(urls, dest, progress=None, label=''):
+def _download(urls, dest, progress=None, label='', cancel=None):
     """依次尝试多个 URL 下载到 dest（带 .part 续传）。返回 (ok, err)。"""
     part = dest + '.part'
     have = os.path.getsize(part) if os.path.exists(part) else 0
@@ -221,6 +267,8 @@ def _download(urls, dest, progress=None, label=''):
         try:
             with open(part, mode) as fh:
                 while True:
+                    if cancel is not None and cancel.is_set():
+                        raise DownloadCancelled()
                     chunk = resp.read(1 << 20)
                     if not chunk:
                         break
@@ -241,7 +289,11 @@ def _download(urls, dest, progress=None, label=''):
     return False, '下载失败：%s' % last
 
 
-def download_bundle(progress=None):
+class DownloadCancelled(Exception):
+    pass
+
+
+def download_bundle(progress=None, cancel=None):
     """下载并解压 audio.cpp 预编译发行包到 bin/。"""
     if ready():
         return True, '已安装'
@@ -252,7 +304,7 @@ def download_bundle(progress=None):
     p = paths()
     os.makedirs(p['bin'], exist_ok=True)
     tmp = os.path.join(tempfile.gettempdir(), name)
-    ok, err = _download(urls, tmp, progress, name)
+    ok, err = _download(urls, tmp, progress, name, cancel)
     if not ok:
         return False, err
     try:
@@ -281,14 +333,17 @@ def download_bundle(progress=None):
     return True, 'audio.cpp 已安装'
 
 
-def download_model(model, progress=None):
+def download_model(model, progress=None, cancel=None):
     p = paths()
     os.makedirs(p['models'], exist_ok=True)
     dest = model_path(model)
     if model_ready(model):
         return True, '已存在'
     urls = [MS + model['remote']]
-    return _download(urls, dest, progress, model['file'])
+    try:
+        return _download(urls, dest, progress, model['file'], cancel)
+    except DownloadCancelled:
+        return False, '已取消'
 
 
 def write_config(active_ids):

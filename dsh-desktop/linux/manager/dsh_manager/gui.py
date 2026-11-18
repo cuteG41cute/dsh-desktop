@@ -2399,6 +2399,9 @@ class ManagerWindow(Gtk.Window):
                 lbl = self._label('', 'field-hint')
                 box.pack_start(bar, False, False, 0)
                 box.pack_start(lbl, False, False, 0)
+                cancel_btn = self._button('', '取消', 'btn', 'btn-secondary',
+                                          handler=lambda _b, mm=m: self.on_tts_cancel_download(mm))
+                box.pack_start(cancel_btn, False, False, 0)
                 self._acpp_dl_ui[m['id']] = (bar, lbl)
                 row.pack_start(box, False, False, 0)
             elif ready_m:
@@ -2449,6 +2452,10 @@ class ManagerWindow(Gtk.Window):
         combo = self.tts_voice_combo
         combo.remove_all()
         vs = acpp.voices() if ok else []
+        if models:
+            for pv in acpp.preset_voices(models[0]):
+                if pv not in vs:
+                    vs.insert(0, pv)
         self.lbl_tts_voices_title.set_text('音色 · %d' % len(vs))
         for v in vs:
             combo.append_text(v)
@@ -2550,6 +2557,17 @@ class ManagerWindow(Gtk.Window):
     def on_tts_pick_model(self, model):
         if not model.get('id'):
             return
+        if model['id'] == 'omnivoice':
+            dlg = Gtk.MessageDialog(transient_for=self, modal=True,
+                                    message_type=Gtk.MessageType.WARNING,
+                                    buttons=Gtk.ButtonsType.YES_NO,
+                                    text='OmniVoice 在纯 CPU 上非常慢')
+            dlg.format_secondary_text('1.3 GB 模型，一次合成可能要 10 分钟以上，期间服务会一直忙。仍要选它吗？')
+            resp = dlg.run()
+            dlg.destroy()
+            if resp != Gtk.ResponseType.YES:
+                self._refresh_tts()
+                return
         acpp.set_active_model(model['id'])
         if acpp.running():
             acpp.stop()
@@ -2580,6 +2598,12 @@ class ManagerWindow(Gtk.Window):
                 return False
             GLib.idle_add(done)
         self._tts_bg(job)
+
+    def on_tts_cancel_download(self, model):
+        ev = getattr(self, '_acpp_cancel', {}).get(model['id'])
+        if ev is not None:
+            ev.set()
+            self._toast('已请求取消下载')
 
     def on_tts_download_model(self, model):
         if not hasattr(self, '_acpp_dl'):
@@ -2620,10 +2644,16 @@ class ManagerWindow(Gtk.Window):
                 return False
             GLib.idle_add(paint)
 
+        ev = threading.Event()
+        if not hasattr(self, '_acpp_cancel'):
+            self._acpp_cancel = {}
+        self._acpp_cancel[mid] = ev
+
         def job():
-            ok, msg = acpp.download_model(model, progress)
+            ok, msg = acpp.download_model(model, progress, ev)
 
             def done():
+                self._acpp_cancel.pop(mid, None)
                 self._acpp_dl.pop(mid, None)
                 self._acpp_dl_ui.pop(mid, None)
                 self._toast(msg if ok else ('下载失败：' + msg))
@@ -2697,15 +2727,20 @@ class ManagerWindow(Gtk.Window):
             return
 
         def job():
-            # 参考音频统一转成 24k 单声道 PCM16（服务端只收这种）
             src, err = tts_svc.transcode_to_wav(path)
             if not src:
                 if path.lower().endswith('.wav'):
-                    src = path   # 没有 ffmpeg 时，至少让已经是 wav 的试试
+                    src = path
                 else:
                     GLib.idle_add(lambda: (self._toast('转码失败：' + err), False)[1])
                     return
-            ok, msg = tts_svc.create_voice(name, src)
+            if self._active_backend() == 'audiocpp':
+                ok, msg = acpp.add_voice(name, src, ref_text)
+                if ok and acpp.running():
+                    acpp.stop()
+                    acpp.start([acpp.active_model()])
+            else:
+                ok, msg = tts_svc.create_voice(name, src)
             GLib.idle_add(lambda: (self._toast(msg), self._refresh_tts(), False)[2])
         self._toast('正在上传并克隆音色…')
         self._tts_bg(job)

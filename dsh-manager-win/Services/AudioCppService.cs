@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -367,6 +368,51 @@ public static class AudioCppService
             if (!Running) return (true, "audio.cpp 已停止");
         }
         return (false, "停止失败：端口 " + Port + " 仍被占用");
+    }
+
+    /// <summary>Kokoro 的内置音色（audio.cpp 不走 /v1/audio/voices 暴露 preset，这里按官方列表内置）。</summary>
+    public static readonly string[] KokoroVoices =
+    {
+        "af_heart", "af_alloy", "af_aoede", "af_bella", "af_jessica", "af_kore", "af_nicole",
+        "af_nova", "af_river", "af_sarah", "af_sky",
+        "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael", "am_onyx",
+        "am_puck", "am_santa",
+        "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
+        "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
+        "ef_dora", "em_alex", "ff_siwis",
+        "hf_alpha", "hf_beta", "hm_omega", "hm_psi",
+        "if_sara", "im_nicola",
+        "jf_alpha", "jf_gongitsune", "jf_nezumi", "jf_tebukuro", "jm_kumo",
+        "pf_dora", "pm_alex", "pm_santa",
+        "zf_xiaobei", "zf_xiaoni", "zf_xiaoxiao", "zf_xiaoyi",
+        "zm_yunjian", "zm_yunxi", "zm_yunxia", "zm_yunyang",
+    };
+
+    public static List<string> PresetVoices(string modelId)
+    {
+        if (modelId == "kokoro") return new List<string>(KokoroVoices);
+        return new List<string>();
+    }
+
+    /// <summary>新建音色：把参考音频转成 24k 单声道放进 voice_dir，并登记参考文本。</summary>
+    public static (bool Ok, string Message) AddVoice(string name, string wavPath, string refText)
+    {
+        try
+        {
+            Directory.CreateDirectory(VoicesDir);
+            var dest = Path.Combine(VoicesDir, name + ".wav");
+            File.Copy(wavPath, dest, true);
+
+            var promptFile = Path.Combine(VoicesDir, "prompt_text");
+            var lines = new List<string>();
+            if (File.Exists(promptFile))
+                lines.AddRange(File.ReadAllLines(promptFile).Where(l => !string.IsNullOrWhiteSpace(l)
+                    && !l.Split('|')[0].Trim().Equals(name, StringComparison.OrdinalIgnoreCase)));
+            lines.Add(name + "|" + (refText ?? "").Trim());
+            File.WriteAllLines(promptFile, lines, new UTF8Encoding(false));
+            return (true, "音色已创建：" + name);
+        }
+        catch (Exception ex) { return (false, "创建失败：" + ex.Message); }
     }
 
     public static List<string> ListModels()

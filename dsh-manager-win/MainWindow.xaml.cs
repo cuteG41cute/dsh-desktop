@@ -2192,6 +2192,21 @@ public partial class MainWindow : Window
                         };
                         box.Children.Add(bar);
                         box.Children.Add(txt);
+                        var cancelBtn = new Button
+                        {
+                            Content = "取消", Style = (Style)FindResource("BtnSecondary"),
+                            Height = 22, Padding = new Thickness(8, 0, 8, 0), FontSize = 8,
+                            Margin = new Thickness(6, 0, 0, 0),
+                        };
+                        var cid = m.Id;
+                        cancelBtn.Click += (_, _) =>
+                        {
+                            if (_audioDlCts.TryGetValue(cid, out var cts))
+                            {
+                                try { cts.Cancel(); } catch { }
+                            }
+                        };
+                        box.Children.Add(cancelBtn);
                         _audioDlUi[m.Id] = (bar, txt);
                         Grid.SetColumn(box, 3);
                         row.Children.Add(box);
@@ -2257,6 +2272,13 @@ public partial class MainWindow : Window
         try
         {
             if (string.IsNullOrEmpty(id) || Services.AppSettings.TtsModel == id) return;
+            if (id == "omnivoice")
+            {
+                var answer = MessageBox.Show(
+                    "OmniVoice 是 1.3 GB 模型，纯 CPU 上一次合成可能要 10 分钟以上，期间服务会一直忙。\n\n仍然选它吗？",
+                    "这个模型很慢", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                if (answer != MessageBoxResult.Yes) { UpdateTtsCard(); return; }
+            }
             Services.AppSettings.TtsModel = id;
             Services.AppSettings.Save();
             var wasRunning = Services.AudioCppService.Running;
@@ -2281,6 +2303,12 @@ public partial class MainWindow : Window
         try
         {
             var voices = Services.AudioCppService.Voices();
+            var act = ActiveAudioModel(inst);
+            var presets = Services.AudioCppService.PresetVoices(act);
+            var all = new List<string>();
+            all.AddRange(presets);
+            foreach (var v in voices) if (!all.Contains(v)) all.Add(v);
+            voices = all;
             if (TtsVoiceList != null)
             {
                 TtsVoiceList.Children.Clear();
@@ -2306,6 +2334,8 @@ public partial class MainWindow : Window
     {
         if (_audioDl.ContainsKey(model.Id)) return;
         _audioDl[model.Id] = new AudioDlState { Done = 0, Total = model.Size, Speed = 0 };
+        var cts = new System.Threading.CancellationTokenSource();
+        _audioDlCts[model.Id] = cts;
         UpdateTtsCard();
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -2337,12 +2367,13 @@ public partial class MainWindow : Window
                             : FmtSpeed(st.Speed);
                     }
                 }));
-            });
+            }, cts.Token);
             Toast(msg);
         }
         catch (Exception ex) { Toast("下载失败：" + ex.Message); }
         _audioDl.Remove(model.Id);
         _audioDlUi.Remove(model.Id);
+        _audioDlCts.Remove(model.Id);
         UpdateTtsCard();
     }
 
@@ -2622,6 +2653,7 @@ public partial class MainWindow : Window
 
     private readonly Dictionary<string, AudioDlState> _audioDl = new();
     private readonly Dictionary<string, (ProgressBar Bar, TextBlock Text)> _audioDlUi = new();
+    private readonly Dictionary<string, System.Threading.CancellationTokenSource> _audioDlCts = new();
 
     private static string FmtSpeed(double bytesPerSec)
     {
@@ -2680,7 +2712,38 @@ public partial class MainWindow : Window
             Filter = "音频文件 (*.wav;*.mp3;*.m4a;*.flac)|*.wav;*.mp3;*.m4a;*.flac|所有文件 (*.*)|*.*",
         };
         if (dlg.ShowDialog() != true) return;
+        if (TtsBackend == "audiocpp")
+        {
+            var refText = PromptText("参考文本（可选但强烈建议）",
+                "这段参考音频里说的是什么？克隆类模型（Qwen3/CosyVoice/IndexTTS/OmniVoice）需要它", "");
+            AddAudioVoice(name.Trim(), dlg.FileName, refText ?? "");
+            return;
+        }
         UploadVoice(name.Trim(), dlg.FileName);
+    }
+
+    private async void AddAudioVoice(string name, string path, string refText)
+    {
+        var wav = path;
+        if (!path.ToLowerInvariant().EndsWith(".wav"))
+        {
+            var err = TranscodeToWav(path, out var converted);
+            if (err != null) { Toast("转码失败：" + err); return; }
+            wav = converted;
+        }
+        var (ok, msg) = Services.AudioCppService.AddVoice(name, wav, refText);
+        Toast(msg);
+        if (!ok) return;
+        // 服务在跑就重启，让它重新读 voice_dir
+        if (Services.AudioCppService.Running)
+        {
+            Services.AudioCppService.Stop();
+            var inst = Services.AudioCppService.Installed();
+            var act = ActiveAudioModel(inst);
+            Services.AudioCppService.Start(new[] { act });
+        }
+        UpdateTtsCard();
+        await System.Threading.Tasks.Task.CompletedTask;
     }
 
     private async void UploadVoice(string name, string path)
