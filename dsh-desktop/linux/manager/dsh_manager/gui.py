@@ -2435,6 +2435,12 @@ class ManagerWindow(Gtk.Window):
         self.btn_tts_runtime.set_visible(False)
         for ch in list(self.tts_model_box.get_children()):
             self.tts_model_box.remove(ch)
+        self.tts_model_box.pack_start(self._label(
+            'codec.cpp 只支持 Qwen3-TTS（codec + backbone 一对 GGUF）', 'card-sub'), False, False, 0)
+        self.tts_model_box.pack_start(self._label(
+            '模型就绪' if tts_svc.models_ready() else '模型缺失，点上面的「下载模型」拉取（约 1.8 GB）',
+            'field-hint'), False, False, 0)
+        self.tts_model_box.show_all()
         self.lbl_tts_port.set_text(str(tts_svc.PORT) + ' · 仅本机访问')
         self.lbl_tts_endpoint.set_text('http://127.0.0.1:%d/v1' % tts_svc.PORT)
         p = tts_svc.paths()

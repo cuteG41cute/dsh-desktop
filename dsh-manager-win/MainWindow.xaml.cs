@@ -2661,6 +2661,28 @@ public partial class MainWindow : Window
             if (TtsDownloadBox != null)
                 TtsDownloadBox.Visibility = models ? Visibility.Collapsed : Visibility.Visible;
 
+            // codec.cpp 只吃 Qwen3-TTS 的 codec + backbone 一对 GGUF，
+            // 上面的「模型库」是 audio.cpp 的后端，这里换成语义正确的说明。
+            if (TtsModelList != null)
+            {
+                TtsModelList.Children.Clear();
+                var note = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(0, 2, 0, 2) };
+                note.Children.Add(new TextBlock
+                {
+                    Text = "codec.cpp 只支持 Qwen3-TTS（codec + backbone 一对 GGUF）",
+                    FontSize = 9, Foreground = (Brush)FindResource("Muted"), TextWrapping = TextWrapping.Wrap,
+                });
+                note.Children.Add(new TextBlock
+                {
+                    Text = models
+                        ? "模型已就绪：" + System.IO.Path.GetFileName(TtsService.BackbonePath) + " + " + System.IO.Path.GetFileName(TtsService.CodecPath)
+                        : "模型缺失，点上面的「下载模型」拉取（约 1.8 GB）",
+                    FontSize = 8.5, Margin = new Thickness(0, 4, 0, 0),
+                    Foreground = (Brush)FindResource(models ? "Accent" : "Subtle"), TextWrapping = TextWrapping.Wrap,
+                });
+                TtsModelList.Children.Add(note);
+            }
+
             TtsPortText.Text = TtsService.Port.ToString();
             TtsModelText.Text = System.IO.Path.GetFileName(TtsService.BackbonePath) + "  +  " +
                                 System.IO.Path.GetFileName(TtsService.CodecPath);
