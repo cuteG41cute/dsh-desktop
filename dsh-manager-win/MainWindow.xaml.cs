@@ -2114,7 +2114,7 @@ public partial class MainWindow : Window
             }
             if (TtsToggleBtn != null)
             {
-                TtsToggleBtn.Content = running ? "停止服务" : "启动服务";
+                TtsToggleBtn.Content = running ? "停止 audio.cpp 服务" : "启动 audio.cpp 服务";
                 TtsToggleBtn.IsEnabled = running || (ready && inst.Count > 0);
             }
             TtsPortText.Text = Services.AudioCppService.Port.ToString();
@@ -2124,7 +2124,9 @@ public partial class MainWindow : Window
                        .Sum() / 1024 / 1024) + " MB" : "—";
 
             if (TtsRuntimeText != null)
-                TtsRuntimeText.Text = ready ? "运行时就绪" : "还没装运行时（约 32 MB）";
+                TtsRuntimeText.Text = (ready ? "运行时就绪" : "运行时未安装")
+                    + " ｜ audio.cpp 8092：" + (Services.AudioCppService.Running ? "运行中" : "已停止")
+                    + " · codec.cpp 8098：" + (Services.TtsService.Running ? "运行中" : "已停止");
             if (TtsRuntimeBtn != null)
                 TtsRuntimeBtn.Visibility = ready ? Visibility.Collapsed : Visibility.Visible;
 
@@ -2655,9 +2657,13 @@ public partial class MainWindow : Window
 
             if (TtsToggleBtn != null)
             {
-                TtsToggleBtn.Content = running ? "停止服务" : "启动服务";
+                TtsToggleBtn.Content = running ? "停止 codec.cpp 服务" : "启动 codec.cpp 服务";
                 TtsToggleBtn.IsEnabled = running || (bins && models);
             }
+            if (TtsRuntimeText != null)
+                TtsRuntimeText.Text = ""
+                    + "audio.cpp 8092：" + (Services.AudioCppService.Running ? "运行中" : "已停止")
+                    + " · codec.cpp 8098：" + (Services.TtsService.Running ? "运行中" : "已停止");
             if (TtsDownloadBox != null)
                 TtsDownloadBox.Visibility = models ? Visibility.Collapsed : Visibility.Visible;
 

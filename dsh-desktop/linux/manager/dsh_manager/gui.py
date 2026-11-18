@@ -2377,7 +2377,10 @@ class ManagerWindow(Gtk.Window):
         total_mb = sum(os.path.getsize(acpp.model_path(m)) for m in inst) // 1024 // 1024
         self.lbl_tts_size.set_text('%d MB' % total_mb)
         ok_bin = acpp.ready()
-        self.lbl_tts_runtime.set_text('运行时就绪' if ok_bin else '还没装 audio.cpp 运行时')
+        self.lbl_tts_runtime.set_text(
+            ('运行时就绪' if ok_bin else '运行时未安装')
+            + ' ｜ audio.cpp 8092：' + ('运行中' if acpp.running() else '已停止')
+            + ' · codec.cpp 8098：' + ('运行中' if tts_svc.running() else '已停止'))
         self.btn_tts_runtime.set_visible(not ok_bin)
         self.tts_dl_box.set_visible(False)
         # 模型列表
