@@ -27,6 +27,7 @@ except ImportError:       # pragma: no cover
 
 from . import plugins as plug  # noqa: E402
 from . import tts as tts_svc  # noqa: E402
+from . import audio_backend as acpp  # noqa: E402
 from .core import (DEFAULT_DSH, DEFAULT_NODE, MANAGER_LIB, MANAGER_VERSION,  # noqa: E402
                    FALLBACK_DSH_VERSIONS, FALLBACK_NODE_VERSIONS,
                    Manager, append_manager_log, config_dir, load_settings,
@@ -2235,6 +2236,26 @@ class ManagerWindow(Gtk.Window):
         self.tts_dl_box.pack_start(self.pb_tts, True, True, 0)
         card.pack_start(self.tts_dl_box, False, False, 0)
 
+        backend_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        backend_row.set_margin_top(12)
+        backend_row.pack_start(Gtk.Label(label='推理后端'), False, False, 0)
+        self.tts_backend = Gtk.ComboBoxText()
+        self.tts_backend.append('audiocpp', 'audio.cpp（多模型，推荐）')
+        self.tts_backend.append('codec', 'codec.cpp（旧，Qwen3-TTS 专用）')
+        self.tts_backend.set_active_id('audiocpp')
+        self.tts_backend.connect('changed', lambda *_: self._refresh_tts())
+        backend_row.pack_start(self.tts_backend, False, False, 0)
+        self.lbl_tts_runtime = self._label('', 'field-hint')
+        backend_row.pack_start(self.lbl_tts_runtime, True, True, 0)
+        self.btn_tts_runtime = self._button('', '安装运行时', 'btn', 'btn-secondary',
+                                           handler=self.on_tts_download_runtime)
+        backend_row.pack_start(self.btn_tts_runtime, False, False, 0)
+        card.pack_start(backend_row, False, False, 0)
+
+        self.tts_model_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.tts_model_box.set_margin_top(6)
+        card.pack_start(self.tts_model_box, False, False, 0)
+
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         actions.set_margin_top(14)
         actions.pack_start(self._button('', '程序目录', 'btn', 'btn-secondary',
@@ -2315,32 +2336,102 @@ class ManagerWindow(Gtk.Window):
         return sw
 
     # ---- 本地语音：刷新与动作 ----
+    def _active_backend(self):
+        try:
+            return self.tts_backend.get_active_id() or 'audiocpp'
+        except Exception:
+            return 'audiocpp'
+
     def _refresh_tts(self):
         try:
-            running = tts_svc.running()
+            backend = self._active_backend()
+            running = acpp.running() if backend == 'audiocpp' else tts_svc.running()
             self.lbl_tts_state.set_text('运行中' if running else '已停止')
             self.btn_tts_toggle.set_label('停止服务' if running else '启动服务')
-            self.lbl_tts_port.set_text(str(tts_svc.PORT) + ' · 仅本机访问')
-            p = tts_svc.paths()
-            b = os.path.basename(tts_svc._find_backbone() or '—')
-            m = os.path.basename(tts_svc._find_codec() or '—')
-            self.lbl_tts_model.set_text('%s + %s' % (b, m))
-            self.lbl_tts_size.set_text('%d MB' % (tts_svc.models_bytes() // 1024 // 1024))
-            need_dl = not tts_svc.models_ready()
-            self.tts_dl_box.set_visible(need_dl)
-            if not need_dl:
-                self.pb_tts.set_fraction(0)
-            if not tts_svc.binaries_ready():
-                self.lbl_tts_hint.set_text('缺少 tts-server：可执行文件没找到')
-            elif need_dl:
-                self.lbl_tts_hint.set_text('缺少模型：点下面「下载模型」自动下载（约 1.8 GB，支持断点续传）')
+            if backend == 'audiocpp':
+                self._refresh_acpp(running)
             else:
-                self.lbl_tts_hint.set_text('资源就绪 · 模型目录 %s' % tts_svc.paths()['models'])
-            if running:
-                self._fill_tts_voices()
+                self._refresh_codec(running)
         except Exception:
             pass
         return False
+
+    def _refresh_acpp(self, running):
+        inst = acpp.installed_models()
+        self.lbl_tts_port.set_text('%d · 仅本机访问' % acpp.PORT)
+        self.lbl_tts_endpoint.set_text('http://127.0.0.1:%d/v1' % acpp.PORT)
+        self.lbl_tts_model.set_text('；'.join(m['label'] for m in inst) or '—')
+        total_mb = sum(os.path.getsize(acpp.model_path(m)) for m in inst) // 1024 // 1024
+        self.lbl_tts_size.set_text('%d MB' % total_mb)
+        ok_bin = acpp.ready()
+        self.lbl_tts_runtime.set_text('运行时就绪' if ok_bin else '还没装 audio.cpp 运行时')
+        self.btn_tts_runtime.set_visible(not ok_bin)
+        self.tts_dl_box.set_visible(False)
+        # 模型列表
+        for ch in list(self.tts_model_box.get_children()):
+            self.tts_model_box.remove(ch)
+        for m in acpp.MODELS:
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            ready_m = acpp.model_ready(m)
+            row.pack_start(self._label(m['label'], 'card-sub'), False, False, 0)
+            row.pack_start(self._label('%.0f MB' % (m['size'] / 1024 / 1024), 'field-hint'),
+                           False, False, 0)
+            if ready_m:
+                row.pack_start(self._label('已下载', 'card-sub'), False, False, 0)
+            else:
+                row.pack_start(self._button('', '下载', 'btn', 'btn-secondary',
+                                            handler=lambda _b, mm=m: self.on_tts_download_model(mm)),
+                               False, False, 0)
+            self.tts_model_box.pack_start(row, False, False, 0)
+        if not ok_bin:
+            self.lbl_tts_hint.set_text('先装运行时（约 70 MB），再下载模型')
+        elif not inst:
+            self.lbl_tts_hint.set_text('下载至少一个模型（Kokoro 很快，Qwen3 可克隆）')
+        else:
+            self.lbl_tts_hint.set_text('后端 audio.cpp · 模型目录 %s' % acpp.paths()['models'])
+        if running:
+            self._fill_acpp_voices(inst)
+
+    def _refresh_codec(self, running):
+        self.lbl_tts_runtime.set_text('')
+        self.btn_tts_runtime.set_visible(False)
+        for ch in list(self.tts_model_box.get_children()):
+            self.tts_model_box.remove(ch)
+        self.lbl_tts_port.set_text(str(tts_svc.PORT) + ' · 仅本机访问')
+        self.lbl_tts_endpoint.set_text('http://127.0.0.1:%d/v1' % tts_svc.PORT)
+        p = tts_svc.paths()
+        b = os.path.basename(tts_svc._find_backbone() or '—')
+        m = os.path.basename(tts_svc._find_codec() or '—')
+        self.lbl_tts_model.set_text('%s + %s' % (b, m))
+        self.lbl_tts_size.set_text('%d MB' % (tts_svc.models_bytes() // 1024 // 1024))
+        need_dl = not tts_svc.models_ready()
+        self.tts_dl_box.set_visible(need_dl)
+        if not tts_svc.binaries_ready():
+            self.lbl_tts_hint.set_text('缺少 tts-server：可执行文件没找到')
+        elif need_dl:
+            self.lbl_tts_hint.set_text('缺少模型：点下面「下载模型」自动下载（约 1.8 GB）')
+        else:
+            self.lbl_tts_hint.set_text('资源就绪 · 模型目录 %s' % p['models'])
+        if running:
+            self._fill_tts_voices()
+
+    def _fill_acpp_voices(self, inst):
+        ok, err, models = acpp.models()
+        box = self.tts_voice_box
+        for child in list(box.get_children()):
+            box.remove(child)
+        combo = self.tts_voice_combo
+        combo.remove_all()
+        vs = acpp.voices() if ok else []
+        self.lbl_tts_voices_title.set_text('音色 · %d' % len(vs))
+        for v in vs:
+            combo.append_text(v)
+        if combo.get_active() < 0 and vs:
+            combo.set_active(0)
+        for mid in models:
+            box.pack_start(self._label('模型：%s' % mid, 'card-sub'), False, False, 0)
+        if not vs and not models:
+            box.pack_start(self._label('（后端未就绪）', 'card-sub'), False, False, 0)
 
     def _fill_tts_voices(self):
         ok, err, voices = tts_svc.list_voices()
@@ -2409,9 +2500,58 @@ class ManagerWindow(Gtk.Window):
         threading.Thread(target=fn, daemon=True).start()
 
     def on_tts_toggle(self, *_):
+        backend = self._active_backend()
+
         def job():
-            ok, msg = (tts_svc.stop() if tts_svc.running() else tts_svc.start())
+            if backend == 'audiocpp':
+                if acpp.running():
+                    ok, msg = acpp.stop()
+                else:
+                    ids = [m['id'] for m in acpp.installed_models()]
+                    ok, msg = acpp.start(ids)
+            else:
+                ok, msg = (tts_svc.stop() if tts_svc.running() else tts_svc.start())
             GLib.idle_add(lambda: (self._toast(msg), self._refresh_tts(), False)[2])
+        self._tts_bg(job)
+
+    def on_tts_download_runtime(self, *_):
+        self.btn_tts_runtime.set_sensitive(False)
+        self.btn_tts_runtime.set_label('下载中…')
+        self.pb_tts.set_fraction(0)
+        self.pb_tts.set_visible(True)
+
+        def progress(done, total, name):
+            frac = (done / total) if total else 0
+            GLib.idle_add(lambda: (self.pb_tts.set_fraction(min(1.0, frac)), False)[1])
+
+        def job():
+            ok, msg = acpp.download_bundle(progress)
+
+            def done():
+                self._toast(msg)
+                self.btn_tts_runtime.set_label('安装运行时')
+                self.btn_tts_runtime.set_sensitive(True)
+                self._refresh_tts()
+                return False
+            GLib.idle_add(done)
+        self._tts_bg(job)
+
+    def on_tts_download_model(self, model):
+        self.pb_tts.set_fraction(0)
+        self.pb_tts.set_visible(True)
+
+        def progress(done, total, name):
+            frac = (done / total) if total else 0
+            GLib.idle_add(lambda: (self.pb_tts.set_fraction(min(1.0, frac)), False)[1])
+
+        def job():
+            ok, msg = acpp.download_model(model, progress)
+
+            def done():
+                self._toast(msg if ok else ('下载失败：' + msg))
+                self._refresh_tts()
+                return False
+            GLib.idle_add(done)
         self._tts_bg(job)
 
     def on_tts_open_dir(self, *_):
@@ -2544,6 +2684,18 @@ class ManagerWindow(Gtk.Window):
         self.lbl_tts_play.set_text('合成中…（CPU 约 0.3 倍速）')
 
         def job():
+            if self._active_backend() == 'audiocpp':
+                ids = [m['id'] for m in acpp.installed_models()]
+                mid = ids[0] if ids else ''
+                ok, err, wav, secs, _el = acpp.synthesize(text, mid, voice)
+                if not ok:
+                    GLib.idle_add(lambda: (self.lbl_tts_play.set_text('失败：' + err), False)[1])
+                    return
+                wav2 = tts_svc.apply_speed(wav, speed)
+                okp, pmsg = tts_svc.play(wav2)
+                GLib.idle_add(lambda: (self.lbl_tts_play.set_text(
+                    '完成：音频 %.1fs%s' % (secs, '' if okp else '（' + pmsg + '）')), False)[1])
+                return
             ok, err, wav, secs = tts_svc.synthesize(text, voice)
             if not ok:
                 GLib.idle_add(lambda: (self.lbl_tts_play.set_text('失败：' + err), False)[1])

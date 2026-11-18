@@ -2054,7 +2054,189 @@ public partial class MainWindow : Window
     private string _ttsPickedFile = "";
     private bool _ttsVoicesBusy;
 
+    private bool _ttsBackendInit;
+
+    private string TtsBackend => (TtsBackendCombo?.SelectedItem as ComboBoxItem)?.Tag as string
+                                 ?? (TtsBackendCombo?.SelectedValue as string) ?? "audiocpp";
+
+    private void InitTtsBackendCombo()
+    {
+        if (_ttsBackendInit || TtsBackendCombo == null) return;
+        _ttsBackendInit = true;
+        TtsBackendCombo.Items.Add(new ComboBoxItem { Content = "audio.cpp（多模型，推荐）", Tag = "audiocpp" });
+        TtsBackendCombo.Items.Add(new ComboBoxItem { Content = "codec.cpp（旧，Qwen3-TTS 专用）", Tag = "codec" });
+        foreach (ComboBoxItem item in TtsBackendCombo.Items)
+        {
+            if ((string)item.Tag == Services.AppSettings.TtsBackend) { TtsBackendCombo.SelectedItem = item; break; }
+        }
+        if (TtsBackendCombo.SelectedIndex < 0) TtsBackendCombo.SelectedIndex = 0;
+    }
+
+    private void OnTtsBackendChanged(object sender, SelectionChangedEventArgs e)
+    {
+        try
+        {
+            Services.AppSettings.TtsBackend = TtsBackend;
+            Services.AppSettings.Save();
+        }
+        catch { }
+        UpdateTtsCard();
+    }
+
     private void UpdateTtsCard()
+    {
+        try
+        {
+            if (TtsStatusText == null) return;
+            InitTtsBackendCombo();
+            if (TtsBackend == "audiocpp") { UpdateTtsCardAudio(); return; }
+            UpdateTtsCardCodec();
+        }
+        catch { }
+    }
+
+    private void UpdateTtsCardAudio()
+    {
+        try
+        {
+            var running = Services.AudioCppService.Running;
+            var ready = Services.AudioCppService.RuntimeReady;
+            var inst = Services.AudioCppService.Installed();
+
+            TtsStatusText.Text = running ? "运行中" : "已停止";
+            TtsStatusBadge.Background = running ? (Brush)FindResource("AccentSoft") : (Brush)FindResource("InnerBorder");
+            TtsStatusText.Foreground = running ? (Brush)FindResource("Accent") : (Brush)FindResource("Muted");
+            if (TtsReadyDot != null)
+            {
+                TtsReadyDot.Fill = running ? new SolidColorBrush(Color.FromRgb(0x3C, 0xC1, 0x7C))
+                                           : (Brush)FindResource("Subtle");
+                TtsReadyText.Text = running ? "服务可用" : "服务未运行";
+            }
+            if (TtsToggleBtn != null)
+            {
+                TtsToggleBtn.Content = running ? "停止服务" : "启动服务";
+                TtsToggleBtn.IsEnabled = running || (ready && inst.Count > 0);
+            }
+            TtsPortText.Text = Services.AudioCppService.Port.ToString();
+            TtsModelText.Text = inst.Count > 0 ? string.Join("；", inst.ConvertAll(m => m.Label)) : "—";
+            TtsSizeText.Text = inst.Count > 0
+                ? (inst.ConvertAll(m => (long)new System.IO.FileInfo(Services.AudioCppService.ModelPath(m)).Length)
+                       .Sum() / 1024 / 1024) + " MB" : "—";
+
+            if (TtsRuntimeText != null)
+                TtsRuntimeText.Text = ready ? "运行时就绪" : "还没装运行时（约 32 MB）";
+            if (TtsRuntimeBtn != null)
+                TtsRuntimeBtn.Visibility = ready ? Visibility.Collapsed : Visibility.Visible;
+
+            if (TtsModelList != null)
+            {
+                TtsModelList.Children.Clear();
+                foreach (var m in Services.AudioCppService.Models)
+                {
+                    var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
+                    row.Children.Add(new TextBlock
+                    {
+                        Text = m.Label, FontSize = 9, Width = 220,
+                        Foreground = (Brush)FindResource("Text"),
+                    });
+                    row.Children.Add(new TextBlock
+                    {
+                        Text = (m.Size / 1024 / 1024) + " MB", FontSize = 8.5, Width = 90,
+                        Foreground = (Brush)FindResource("Subtle"),
+                    });
+                    if (Services.AudioCppService.ModelReady(m))
+                    {
+                        row.Children.Add(new TextBlock
+                        {
+                            Text = "已下载", FontSize = 8.5, Foreground = (Brush)FindResource("Accent"),
+                        });
+                    }
+                    else
+                    {
+                        var b = new Button
+                        {
+                            Content = "下载", Style = (Style)FindResource("BtnCompact"),
+                            Height = 24, Padding = new Thickness(10, 0, 10, 0), FontSize = 8.5,
+                        };
+                        var model = m;
+                        b.Click += async (_, _) => await DownloadAudioModel(model);
+                        row.Children.Add(b);
+                    }
+                    TtsModelList.Children.Add(row);
+                }
+            }
+            if (TtsDownloadBox != null) TtsDownloadBox.Visibility = Visibility.Collapsed;
+            if (TtsEndpointBox != null)
+                TtsEndpointBox.Text = "http://127.0.0.1:" + Services.AudioCppService.Port + "/v1";
+            if (TtsModelBox != null)
+                TtsModelBox.Text = inst.Count > 0 ? inst[0].Id : "—";
+            if (running && !_ttsVoicesBusy) _ = RefreshAudioVoicesAsync(inst);
+        }
+        catch { }
+    }
+
+    private async System.Threading.Tasks.Task RefreshAudioVoicesAsync(List<Services.AudioCppService.Model> inst)
+    {
+        _ttsVoicesBusy = true;
+        try
+        {
+            var voices = Services.AudioCppService.Voices();
+            if (TtsVoiceList != null)
+            {
+                TtsVoiceList.Children.Clear();
+                TtsVoiceCombo?.Items.Clear();
+                foreach (var v in voices)
+                {
+                    TtsVoiceList.Children.Add(new TextBlock
+                    {
+                        Text = v, FontSize = 9, Foreground = (Brush)FindResource("Muted"),
+                    });
+                    TtsVoiceCombo?.Items.Add(v);
+                }
+                if (TtsVoiceCombo != null && TtsVoiceCombo.Items.Count > 0 && TtsVoiceCombo.SelectedIndex < 0)
+                    TtsVoiceCombo.SelectedIndex = 0;
+            }
+        }
+        catch { }
+        finally { _ttsVoicesBusy = false; }
+        await System.Threading.Tasks.Task.CompletedTask;
+    }
+
+    private async System.Threading.Tasks.Task DownloadAudioModel(Services.AudioCppService.Model model)
+    {
+        try
+        {
+            var (ok, msg) = await Services.AudioCppService.DownloadModelAsync(model, (done, total, name) =>
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (TtsDownloadText != null)
+                        TtsDownloadText.Text = name + " " + (total > 0 ? (int)(done * 100.0 / total) + "%" : "");
+                })));
+            Toast(msg);
+        }
+        catch (Exception ex) { Toast("下载失败：" + ex.Message); }
+        UpdateTtsCard();
+    }
+
+    private async void OnTtsDownloadRuntime(object sender, RoutedEventArgs e)
+    {
+        if (TtsRuntimeBtn != null) TtsRuntimeBtn.IsEnabled = false;
+        try
+        {
+            var (ok, msg) = await Services.AudioCppService.DownloadRuntimeAsync((done, total, name) =>
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (TtsRuntimeText != null)
+                        TtsRuntimeText.Text = name + " " + (total > 0 ? (int)(done * 100.0 / total) + "%" : "");
+                })));
+            Toast(msg);
+        }
+        catch (Exception ex) { Toast("安装失败：" + ex.Message); }
+        if (TtsRuntimeBtn != null) TtsRuntimeBtn.IsEnabled = true;
+        UpdateTtsCard();
+    }
+
+    private void UpdateTtsCardCodec()
     {
         try
         {
@@ -2382,6 +2564,23 @@ public partial class MainWindow : Window
         if (text.Length == 0) { Toast("先输入要合成的文字"); return; }
         var voice = (TtsVoiceCombo?.SelectedItem as string) ?? "";
         var speed = TtsSpeed();
+        if (TtsBackend == "audiocpp")
+        {
+            var inst = Services.AudioCppService.Installed();
+            var mid = inst.Count > 0 ? inst[0].Id : "";
+            if (TtsSynthStatus != null) TtsSynthStatus.Text = "合成中…（audio.cpp）";
+            var (aok, aerr, awav, asecs, ael) = await Services.AudioCppService.SynthesizeAsync(text, mid, voice);
+            if (!aok)
+            {
+                if (TtsSynthStatus != null) TtsSynthStatus.Text = "失败：" + aerr;
+                return;
+            }
+            var playWav = speed != "1.0" ? (ApplySpeed(awav, speed, out var spd) == null ? spd : awav) : awav;
+            if (TtsSynthStatus != null)
+                TtsSynthStatus.Text = $"完成：音频 {asecs:F1}s · 用时 {ael.TotalSeconds:F1}s";
+            PlayTtsWav(playWav, null);
+            return;
+        }
         if (TtsSynthStatus != null) TtsSynthStatus.Text = "合成中…（CPU 约 0.3 倍速）";
         if (TtsSynthBtn != null) TtsSynthBtn.IsEnabled = false;
         var (ok, err, wav, secs, elapsed) = await TtsService.SynthesizeAsync(text, voice);

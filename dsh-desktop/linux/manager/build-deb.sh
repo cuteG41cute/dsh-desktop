@@ -10,7 +10,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # dsh-desktop/linux/manag
 MANAGER_DIR="$HERE"
 LINUX_DIR="$(cd "$HERE/.." && pwd)"                    # dsh-desktop/linux
 DESKTOP_DIR="$(cd "$LINUX_DIR/.." && pwd)"             # dsh-desktop
-VERSION="3.1.2"
+VERSION="3.2.0"
 OUT="$HERE"
 
 while [ $# -gt 0 ]; do
@@ -53,6 +53,7 @@ cp -f "$MANAGER_DIR"/dsh_manager/icons/*.svg "$STAGE/usr/lib/dsh-manager/dsh_man
 cp -f "$MANAGER_DIR"/dsh_manager/icons/*.png "$STAGE/usr/lib/dsh-manager/dsh_manager/icons/" 2>/dev/null || true
 install -m 0644 "$MANAGER_DIR/dsh_manager/plugins.py"  "$STAGE/usr/lib/dsh-manager/dsh_manager/"
 install -m 0644 "$MANAGER_DIR/dsh_manager/tts.py"      "$STAGE/usr/lib/dsh-manager/dsh_manager/"
+install -m 0644 "$MANAGER_DIR/dsh_manager/audio_backend.py" "$STAGE/usr/lib/dsh-manager/dsh_manager/"
 # 随包带的 Linux 版 tts-server（编译自 codec.cpp，运行仍需用户提供模型）
 if [ -f "$LINUX_DIR/share/tts/tts-server" ]; then
   mkdir -p "$STAGE/usr/lib/dsh-manager/tts"
