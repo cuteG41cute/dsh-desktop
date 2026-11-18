@@ -105,7 +105,10 @@ public static class AudioCppService
         if (RuntimeReady) return (true, "已安装");
         Directory.CreateDirectory(BinDir);
         var tmp = Path.Combine(Path.GetTempPath(), Bundle);
-        var urls = new[] { Mirror + Gh + Bundle, Gh + Bundle };
+        // 优先用我们自编译的「带静态 eSpeak」发行包（官方包对没有 eSpeak，英文音色会失败），
+        // 拿不到再退回官方包。
+        var ours = "https://github.com/cuteG41cute/dsh-desktop/releases/download/audio-cpp-espeak-v1/audio-cpp-espeak-win-x64.zip";
+        var urls = new[] { ours, Mirror + Gh + Bundle, Gh + Bundle };
         var (ok, err) = await DownloadAsync(urls, tmp, 0, progress, Bundle, cancel);
         if (!ok) return (false, err);
         try

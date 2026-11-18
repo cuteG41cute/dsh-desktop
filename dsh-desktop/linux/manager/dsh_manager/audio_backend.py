@@ -319,7 +319,10 @@ def download_bundle(progress=None, cancel=None):
     import platform
     key = 'win32' if os.name == 'nt' else 'linux'
     name = BUNDLE[key]
-    urls = [MIRROR + GH + name, GH + name]
+    # 优先用我们自编译的「带静态 eSpeak」发行包（官方包没有 eSpeak，英文音色会失败）
+    ours = ('https://github.com/cuteG41cute/dsh-desktop/releases/download/'
+            'audio-cpp-espeak-v1/audio-cpp-espeak-linux-x64.tar.gz')
+    urls = [ours, MIRROR + GH + name, GH + name]
     p = paths()
     os.makedirs(p['bin'], exist_ok=True)
     tmp = os.path.join(tempfile.gettempdir(), name)
