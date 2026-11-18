@@ -825,7 +825,7 @@
                                     <TextBlock Text="上传干净人声，创建可用于合成的音色" FontSize="8" Margin="0,4,0,0"
                                                Foreground="{DynamicResource Subtle}" />
                                 </StackPanel>
-                                <Button Content="新建音色" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                <Button x:Name="NewVoiceBtn" Content="新建音色" HorizontalAlignment="Right" VerticalAlignment="Top"
                                         Style="{StaticResource BtnSecondary}" Height="28" Padding="12,0" FontSize="9"
                                         Click="OnTtsNewVoice" />
                             </Grid>

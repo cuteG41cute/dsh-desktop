@@ -2960,23 +2960,53 @@ public partial class MainWindow : Window
         catch (Exception ex) { Toast("复制失败：" + ex.Message); }
     }
 
+    private static void VoiceLog(string msg)
+    {
+        try
+        {
+            var dir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "dsh-manager");
+            System.IO.Directory.CreateDirectory(dir);
+            System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "tts-voice.log"),
+                DateTime.Now.ToString("HH:mm:ss") + " " + msg + Environment.NewLine);
+        }
+        catch { }
+    }
+
     private void OnTtsNewVoice(object sender, RoutedEventArgs e)
     {
+        VoiceLog("1 click backend=" + TtsBackend);
+        if (TtsBackend == "codec" && !TtsService.Running)
+        {
+            var answer = MessageBox.Show(
+                "codec.cpp 的服务还没启动。\n\ncodec 后端的音色是上传到服务里的，服务不运行就加不了。\n\n要现在启动服务吗？",
+                "服务没启动", MessageBoxButton.YesNo, MessageBoxImage.Information);
+            if (answer != MessageBoxResult.Yes) return;
+            var (ok, msg) = TtsService.Start();
+            Toast(msg);
+            if (!ok) return;
+            UpdateTtsCard();
+        }
         var name = PromptText("新建音色", "音色名字（会出现在音色列表与朗读设置里）", "");
+        VoiceLog("2 name=" + (name ?? "<null>"));
         if (string.IsNullOrWhiteSpace(name)) return;
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
             Title = "选择参考音频（5–20 秒干净人声，WAV/MP3 均可）",
             Filter = "音频文件 (*.wav;*.mp3;*.m4a;*.flac)|*.wav;*.mp3;*.m4a;*.flac|所有文件 (*.*)|*.*",
         };
-        if (dlg.ShowDialog() != true) return;
+        var picked = dlg.ShowDialog() == true;
+        VoiceLog("3 picked=" + picked + " file=" + dlg.FileName);
+        if (!picked) return;
         if (TtsBackend == "audiocpp")
         {
             var refText = PromptText("参考文本（可选但强烈建议）",
                 "这段参考音频里说的是什么？克隆类模型（Qwen3/CosyVoice/IndexTTS/OmniVoice）需要它", "");
+            VoiceLog("4 refText=" + (refText ?? "<null>"));
             AddAudioVoice(name.Trim(), dlg.FileName, refText ?? "");
             return;
         }
+        VoiceLog("4 codec upload");
         UploadVoice(name.Trim(), dlg.FileName);
     }
 

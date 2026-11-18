@@ -2837,6 +2837,21 @@ class ManagerWindow(Gtk.Window):
         self._toast('已复制接口地址')
 
     def on_tts_new_voice(self, *_):
+        if self._active_backend() == 'codec' and not tts_svc.running():
+            dlg0 = Gtk.MessageDialog(transient_for=self, modal=True,
+                                     message_type=Gtk.MessageType.INFO,
+                                     buttons=Gtk.ButtonsType.YES_NO,
+                                     text='codec.cpp 服务没启动')
+            dlg0.format_secondary_text('codec 后端的音色要上传到服务里，服务不运行就加不了。现在启动吗？')
+            resp0 = dlg0.run()
+            dlg0.destroy()
+            if resp0 != Gtk.ResponseType.YES:
+                return
+            ok, msg = tts_svc.start()
+            self._toast(msg)
+            if not ok:
+                return
+            self._refresh_tts()
         dialog = Gtk.Dialog(title='新建音色', transient_for=self, modal=True)
         dialog.add_buttons('取消', Gtk.ResponseType.CANCEL, '选择音频…', Gtk.ResponseType.OK)
         box = dialog.get_content_area()
