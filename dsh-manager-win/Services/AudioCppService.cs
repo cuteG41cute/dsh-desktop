@@ -425,6 +425,21 @@ public static class AudioCppService
         "zm_yunjian", "zm_yunxi", "zm_yunxia", "zm_yunyang",
     };
 
+    /// <summary>按音色前缀猜语言，给出对应语言的试听文本（英文音色念中文很怪）。</summary>
+    public static string PreviewText(string voice)
+    {
+        var v = (voice ?? "").ToLowerInvariant();
+        if (v.StartsWith("zf_") || v.StartsWith("zm_")) return "你好，这是这个音色的试听。";
+        if (v.StartsWith("jf_") || v.StartsWith("jm_")) return "こんにちは、この音色の試聴です。";
+        if (v.StartsWith("hf_") || v.StartsWith("hm_")) return "नमस्ते, यह इस आवाज़ का पूर्वावलोकन है।";
+        if (v.StartsWith("ef_") || v.StartsWith("em_")) return "Hola, esta es una prueba de esta voz.";
+        if (v.StartsWith("ff_")) return "Bonjour, voici un aperçu de cette voix.";
+        if (v.StartsWith("if_") || v.StartsWith("im_")) return "Ciao, questa è un'anteprima di questa voce.";
+        if (v.StartsWith("pf_") || v.StartsWith("pm_")) return "Olá, esta é uma prévia desta voz.";
+        // af_/am_/bf_/bm_ 以及自建音色（未知语言）都用英文
+        return "Hello, this is a preview of this voice.";
+    }
+
     public static List<string> PresetVoices(string modelId)
     {
         if (modelId == "kokoro") return new List<string>(KokoroVoices);

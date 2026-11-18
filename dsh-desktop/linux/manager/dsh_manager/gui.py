@@ -2522,9 +2522,9 @@ class ManagerWindow(Gtk.Window):
         def job():
             self._acpp_synth_busy = True
             mid = acpp.active_model()
-            ok, err, wav, secs, _el = acpp.synthesize('你好，这是这个音色的试听。', mid, name)
+            ok, err, wav, secs, _el = acpp.synthesize(acpp.preview_text(name), mid, name)
             if not ok and mid == 'kokoro' and name != 'zf_xiaobei':
-                ok, err, wav, secs, _el = acpp.synthesize('你好，这是这个音色的试听。',
+                ok, err, wav, secs, _el = acpp.synthesize(acpp.preview_text('zf_xiaobei'),
                                                            mid, 'zf_xiaobei')
                 if ok:
                     tts_svc.play(wav)

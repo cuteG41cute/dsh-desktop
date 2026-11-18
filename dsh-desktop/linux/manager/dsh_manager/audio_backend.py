@@ -190,6 +190,28 @@ KOKORO_VOICES = [
 ]
 
 
+
+PREVIEW_TEXTS = {
+    'zh': '你好，这是这个音色的试听。',
+    'en': 'Hello, this is a preview of this voice.',
+    'ja': 'こんにちは、この音色の試聴です。',
+    'hi': 'नमस्ते, यह इस आवाज़ का पूर्वावलोकन है।',
+    'es': 'Hola, esta es una prueba de esta voz.',
+    'fr': 'Bonjour, voici un aperçu de cette voix.',
+    'it': "Ciao, questa è un'anteprima di questa voce.",
+    'pt': 'Olá, esta é uma prévia desta voz.',
+}
+
+
+def preview_text(voice):
+    """按 Kokoro 音色前缀判断语言，返回对应语言的试听文本。"""
+    v = (voice or '').lower()
+    prefix = v[:3]
+    lang = {'zf_': 'zh', 'zm_': 'zh', 'jf_': 'ja', 'jm_': 'ja',
+            'hf_': 'hi', 'hm_': 'hi', 'ef_': 'es', 'em_': 'es',
+            'ff_': 'fr', 'if_': 'it', 'im_': 'it', 'pf_': 'pt', 'pm_': 'pt'}.get(prefix, 'en')
+    return PREVIEW_TEXTS[lang]
+
 def preset_voices(mid):
     return list(KOKORO_VOICES) if mid == 'kokoro' else []
 

@@ -2452,14 +2452,15 @@ public partial class MainWindow : Window
             var mid = ActiveAudioModel(Services.AudioCppService.Installed());
             listen.IsEnabled = false;
             _ttsSynthBusy = true;
+            var preview = Services.AudioCppService.PreviewText(voice);
             var (ok, err, wav, secs, _el) = await Services.AudioCppService.SynthesizeAsync(
-                "你好，这是这个音色的试听。", mid, voice);
+                preview, mid, voice);
             if (!ok && mid == "kokoro" && voice != "zf_xiaobei")
             {
                 // 英文 preset / 克隆音色在 Kokoro 上需要 eSpeak-ng，当前运行时没内置：
                 // 用中文音色兜底试听，并说明原因，而不是直接报错。
                 var r = await Services.AudioCppService.SynthesizeAsync(
-                    "你好，这是这个音色的试听。", mid, "zf_xiaobei");
+                    Services.AudioCppService.PreviewText("zf_xiaobei"), mid, "zf_xiaobei");
                 if (r.Ok)
                 {
                     listen.IsEnabled = true;
