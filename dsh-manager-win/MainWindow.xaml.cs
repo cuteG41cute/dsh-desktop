@@ -3163,14 +3163,39 @@ public partial class MainWindow : Window
     }
 
     /// <summary>极简输入对话框（新建音色 / 改名用）。</summary>
+    private Brush SafeBrush(string key, string fallback = "CardSolid")
+    {
+        try
+        {
+            if (TryFindResource(key) is Brush b) return b;
+            if (TryFindResource(fallback) is Brush f) return f;
+        }
+        catch { }
+        return Brushes.Transparent;
+    }
+
     private string PromptText(string title, string label, string initial)
+    {
+        try
+        {
+            return PromptTextCore(title, label, initial);
+        }
+        catch (Exception ex)
+        {
+            try { App.DebugLog("prompt-text: " + ex); } catch { }
+            Toast("对话框打开失败：" + ex.Message);
+            return null;
+        }
+    }
+
+    private string PromptTextCore(string title, string label, string initial)
     {
         var win = new Window
         {
             Title = title, Width = 400, SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = this,
             ResizeMode = ResizeMode.NoResize, WindowStyle = WindowStyle.ToolWindow,
-            Background = (Brush)FindResource("WindowBackground"),
+            Background = SafeBrush("WindowBackground", "CardSolid"),
         };
         var root = new StackPanel { Margin = new Thickness(18) };
         root.Children.Add(new TextBlock
@@ -3200,7 +3225,7 @@ public partial class MainWindow : Window
             Title = title, Width = 420, SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = this,
             ResizeMode = ResizeMode.NoResize, WindowStyle = WindowStyle.ToolWindow,
-            Background = (Brush)FindResource("WindowBackground"),
+            Background = SafeBrush("WindowBackground", "CardSolid"),
         };
         var root = new StackPanel { Margin = new Thickness(18) };
         root.Children.Add(new TextBlock

@@ -571,6 +571,8 @@ public partial class App : Application
         }
     }
 
+    public static void DebugLog(string text) => Log(text);
+
     private static void Log(string text)
     {
         try
