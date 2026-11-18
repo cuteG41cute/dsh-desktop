@@ -833,13 +833,16 @@
                             <Border Background="{DynamicResource AccentSoft}" CornerRadius="8" Padding="10,7" Margin="0,8,0,0">
                                 <StackPanel Orientation="Horizontal">
                                     <Ellipse Width="6" Height="6" Fill="{DynamicResource Accent}" VerticalAlignment="Center" />
-                                    <TextBlock Text="Qwen3-TTS 没有内置音色，请上传一段 5–20 秒的干净人声作为参考。"
+                                    <TextBlock Text="没有内置音色时，请上传一段 5–20 秒的干净人声作为参考；Kokoro 等模型可直接选下面的预设音色。"
                                                FontSize="8.2" Margin="7,0,0,0" VerticalAlignment="Center"
                                                Foreground="{DynamicResource Muted}" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Border>
 
-                            <StackPanel x:Name="TtsVoiceList" Margin="0,8,0,0" />
+                            <ScrollViewer MaxHeight="350" VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled" Margin="0,8,0,0">
+                                <StackPanel x:Name="TtsVoiceList" />
+                            </ScrollViewer>
 
                             <Button x:Name="TtsUploadZone" Margin="0,8,0,0" Height="46" Click="OnTtsNewVoice"
                                     Background="Transparent" Cursor="Hand">

@@ -2280,9 +2280,18 @@ class ManagerWindow(Gtk.Window):
         vhead.pack_start(self._button('', '新建音色', 'btn', 'btn-secondary',
                                       handler=self.on_tts_new_voice), False, False, 0)
         voices.pack_start(vhead, False, False, 0)
+        self.lbl_tts_voice_notice = self._label(
+            '没有内置音色时，请上传一段 5–20 秒的干净人声作为参考；Kokoro 等模型可直接选预设音色。',
+            'field-hint')
+        self.lbl_tts_voice_notice.set_margin_top(8)
+        voices.pack_start(self.lbl_tts_voice_notice, False, False, 0)
         self.tts_voice_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.tts_voice_box.set_margin_top(10)
-        voices.pack_start(self.tts_voice_box, False, False, 0)
+        voice_scroll = Gtk.ScrolledWindow()
+        voice_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        voice_scroll.set_size_request(-1, 320)
+        voice_scroll.add(self.tts_voice_box)
+        voices.pack_start(voice_scroll, False, False, 0)
         page.pack_start(voices, False, False, 0)
 
         # ---- 朗读接入卡 ----
@@ -2451,20 +2460,121 @@ class ManagerWindow(Gtk.Window):
             box.remove(child)
         combo = self.tts_voice_combo
         combo.remove_all()
-        vs = acpp.voices() if ok else []
-        if models:
-            for pv in acpp.preset_voices(models[0]):
-                if pv not in vs:
-                    vs.insert(0, pv)
-        self.lbl_tts_voices_title.set_text('音色 · %d' % len(vs))
-        for v in vs:
-            combo.append_text(v)
-        if combo.get_active() < 0 and vs:
+        user = acpp.voices() if ok else []
+        mid = models[0] if models else acpp.active_model()
+        presets = [v for v in acpp.preset_voices(mid) if v not in user]
+        allv = user + presets
+        self.lbl_tts_voices_title.set_text('参考音色 · %d' % len(allv))
+        for name in user:
+            box.pack_start(self._audio_voice_row(name, '参考音频', False), False, False, 0)
+        for name in presets:
+            box.pack_start(self._audio_voice_row(name, '内置预设音色', True), False, False, 0)
+        for name in allv:
+            combo.append_text(name)
+        if combo.get_active() < 0 and allv:
             combo.set_active(0)
-        for mid in models:
-            box.pack_start(self._label('模型：%s' % mid, 'card-sub'), False, False, 0)
-        if not vs and not models:
-            box.pack_start(self._label('（后端未就绪）', 'card-sub'), False, False, 0)
+        box.show_all()
+        if not allv:
+            box.pack_start(self._label('（后端未就绪或没有音色）', 'card-sub'), False, False, 0)
+            box.show_all()
+
+    def _audio_voice_row(self, name, subtitle, preset):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        row.set_size_request(-1, 44)
+        meta = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        meta.pack_start(self._label(name, 'card-sub'), False, False, 0)
+        meta.pack_start(self._label(subtitle, 'field-hint'), False, False, 0)
+        row.pack_start(meta, True, True, 0)
+        row.pack_start(self._button('', '试听', 'btn', 'btn-secondary',
+                                    handler=lambda _b, n=name: self.on_tts_preview_audio(n)),
+                       False, False, 0)
+        if not preset:
+            row.pack_start(self._button('', '改名', 'btn', 'btn-secondary',
+                                        handler=lambda _b, n=name: self.on_tts_rename_audio_voice(n)),
+                           False, False, 0)
+            row.pack_start(self._button('', '删除', 'btn', 'btn-secondary',
+                                        handler=lambda _b, n=name: self.on_tts_delete_audio_voice(n)),
+                           False, False, 0)
+        return row
+
+    def on_tts_preview_audio(self, name):
+        def job():
+            mid = acpp.active_model()
+            ok, err, wav, secs, _el = acpp.synthesize('你好，这是这个音色的试听。', mid, name)
+            if ok:
+                okp, pmsg = tts_svc.play(wav)
+                GLib.idle_add(lambda: (self._toast('试听 %s' % name if okp else pmsg), False)[1])
+            else:
+                GLib.idle_add(lambda: (self._toast('试听失败：' + err), False)[1])
+        self._tts_bg(job)
+
+    def on_tts_rename_audio_voice(self, name):
+        dlg = Gtk.Dialog(title='音色改名', transient_for=self, modal=True)
+        dlg.add_buttons('取消', Gtk.ResponseType.CANCEL, '确定', Gtk.ResponseType.OK)
+        entry = Gtk.Entry()
+        entry.set_text(name)
+        dlg.get_content_area().pack_start(Gtk.Label(label='新的音色名字', xalign=0), False, False, 4)
+        dlg.get_content_area().pack_start(entry, False, False, 0)
+        dlg.show_all()
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return
+        new_name = entry.get_text().strip()
+        dlg.destroy()
+        if not new_name or new_name == name:
+            return
+        import os
+        vdir = acpp.paths()['voices']
+        try:
+            src = os.path.join(vdir, name + '.wav')
+            dst = os.path.join(vdir, new_name + '.wav')
+            if os.path.isfile(dst):
+                self._toast('已经有同名音色')
+                return
+            if os.path.isfile(src):
+                os.rename(src, dst)
+            prompt = os.path.join(vdir, 'prompt_text')
+            if os.path.isfile(prompt):
+                out = []
+                for line in open(prompt, encoding='utf-8'):
+                    line = line.rstrip('\n')
+                    if not line.strip():
+                        continue
+                    parts = line.split('|')
+                    if parts[0].strip().lower() == name.lower():
+                        out.append(new_name + '|' + '|'.join(parts[1:]))
+                    else:
+                        out.append(line)
+                with open(prompt, 'w', encoding='utf-8') as fh:
+                    fh.write('\n'.join(out) + '\n')
+            self._toast('已改名：%s → %s' % (name, new_name))
+            if acpp.running():
+                acpp.stop()
+                acpp.start([acpp.active_model()])
+        except OSError as exc:
+            self._toast('改名失败：%s' % exc)
+        self._refresh_tts()
+
+    def on_tts_delete_audio_voice(self, name):
+        import os
+        vdir = acpp.paths()['voices']
+        wav = os.path.join(vdir, name + '.wav')
+        try:
+            if os.path.isfile(wav):
+                os.remove(wav)
+            prompt = os.path.join(vdir, 'prompt_text')
+            if os.path.isfile(prompt):
+                keep = [l.rstrip('\n') for l in open(prompt, encoding='utf-8')
+                        if l.strip() and l.split('|')[0].strip().lower() != name.lower()]
+                with open(prompt, 'w', encoding='utf-8') as fh:
+                    fh.write('\n'.join(keep) + ('\n' if keep else ''))
+            self._toast('已删除音色：%s' % name)
+            if acpp.running():
+                acpp.stop()
+                acpp.start([acpp.active_model()])
+        except OSError as exc:
+            self._toast('删除失败：%s' % exc)
+        self._refresh_tts()
 
     def _fill_tts_voices(self):
         ok, err, voices = tts_svc.list_voices()

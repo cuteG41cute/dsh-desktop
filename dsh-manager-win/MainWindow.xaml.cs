@@ -2302,32 +2302,204 @@ public partial class MainWindow : Window
         _ttsVoicesBusy = true;
         try
         {
-            var voices = Services.AudioCppService.Voices();
             var act = ActiveAudioModel(inst);
+            var userVoices = Services.AudioCppService.Voices();
             var presets = Services.AudioCppService.PresetVoices(act);
-            var all = new List<string>();
-            all.AddRange(presets);
-            foreach (var v in voices) if (!all.Contains(v)) all.Add(v);
-            voices = all;
+            var selected = (TtsVoiceCombo?.SelectedItem as string) ?? "";
+
             if (TtsVoiceList != null)
             {
                 TtsVoiceList.Children.Clear();
                 TtsVoiceCombo?.Items.Clear();
-                foreach (var v in voices)
+
+                foreach (var v in userVoices)
                 {
-                    TtsVoiceList.Children.Add(new TextBlock
-                    {
-                        Text = v, FontSize = 9, Foreground = (Brush)FindResource("Muted"),
-                    });
+                    TtsVoiceList.Children.Add(BuildAudioVoiceRow(v, "参考音频", false, v == selected));
                     TtsVoiceCombo?.Items.Add(v);
                 }
-                if (TtsVoiceCombo != null && TtsVoiceCombo.Items.Count > 0 && TtsVoiceCombo.SelectedIndex < 0)
+                foreach (var pv in presets)
+                {
+                    if (userVoices.Contains(pv)) continue;
+                    TtsVoiceList.Children.Add(BuildAudioVoiceRow(pv, "内置预设音色", true, pv == selected));
+                    TtsVoiceCombo?.Items.Add(pv);
+                }
+                if (TtsVoiceCombo != null && TtsVoiceCombo.Items.Count > 0 && selected == "")
+                {
                     TtsVoiceCombo.SelectedIndex = 0;
+                }
+                if (TtsVoiceCount != null)
+                    TtsVoiceCount.Text = (userVoices.Count + presets.Count).ToString();
             }
         }
         catch { }
         finally { _ttsVoicesBusy = false; }
         await System.Threading.Tasks.Task.CompletedTask;
+    }
+
+    private Border BuildAudioVoiceRow(string name, string subtitle, bool preset, bool isDefault)
+    {
+        var border = new Border
+        {
+            CornerRadius = new CornerRadius(9),
+            BorderThickness = new Thickness(1),
+            BorderBrush = (Brush)FindResource("InnerBorder"),
+            Background = (Brush)FindResource("Card"),
+            Margin = new Thickness(0, 0, 0, 7),
+            Padding = new Thickness(10, 7, 10, 7),
+        };
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var avatar = new Border
+        {
+            Width = 28, Height = 28, CornerRadius = new CornerRadius(8),
+            Background = (Brush)FindResource("AccentSoft"), VerticalAlignment = VerticalAlignment.Center,
+        };
+        avatar.Child = new System.Windows.Shapes.Path
+        {
+            Data = (Geometry)FindResource("Icon.mic"),
+            Stroke = (Brush)FindResource("Accent"),
+            StrokeThickness = 1.5, StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round,
+            Width = 14, Height = 14, Stretch = Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var meta = new StackPanel { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
+        nameRow.Children.Add(new TextBlock
+        {
+            Text = name, FontSize = 10.5, FontWeight = FontWeights.SemiBold,
+            Foreground = (Brush)FindResource("Text"),
+        });
+        if (isDefault)
+        {
+            var tag = new Border
+            {
+                Background = (Brush)FindResource("AccentSoft"), CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(5, 0, 5, 0), Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            tag.Child = new TextBlock
+            {
+                Text = "默认", FontSize = 7.5, Foreground = (Brush)FindResource("Accent"),
+            };
+            nameRow.Children.Add(tag);
+        }
+        meta.Children.Add(nameRow);
+        meta.Children.Add(new TextBlock
+        {
+            Text = subtitle, FontSize = 8, Margin = new Thickness(0, 2, 0, 0),
+            Foreground = (Brush)FindResource("Subtle"),
+        });
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        var listen = new Button
+        {
+            Style = (Style)FindResource("BtnCompact"), Height = 27, Padding = new Thickness(10, 0, 10, 0),
+            FontSize = 9, Content = "试听", Margin = new Thickness(0, 0, 6, 0),
+        };
+        listen.Click += async (_, _) =>
+        {
+            var voice = name;
+            var mid = ActiveAudioModel(Services.AudioCppService.Installed());
+            listen.IsEnabled = false;
+            var (ok, err, wav, secs, _el) = await Services.AudioCppService.SynthesizeAsync(
+                "你好，这是这个音色的试听。", mid, voice);
+            listen.IsEnabled = true;
+            if (ok) PlayTtsWav(wav, null);
+            else Toast("试听失败：" + err);
+        };
+        actions.Children.Add(listen);
+
+        if (!preset)
+        {
+            var rename = new Button
+            {
+                Style = (Style)FindResource("BtnCompact"), Height = 27, Padding = new Thickness(9, 0, 9, 0),
+                FontSize = 9, Content = "改名", Margin = new Thickness(0, 0, 6, 0),
+            };
+            rename.Click += (_, _) => RenameAudioVoice(name);
+            var del = new Button
+            {
+                Style = (Style)FindResource("BtnCompact"), Height = 27, Padding = new Thickness(9, 0, 9, 0),
+                FontSize = 9, Content = "删除",
+            };
+            del.Click += (_, _) => DeleteAudioVoice(name);
+            actions.Children.Add(rename);
+            actions.Children.Add(del);
+        }
+
+        Grid.SetColumn(avatar, 0);
+        Grid.SetColumn(meta, 1);
+        Grid.SetColumn(actions, 2);
+        grid.Children.Add(avatar);
+        grid.Children.Add(meta);
+        grid.Children.Add(actions);
+        border.Child = grid;
+        return border;
+    }
+
+    private void RenameAudioVoice(string name)
+    {
+        var newName = PromptText("音色改名", "新的名字（重命名 wav 与参考文本记录）", name);
+        if (string.IsNullOrWhiteSpace(newName) || newName.Trim() == name) return;
+        try
+        {
+            var dir = Services.AudioCppService.VoicesDir;
+            var src = System.IO.Path.Combine(dir, name + ".wav");
+            var dst = System.IO.Path.Combine(dir, newName.Trim() + ".wav");
+            if (System.IO.File.Exists(dst)) { Toast("已经有同名音色"); return; }
+            if (System.IO.File.Exists(src)) System.IO.File.Move(src, dst);
+            var prompt = System.IO.Path.Combine(dir, "prompt_text");
+            if (System.IO.File.Exists(prompt))
+            {
+                var lines = System.IO.File.ReadAllLines(prompt);
+                for (var i = 0; i < lines.Length; i++)
+                {
+                    var parts = lines[i].Split('|');
+                    if (parts[0].Trim().Equals(name, StringComparison.OrdinalIgnoreCase))
+                        lines[i] = newName.Trim() + "|" + string.Join("|", parts.Skip(1));
+                }
+                System.IO.File.WriteAllLines(prompt, lines, new System.Text.UTF8Encoding(false));
+            }
+            Toast("已改名：" + name + " → " + newName.Trim());
+            if (Services.AudioCppService.Running)
+            {
+                Services.AudioCppService.Stop();
+                Services.AudioCppService.Start(new[] { ActiveAudioModel(Services.AudioCppService.Installed()) });
+            }
+            UpdateTtsCard();
+        }
+        catch (Exception ex) { Toast("改名失败：" + ex.Message); }
+    }
+
+    private void DeleteAudioVoice(string name)
+    {
+        try
+        {
+            var dir = Services.AudioCppService.VoicesDir;
+            var wav = System.IO.Path.Combine(dir, name + ".wav");
+            if (System.IO.File.Exists(wav)) System.IO.File.Delete(wav);
+            var prompt = System.IO.Path.Combine(dir, "prompt_text");
+            if (System.IO.File.Exists(prompt))
+            {
+                var lines = System.IO.File.ReadAllLines(prompt).Where(l => !l.Split('|')[0].Trim()
+                    .Equals(name, StringComparison.OrdinalIgnoreCase));
+                System.IO.File.WriteAllLines(prompt, lines, new System.Text.UTF8Encoding(false));
+            }
+            Toast("已删除音色：" + name);
+            if (Services.AudioCppService.Running)
+            {
+                Services.AudioCppService.Stop();
+                Services.AudioCppService.Start(new[] { ActiveAudioModel(Services.AudioCppService.Installed()) });
+            }
+            UpdateTtsCard();
+        }
+        catch (Exception ex) { Toast("删除失败：" + ex.Message); }
     }
 
     private async System.Threading.Tasks.Task DownloadAudioModel(Services.AudioCppService.Model model)
