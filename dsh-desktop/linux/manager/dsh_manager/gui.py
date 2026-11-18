@@ -2244,7 +2244,7 @@ class ManagerWindow(Gtk.Window):
         self.tts_backend.append('audiocpp', 'audio.cpp（多模型，推荐）')
         self.tts_backend.append('codec', 'codec.cpp（旧，Qwen3-TTS 专用）')
         self.tts_backend.set_active_id('audiocpp')
-        self.tts_backend.connect('changed', lambda *_: self._refresh_tts())
+        self.tts_backend.connect('changed', self.on_tts_backend_changed)
         backend_row.pack_start(self.tts_backend, False, False, 0)
         self.lbl_tts_runtime = self._label('', 'field-hint')
         backend_row.pack_start(self.lbl_tts_runtime, True, True, 0)
@@ -2263,6 +2263,9 @@ class ManagerWindow(Gtk.Window):
                                         handler=self.on_tts_open_dir), False, False, 0)
         actions.pack_start(self._button('', '查看日志', 'btn', 'btn-secondary',
                                         handler=self.on_tts_show_log), False, False, 0)
+        self.btn_tts_webui = self._button('', '打开管理页', 'btn', 'btn-secondary',
+                                          handler=self.on_tts_open_webui)
+        actions.pack_start(self.btn_tts_webui, False, False, 0)
         card.pack_start(actions, False, False, 0)
         page.pack_start(card, False, False, 0)
 
@@ -2352,6 +2355,27 @@ class ManagerWindow(Gtk.Window):
         except Exception:
             return 'audiocpp'
 
+    def on_tts_backend_changed(self, *_):
+        now = self._active_backend()
+        prev = getattr(self, '_last_backend', None)
+        if prev and prev != now:
+            if now == 'audiocpp' and tts_svc.running():
+                tts_svc.stop()
+                self._toast('已停止 codec.cpp 服务')
+            elif now == 'codec' and acpp.running():
+                acpp.stop()
+                self._toast('已停止 audio.cpp 服务')
+        self._last_backend = now
+        self._refresh_tts()
+
+    def on_tts_open_webui(self, *_):
+        import subprocess
+        if not acpp.running():
+            self._toast('audio.cpp 服务没在运行，先点启动')
+            return
+        subprocess.Popen(['xdg-open', 'http://127.0.0.1:%d/' % acpp.PORT],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     def _refresh_tts(self):
         try:
             backend = self._active_backend()
@@ -2382,6 +2406,8 @@ class ManagerWindow(Gtk.Window):
             + ' ｜ audio.cpp 8092：' + ('运行中' if acpp.running() else '已停止')
             + ' · codec.cpp 8098：' + ('运行中' if tts_svc.running() else '已停止'))
         self.btn_tts_runtime.set_visible(not ok_bin)
+        if hasattr(self, 'btn_tts_webui'):
+            self.btn_tts_webui.set_visible(running)
         self.tts_dl_box.set_visible(False)
         # 模型列表
         for ch in list(self.tts_model_box.get_children()):

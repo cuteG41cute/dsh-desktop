@@ -2070,17 +2070,51 @@ public partial class MainWindow : Window
             if ((string)item.Tag == Services.AppSettings.TtsBackend) { TtsBackendCombo.SelectedItem = item; break; }
         }
         if (TtsBackendCombo.SelectedIndex < 0) TtsBackendCombo.SelectedIndex = 0;
+        _lastTtsBackend = TtsBackend;
     }
+
+    private string _lastTtsBackend;
 
     private void OnTtsBackendChanged(object sender, SelectionChangedEventArgs e)
     {
         try
         {
-            Services.AppSettings.TtsBackend = TtsBackend;
+            var now = TtsBackend;
+            if (_lastTtsBackend != null && _lastTtsBackend != now)
+            {
+                // 切后端就停掉另一个，避免两个服务同时跑、端口/模型指错
+                if (now == "audiocpp" && Services.TtsService.Running)
+                {
+                    Services.TtsService.Stop();
+                    Toast("已停止 codec.cpp 服务");
+                }
+                else if (now == "codec" && Services.AudioCppService.Running)
+                {
+                    Services.AudioCppService.Stop();
+                    Toast("已停止 audio.cpp 服务");
+                }
+            }
+            _lastTtsBackend = now;
+            Services.AppSettings.TtsBackend = now;
             Services.AppSettings.Save();
         }
         catch { }
         UpdateTtsCard();
+    }
+
+    private void OnTtsOpenWebUi(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!Services.AudioCppService.Running)
+            {
+                Toast("audio.cpp 服务没在运行，先点启动");
+                return;
+            }
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "http://127.0.0.1:" + Services.AudioCppService.Port + "/") { UseShellExecute = true });
+        }
+        catch (Exception ex) { Toast("打开失败：" + ex.Message); }
     }
 
     private void UpdateTtsCard()
@@ -2253,6 +2287,7 @@ public partial class MainWindow : Window
                 }
             }
             if (TtsDownloadBox != null) TtsDownloadBox.Visibility = Visibility.Collapsed;
+            if (TtsWebUiBtn != null) TtsWebUiBtn.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
             if (TtsEndpointBox != null)
                 TtsEndpointBox.Text = "http://127.0.0.1:" + Services.AudioCppService.Port + "/v1";
             if (TtsModelBox != null)
@@ -2666,6 +2701,7 @@ public partial class MainWindow : Window
                     + " · codec.cpp 8098：" + (Services.TtsService.Running ? "运行中" : "已停止");
             if (TtsDownloadBox != null)
                 TtsDownloadBox.Visibility = models ? Visibility.Collapsed : Visibility.Visible;
+            if (TtsWebUiBtn != null) TtsWebUiBtn.Visibility = Visibility.Collapsed;
 
             // codec.cpp 只吃 Qwen3-TTS 的 codec + backbone 一对 GGUF，
             // 上面的「模型库」是 audio.cpp 的后端，这里换成语义正确的说明。

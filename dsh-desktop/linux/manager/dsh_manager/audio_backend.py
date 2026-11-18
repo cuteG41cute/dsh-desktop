@@ -425,7 +425,7 @@ def write_config(active_ids):
         'threads': max(2, (os.cpu_count() or 4) - 1),
         'lazy_load': True,
         'max_loaded_models': 1,
-        'ui': False,
+        'ui': True,   # 内嵌 WebUI：管理页 http://127.0.0.1:8092/
         'voice_dir': p['voices'],
         'models': models,
     }

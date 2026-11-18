@@ -351,7 +351,7 @@ public static class AudioCppService
             ["threads"] = Math.Max(2, Environment.ProcessorCount - 1),
             ["lazy_load"] = true,
             ["max_loaded_models"] = 1,
-            ["ui"] = false,
+            ["ui"] = true,   // 内嵌 WebUI：管理页 http://127.0.0.1:8092/
             ["voice_dir"] = VoicesDir,
             ["models"] = list,
         };

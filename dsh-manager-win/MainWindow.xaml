@@ -757,6 +757,9 @@
                                         Padding="10,0" FontSize="8.5" Click="OnTtsFolder" />
                                 <Button Content="查看日志" Style="{StaticResource BtnCompact}" Height="26"
                                         Padding="10,0" FontSize="8.5" Margin="8,0,0,0" Click="OnTtsLog" />
+                                <Button x:Name="TtsWebUiBtn" Content="打开管理页" Style="{StaticResource BtnCompact}" Height="26"
+                                        Padding="10,0" FontSize="8.5" Margin="8,0,0,0" Click="OnTtsOpenWebUi"
+                                        Visibility="Collapsed" />
                             </StackPanel>
                         </Grid>
                     </Border>
