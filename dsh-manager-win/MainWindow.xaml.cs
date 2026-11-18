@@ -3006,6 +3006,13 @@ public partial class MainWindow : Window
 
     private async void UploadVoice(string name, string path)
     {
+        if (!TtsService.Running)
+        {
+            var tip = "codec.cpp 服务没在运行：先点「启动服务」，或把「推理后端」切到 audio.cpp";
+            Toast(tip);
+            if (TtsSynthStatus != null) TtsSynthStatus.Text = tip;
+            return;
+        }
         if (TtsSynthStatus != null) TtsSynthStatus.Text = "正在准备上传…";
         var wav = path;
         if (!path.ToLowerInvariant().EndsWith(".wav"))

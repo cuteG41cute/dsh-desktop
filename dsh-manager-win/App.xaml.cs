@@ -43,6 +43,19 @@ public partial class App : Application
             MessageBox.Show(ex.Exception.Message, "DeepSeek Harness 管理器");
         };
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => Log("domain: " + ex.ExceptionObject);
+        // 调试专用：--tts-addvoice <名字> <wav路径> 测试音色写入
+        var ai = Array.IndexOf(e.Args, "--tts-addvoice");
+        if (ai >= 0 && ai + 2 < e.Args.Length)
+        {
+            AttachConsole(-1);
+            var vname = e.Args[ai + 1];
+            var vwav = e.Args[ai + 2];
+            var resv = Services.AudioCppService.AddVoice(vname, vwav, "测试参考文本");
+            Console.WriteLine("ok=" + resv.Ok + " msg=" + resv.Message);
+            Shutdown(resv.Ok ? 0 : 1);
+            return;
+        }
+
         // 调试专用：--tts-download <模型id> 直接用管理器自己的下载器拉模型，进度打到控制台
         var dlArgs = e.Args;
         var di = Array.IndexOf(dlArgs, "--tts-download");
