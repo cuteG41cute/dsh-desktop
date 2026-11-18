@@ -28,6 +28,9 @@ public partial class App : Application
 
     public bool Quitting => _quitting;
 
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern bool AttachConsole(int pid);
+
     private static string LogDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "dsh-manager");
 
@@ -40,6 +43,34 @@ public partial class App : Application
             MessageBox.Show(ex.Exception.Message, "DeepSeek Harness 管理器");
         };
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => Log("domain: " + ex.ExceptionObject);
+        // 调试专用：--tts-download <模型id> 直接用管理器自己的下载器拉模型，进度打到控制台
+        var dlArgs = e.Args;
+        var di = Array.IndexOf(dlArgs, "--tts-download");
+        if (di >= 0 && di + 1 < dlArgs.Length)
+        {
+            AttachConsole(-1);
+            var id = dlArgs[di + 1];
+            var model = Array.Find(Services.AudioCppService.Models, m => m.Id == id);
+            if (model == null)
+            {
+                Console.WriteLine("unknown model: " + id);
+                Console.WriteLine("available: " + string.Join(",", Array.ConvertAll(Services.AudioCppService.Models, m => m.Id)));
+                Shutdown(2);
+                return;
+            }
+            Console.WriteLine("downloading " + model.Id + " -> " + Services.AudioCppService.ModelPath(model));
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            // 注意：不能在 UI 线程上直接 .GetAwaiter().GetResult()，否则第一个 await
+            // 之后的续体会排到 Dispatcher 上而 Dispatcher 还没开始跑 → 死锁（表现为「下载卡在 0%」）。
+            var res = System.Threading.Tasks.Task.Run(() => Services.AudioCppService.DownloadModelAsync(model, (done, total, name) =>
+            {
+                var pct = total > 0 ? (int)(done * 100.0 / total) : 0;
+                Console.WriteLine($"{sw.Elapsed.TotalSeconds,7:F1}s  {done / 1048576,6} MB / {total / 1048576,6} MB  {pct,3}%");
+            })).GetAwaiter().GetResult();
+            Console.WriteLine("ok=" + res.Item1 + " msg=" + res.Item2);
+            Shutdown(res.Item1 ? 0 : 1);
+            return;
+        }
         try
         {
             // ---- 单实例：已经有管理器在跑就把它提到前台，然后退出本次 ----

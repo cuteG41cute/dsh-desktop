@@ -33,28 +33,28 @@ public static class AudioCppService
     {
         new("kokoro", "Kokoro-82M（快、54 音色）", "kokoro_tts",
             "kokoro-82m-q8_0.gguf", "Kokoro-82M-GGUF/kokoro-82m-q8_0.gguf",
-            189_644_800, "af_heart"),
+            189_550_976, "af_heart"),
         new("moss-nano", "MOSS-TTS-Nano 100M（极小、快）", "moss_tts_nano",
             "moss-tts-nano-100m-q8_0.gguf", "MOSS-TTS-Nano-100M-GGUF/moss-tts-nano-100m-q8_0.gguf",
-            192_937_984, ""),
+            193_343_328, ""),
         new("omnivoice", "OmniVoice（646 语言、克隆/设计）", "omnivoice",
             "omnivoice-q8_0.gguf", "OmniVoice-GGUF/omnivoice-q8_0.gguf",
-            1_350_582_272, ""),
+            1_350_296_096, ""),
         new("irodori-anime", "Irodori-TTS v4.1 动漫（日系）", "irodori_tts",
             "irodori-tts-v4.1-anime-q8_0.gguf", "Irodori-TTS-v4-Small-GGUF/irodori-tts-v4.1-anime-q8_0.gguf",
-            1_112_584_192, ""),
+            1_112_550_112, ""),
         new("qwen3-tts", "Qwen3-TTS 0.6B（可克隆音色）", "qwen3_tts",
             "qwen3-tts-0.6b-base-q8_0.gguf", "Qwen3-TTS-12Hz-0.6B-Base-GGUF/qwen3-tts-12hz-0.6b-base-q8_0.gguf",
-            1_991_243_776, ""),
+            1_991_217_728, ""),
         new("cosyvoice3", "CosyVoice3（中文克隆/设计）", "cosyvoice3",
             "cosyvoice3-q8_0.gguf", "CosyVoice3-GGUF/cosyvoice3-q8_0.gguf",
-            2_257_534_976, ""),
+            2_257_658_336, ""),
         new("chatterbox", "Chatterbox（英文表现力强）", "chatterbox",
             "chatterbox-q8_0.gguf", "Chatterbox-GGUF/chatterbox-q8_0.gguf",
-            2_088_960_000, ""),
+            2_088_399_204, ""),
         new("index-tts2", "IndexTTS2.5（中文克隆最强档，3.3 GB）", "index_tts2",
             "index-tts2_5-q8_0.gguf", "IndexTTS2.5-GGUF/index-tts2_5-q8_0.gguf",
-            3_503_462_400, ""),
+            3_502_960_096, ""),
     };
 
     public static string Root => Path.Combine(TtsService.Root, "..", "audiocpp");
@@ -84,12 +84,16 @@ public static class AudioCppService
 
     public static bool Running => TtsService.PortOpen(Port);
 
-    private static HttpClient Client()
+    private static HttpClient Client(bool useProxy = false)
     {
-        var c = new HttpClient(ProxyConfig.Configure(new SocketsHttpHandler()))
-        {
-            Timeout = TimeSpan.FromMinutes(60),
-        };
+        // 这些下载目标（ModelScope / gh-proxy）在国内直连就能通；
+        // 走用户残留的系统代理反而会卡死（请求发出去一个字节都不回）。
+        var c = useProxy ? new HttpClient(ProxyConfig.Configure(new SocketsHttpHandler()))
+                         : new HttpClient();
+        c.Timeout = TimeSpan.FromMinutes(60);
+        // ModelScope 的 CDN 会对没有 User-Agent 的请求直接回 403（curl 有 UA 所以能下）。
+        c.DefaultRequestHeaders.UserAgent.ParseAdd("dsh-manager/3.2.3");
+        c.DefaultRequestHeaders.Accept.ParseAdd("*/*");
         return c;
     }
 
@@ -101,7 +105,7 @@ public static class AudioCppService
         Directory.CreateDirectory(BinDir);
         var tmp = Path.Combine(Path.GetTempPath(), Bundle);
         var urls = new[] { Mirror + Gh + Bundle, Gh + Bundle };
-        var (ok, err) = await DownloadAsync(urls, tmp, progress, Bundle, cancel);
+        var (ok, err) = await DownloadAsync(urls, tmp, 0, progress, Bundle, cancel);
         if (!ok) return (false, err);
         try
         {
@@ -125,48 +129,160 @@ public static class AudioCppService
     {
         if (ModelReady(m)) return Task.FromResult((true, "已存在"));
         Directory.CreateDirectory(ModelsDir);
-        return DownloadAsync(new[] { Ms + m.Remote }, ModelPath(m), progress, m.File, cancel);
+        return DownloadAsync(new[] { Ms + m.Remote }, ModelPath(m), m.Size, progress, m.File, cancel);
     }
 
+    /// <summary>
+    /// 用系统自带的 curl.exe 分块下载：每块 64 MB，断了就从 .part 的现有长度继续。
+    /// ModelScope 的 CDN 长连接会被中途掐断（约 500 MB 左右），整段下必失败；
+    /// 分块 + 断点续传最稳，也能给界面一个稳定的进度来源。
+    /// </summary>
     private static async Task<(bool Ok, string Message)> DownloadAsync(
-        string[] urls, string dest, Action<long, long, string> progress, string label,
-        CancellationToken cancel)
+        string[] urls, string dest, long expectedSize,
+        Action<long, long, string> progress, string label, CancellationToken cancel)
     {
+        const long Chunk = 64L * 1024 * 1024;
         var part = dest + ".part";
-        long have = File.Exists(part) ? new FileInfo(part).Length : 0;
+        // 旧的 .part 比目标还大 → 丢弃重来
+        try
+        {
+            if (File.Exists(part) && expectedSize > 0 && new FileInfo(part).Length > expectedSize * 1.02)
+                File.Delete(part);
+        }
+        catch { }
+
         Exception last = null;
-        using var http = Client();
         foreach (var url in urls)
         {
-            try
+            var ok = true;
+            var attempts = 0;
+            while (ok)
             {
-                using var req = new HttpRequestMessage(HttpMethod.Get, url);
-                if (have > 0) req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(have, null);
-                using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancel);
-                if (!resp.IsSuccessStatusCode) { last = new Exception("HTTP " + (int)resp.StatusCode); continue; }
-                var total = have + (resp.Content.Headers.ContentLength ?? 0);
-                if (resp.StatusCode != System.Net.HttpStatusCode.PartialContent) have = 0;
-                await using (var fs = new FileStream(part, have > 0 ? FileMode.Append : FileMode.Create,
-                                                     FileAccess.Write, FileShare.None))
-                await using (var src = await resp.Content.ReadAsStreamAsync(cancel))
+                long have = 0;
+                try { if (File.Exists(part)) have = new FileInfo(part).Length; } catch { }
+                if (expectedSize > 0 && have >= expectedSize) break;
+                if (attempts++ > 80) { last = new Exception("重试次数过多"); ok = false; break; }
+
+                var end = expectedSize > 0 ? Math.Min(expectedSize - 1, have + Chunk - 1) : 0;
+                var chunkFile = part + ".chunk";
+                try { if (File.Exists(chunkFile)) File.Delete(chunkFile); } catch { }
+
+                var psi = new ProcessStartInfo
                 {
-                    var buf = new byte[1 << 20];
-                    int n;
-                    while ((n = await src.ReadAsync(buf, cancel)) > 0)
-                    {
-                        await fs.WriteAsync(buf.AsMemory(0, n), cancel);
-                        have += n;
-                        progress?.Invoke(have, total, label);
-                    }
+                    FileName = "curl.exe",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true,
+                };
+                psi.ArgumentList.Add("-4");
+                psi.ArgumentList.Add("-L");
+                psi.ArgumentList.Add("-sS");
+                psi.ArgumentList.Add("--no-progress-meter");
+                psi.ArgumentList.Add("-A"); psi.ArgumentList.Add("dsh-manager/3.2.4");
+                psi.ArgumentList.Add("--max-time"); psi.ArgumentList.Add("900");
+                if (expectedSize > 0)
+                {
+                    psi.ArgumentList.Add("-r");
+                    psi.ArgumentList.Add(have.ToString() + "-" + end.ToString());
                 }
-                if (File.Exists(dest)) File.Delete(dest);
-                File.Move(part, dest);
-                return (true, "已下载 " + label);
+                else if (have > 0)
+                {
+                    psi.ArgumentList.Add("-C"); psi.ArgumentList.Add("-");
+                }
+                psi.ArgumentList.Add("-o"); psi.ArgumentList.Add(chunkFile);
+                psi.ArgumentList.Add(url);
+
+                using var proc = Process.Start(psi);
+                if (proc == null) { last = new Exception("无法启动 curl.exe"); ok = false; break; }
+
+                while (!proc.HasExited)
+                {
+                    if (cancel.IsCancellationRequested)
+                    {
+                        try { proc.Kill(true); } catch { }
+                        return (false, "已取消");
+                    }
+                    long len = 0;
+                    try { if (File.Exists(part)) len += new FileInfo(part).Length; } catch { }
+                    try { if (File.Exists(part + ".chunk")) len += new FileInfo(part + ".chunk").Length; } catch { }
+                    progress?.Invoke(len, expectedSize, label);
+                    await Task.Delay(400);
+                }
+                var err = proc.StandardError.ReadToEnd();
+                if (proc.ExitCode != 0)
+                {
+                    last = new Exception("curl exit " + proc.ExitCode + ": " + err.Trim());
+                    // 有些分块失败可以跳过重试，交给下一轮循环继续
+                    await Task.Delay(1500);
+                    continue;
+                }
+
+                long got = 0;
+                try { if (File.Exists(chunkFile)) got = new FileInfo(chunkFile).Length; } catch { }
+                if (got == 0)
+                {
+                    long cur = 0;
+                    try { if (File.Exists(part)) cur = new FileInfo(part).Length; } catch { }
+                    if (expectedSize > 0 && cur >= expectedSize * 0.98) break;   // 服务端已经没有更多数据了
+                    last = new Exception("分块为空（" + cur + "/" + expectedSize + "）");
+                    await Task.Delay(1500);
+                    continue;
+                }
+                if (expectedSize > 0 && have + got > expectedSize)
+                {
+                    // 服务端忽略 Range 时会把整文件塞回来：只有第一块才接受
+                    if (have == 0 && got == expectedSize) { File.Move(chunkFile, part); }
+                    else { try { File.Delete(chunkFile); } catch { } last = new Exception("分块长度异常"); continue; }
+                }
+                else
+                {
+                    await using (var src = new FileStream(chunkFile, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    await using (var dst = new FileStream(part, FileMode.Append, FileAccess.Write, FileShare.None))
+                        await src.CopyToAsync(dst, cancel);
+                }
+                try { File.Delete(chunkFile); } catch { }
+                progress?.Invoke(new FileInfo(part).Length, expectedSize, label);
             }
-            catch (OperationCanceledException) { return (false, "已取消"); }
-            catch (Exception ex) { last = ex; }
+
+            if (!ok) continue;
+            long size = 0;
+            try { size = new FileInfo(part).Length; } catch { }
+            if (expectedSize > 0 && size < expectedSize * 0.98)
+            {
+                last = new Exception("文件不完整：" + size + "/" + expectedSize);
+                continue;
+            }
+            if (dest.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase) && !LooksLikeGguf(part))
+            {
+                last = new Exception("下载内容不是 GGUF（可能被拦截或截断）");
+                try { File.Delete(part); } catch { }
+                continue;
+            }
+            try { if (File.Exists(dest)) File.Delete(dest); } catch { }
+            File.Move(part, dest);
+            progress?.Invoke(size, expectedSize > 0 ? expectedSize : size, label);
+            return (true, "已下载 " + label);
         }
         return (false, "下载失败：" + (last?.Message ?? "未知错误"));
+    }
+
+    private static bool LooksLikeGguf(string path)
+    {
+        try
+        {
+            using var fs = File.OpenRead(path);
+            var buf = new byte[4];
+            return fs.Read(buf, 0, 4) == 4 && buf[0] == (byte)'G' && buf[1] == (byte)'G'
+                   && buf[2] == (byte)'U' && buf[3] == (byte)'F';
+        }
+        catch { return false; }
+    }
+
+    private static void DbLog(string msg)
+    {
+        try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "dsh-dl-debug.log"),
+                                 DateTime.Now.ToString("HH:mm:ss") + " " + msg + Environment.NewLine); } catch { }
     }
 
     public static void WriteConfig(IEnumerable<string> activeIds)

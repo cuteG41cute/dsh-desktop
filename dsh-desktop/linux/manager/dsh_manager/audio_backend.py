@@ -41,7 +41,7 @@ MODELS = [
         'family': 'kokoro_tts',
         'file': 'kokoro-82m-q8_0.gguf',
         'remote': 'Kokoro-82M-GGUF/kokoro-82m-q8_0.gguf',
-        'size': 189_644_800,
+        'size': 189_550_976,
         'default_voice': 'af_heart',
         'clone': False,
     },
@@ -51,7 +51,7 @@ MODELS = [
         'family': 'moss_tts_nano',
         'file': 'moss-tts-nano-100m-q8_0.gguf',
         'remote': 'MOSS-TTS-Nano-100M-GGUF/moss-tts-nano-100m-q8_0.gguf',
-        'size': 192_937_984,
+        'size': 193_343_328,
         'default_voice': '',
         'clone': True,
     },
@@ -61,7 +61,7 @@ MODELS = [
         'family': 'omnivoice',
         'file': 'omnivoice-q8_0.gguf',
         'remote': 'OmniVoice-GGUF/omnivoice-q8_0.gguf',
-        'size': 1_350_582_272,
+        'size': 1_350_296_096,
         'default_voice': '',
         'clone': True,
     },
@@ -71,7 +71,7 @@ MODELS = [
         'family': 'irodori_tts',
         'file': 'irodori-tts-v4.1-anime-q8_0.gguf',
         'remote': 'Irodori-TTS-v4-Small-GGUF/irodori-tts-v4.1-anime-q8_0.gguf',
-        'size': 1_112_584_192,
+        'size': 1_112_550_112,
         'default_voice': '',
         'clone': True,
     },
@@ -81,7 +81,7 @@ MODELS = [
         'family': 'qwen3_tts',
         'file': 'qwen3-tts-0.6b-base-q8_0.gguf',
         'remote': 'Qwen3-TTS-12Hz-0.6B-Base-GGUF/qwen3-tts-12hz-0.6b-base-q8_0.gguf',
-        'size': 1_991_243_776,
+        'size': 1_991_217_728,
         'default_voice': '',
         'clone': True,
     },
@@ -91,7 +91,7 @@ MODELS = [
         'family': 'cosyvoice3',
         'file': 'cosyvoice3-q8_0.gguf',
         'remote': 'CosyVoice3-GGUF/cosyvoice3-q8_0.gguf',
-        'size': 2_257_534_976,
+        'size': 2_257_658_336,
         'default_voice': '',
         'clone': True,
     },
@@ -101,7 +101,7 @@ MODELS = [
         'family': 'chatterbox',
         'file': 'chatterbox-q8_0.gguf',
         'remote': 'Chatterbox-GGUF/chatterbox-q8_0.gguf',
-        'size': 2_088_960_000,
+        'size': 2_088_399_204,
         'default_voice': '',
         'clone': True,
     },
@@ -111,7 +111,7 @@ MODELS = [
         'family': 'index_tts2',
         'file': 'index-tts2_5-q8_0.gguf',
         'remote': 'IndexTTS2.5-GGUF/index-tts2_5-q8_0.gguf',
-        'size': 3_503_462_400,
+        'size': 3_502_960_096,
         'default_voice': '',
         'clone': True,
     },
@@ -179,7 +179,10 @@ def _download(urls, dest, progress=None, label=''):
     have = os.path.getsize(part) if os.path.exists(part) else 0
     last = None
     for url in urls:
-        req = urllib.request.Request(url)
+        req = urllib.request.Request(url, headers={
+            'User-Agent': 'dsh-manager/3.2.3',
+            'Accept': '*/*',
+        })
         if have:
             req.add_header('Range', 'bytes=%d-' % have)
         try:
