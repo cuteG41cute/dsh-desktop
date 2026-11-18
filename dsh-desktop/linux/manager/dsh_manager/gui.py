@@ -2507,6 +2507,13 @@ class ManagerWindow(Gtk.Window):
                 if acpp.running():
                     ok, msg = acpp.stop()
                 else:
+                    if not acpp.ready():
+                        GLib.idle_add(lambda: self.lbl_tts_hint.set_text('正在下载 audio.cpp 运行时…'))
+                        ok0, msg0 = acpp.download_bundle()
+                        GLib.idle_add(lambda: self._refresh_tts())
+                        if not ok0:
+                            GLib.idle_add(lambda: (self._toast(msg0), False)[1])
+                            return
                     ids = [m['id'] for m in acpp.installed_models()]
                     ok, msg = acpp.start(ids)
             else:
