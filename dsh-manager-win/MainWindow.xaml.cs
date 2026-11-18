@@ -2393,6 +2393,70 @@ public partial class MainWindow : Window
         await System.Threading.Tasks.Task.CompletedTask;
     }
 
+    private void SetVoiceRowPlaying(Border border, Border avatar, StackPanel bars, Button btn, bool playing)
+    {
+        try
+        {
+            _ttsPlayBorder = playing ? border : null;
+            _ttsPlayAvatar = playing ? avatar : null;
+            _ttsPlayBars = playing ? bars : null;
+            _ttsPlayButton = playing ? btn : null;
+
+            border.Background = (Brush)FindResource(playing ? "AccentSoft" : "Card");
+            border.BorderBrush = (Brush)FindResource(playing ? "Accent" : "InnerBorder");
+            avatar.Opacity = playing ? 0.25 : 1;
+            if (btn != null) btn.Content = playing ? "停止" : "试听";
+            bars.Visibility = playing ? Visibility.Visible : Visibility.Collapsed;
+            if (!playing)
+            {
+                foreach (System.Windows.Shapes.Rectangle rect in bars.Children)
+                    rect.BeginAnimation(FrameworkElement.HeightProperty, null);
+                return;
+            }
+            var delay = 0.0;
+            foreach (System.Windows.Shapes.Rectangle rect in bars.Children)
+            {
+                var anim = new System.Windows.Media.Animation.DoubleAnimation
+                {
+                    From = rect.Height, To = 2, Duration = TimeSpan.FromMilliseconds(650),
+                    AutoReverse = true, RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever,
+                    BeginTime = TimeSpan.FromMilliseconds(delay),
+                    EasingFunction = new System.Windows.Media.Animation.QuadraticEase
+                    { EasingMode = System.Windows.Media.Animation.EasingMode.EaseInOut },
+                };
+                rect.BeginAnimation(FrameworkElement.HeightProperty, anim);
+                delay += 150;
+            }
+        }
+        catch { }
+    }
+
+    private void ResetVoiceRowPlaying()
+    {
+        if (_ttsPlayBorder == null && _ttsPlayBars == null) return;
+        try
+        {
+            if (_ttsPlayBorder != null)
+            {
+                _ttsPlayBorder.Background = (Brush)FindResource("Card");
+                _ttsPlayBorder.BorderBrush = (Brush)FindResource("InnerBorder");
+            }
+            if (_ttsPlayAvatar != null) _ttsPlayAvatar.Opacity = 1;
+            if (_ttsPlayButton != null) _ttsPlayButton.Content = "试听";
+            if (_ttsPlayBars != null)
+            {
+                foreach (System.Windows.Shapes.Rectangle rect in _ttsPlayBars.Children)
+                    rect.BeginAnimation(FrameworkElement.HeightProperty, null);
+                _ttsPlayBars.Visibility = Visibility.Collapsed;
+            }
+        }
+        catch { }
+        _ttsPlayBorder = null;
+        _ttsPlayAvatar = null;
+        _ttsPlayBars = null;
+        _ttsPlayButton = null;
+    }
+
     private void UpdateAudioVoiceBadges(string selected)
     {
         foreach (var kv in _audioVoiceBadges)
@@ -2477,6 +2541,34 @@ public partial class MainWindow : Window
             Foreground = (Brush)FindResource("Subtle"),
         });
 
+        // 播放中的三根跳动竖条（设计稿 .playing-bars）
+        var bars = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(3, 0, 0, 2), Visibility = Visibility.Collapsed,
+        };
+        foreach (var h in new[] { 4.0, 8.0, 6.0 })
+        {
+            var rect = new System.Windows.Shapes.Rectangle
+            {
+                Width = 2, Height = h, RadiusX = 1, RadiusY = 1,
+                Fill = (Brush)FindResource("Accent"), Margin = new Thickness(0, 0, 2, 0),
+            };
+            bars.Children.Add(rect);
+        }
+        avatar.Child = new Grid();
+        ((Grid)avatar.Child).Children.Add(new System.Windows.Shapes.Path
+        {
+            Data = (Geometry)FindResource("Icon.mic"),
+            Stroke = (Brush)FindResource("Accent"),
+            StrokeThickness = 1.5, StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round,
+            Width = 14, Height = 14, Stretch = Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        ((Grid)avatar.Child).Children.Add(bars);
+
         var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         var listen = new Button
         {
@@ -2485,6 +2577,14 @@ public partial class MainWindow : Window
         };
         listen.Click += async (_, _) =>
         {
+            // 再点同一个正在播放的：停止
+            if (_ttsPlayButton == listen)
+            {
+                try { _ttsPlayer?.Stop(); } catch { }
+                ResetVoiceRowPlaying();
+                return;
+            }
+            ResetVoiceRowPlaying();
             var voice = name;
             var mid = ActiveAudioModel(Services.AudioCppService.Installed());
             listen.IsEnabled = false;
@@ -2494,21 +2594,25 @@ public partial class MainWindow : Window
                 preview, mid, voice);
             if (!ok && mid == "kokoro" && voice != "zf_xiaobei")
             {
-                // 英文 preset / 克隆音色在 Kokoro 上需要 eSpeak-ng，当前运行时没内置：
-                // 用中文音色兜底试听，并说明原因，而不是直接报错。
                 var r = await Services.AudioCppService.SynthesizeAsync(
                     Services.AudioCppService.PreviewText("zf_xiaobei"), mid, "zf_xiaobei");
                 if (r.Ok)
                 {
                     listen.IsEnabled = true;
-                    PlayTtsWav(r.Wav, null);
+                    _ttsSynthBusy = false;
+                    SetVoiceRowPlaying(border, avatar, bars, listen, true);
+                    PlayTtsWav(r.Wav, ResetVoiceRowPlaying);
                     Toast("「" + voice + "」需要 eSpeak-ng（当前运行时未内置），已用中文音色 zf_xiaobei 试听");
                     return;
                 }
             }
             listen.IsEnabled = true;
             _ttsSynthBusy = false;
-            if (ok) PlayTtsWav(wav, null);
+            if (ok)
+            {
+                SetVoiceRowPlaying(border, avatar, bars, listen, true);
+                PlayTtsWav(wav, ResetVoiceRowPlaying);
+            }
             else Toast("试听失败：" + err);
         };
         actions.Children.Add(listen);
@@ -2952,6 +3056,10 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, (ProgressBar Bar, TextBlock Text)> _audioDlUi = new();
     private readonly Dictionary<string, System.Threading.CancellationTokenSource> _audioDlCts = new();
     private string _audioVoiceSig = "";
+    private Border _ttsPlayBorder;
+    private Border _ttsPlayAvatar;
+    private Button _ttsPlayButton;
+    private StackPanel _ttsPlayBars;
     private volatile bool _ttsSynthBusy;
     private readonly Dictionary<string, Border> _audioVoiceBadges = new();
 

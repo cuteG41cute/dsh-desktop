@@ -777,7 +777,7 @@
                                 <StackPanel Grid.Column="0">
                                     <TextBlock Text="推理后端" FontSize="8" Foreground="{DynamicResource Subtle}" />
                                     <ComboBox x:Name="TtsBackendCombo" Width="220" Height="28" FontSize="9"
-                                              Margin="0,4,0,0" SelectionChanged="OnTtsBackendChanged" />
+                                              Margin="0,4,0,0" SelectionChanged="OnTtsBackendChanged" Style="{StaticResource TtsCombo}" ItemContainerStyle="{StaticResource TtsComboItem}" />
                                 </StackPanel>
                                 <TextBlock Grid.Column="1" x:Name="TtsRuntimeText" Text="" FontSize="8.5"
                                            Margin="14,0,0,0" VerticalAlignment="Bottom" TextWrapping="Wrap"
@@ -915,7 +915,7 @@
                                 </StackPanel>
                                 <StackPanel Grid.Column="2">
                                     <TextBlock Text="音色" FontSize="8" Margin="0,0,0,4" Foreground="{DynamicResource Subtle}" />
-                                    <ComboBox x:Name="TtsVoiceCombo" Height="32" FontSize="9.5" SelectionChanged="OnTtsVoiceChanged" />
+                                    <ComboBox x:Name="TtsVoiceCombo" Height="32" FontSize="9.5" SelectionChanged="OnTtsVoiceChanged" Style="{StaticResource TtsCombo}" ItemContainerStyle="{StaticResource TtsComboItem}" />
                                 </StackPanel>
                             </Grid>
 
@@ -927,7 +927,7 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0">
                                     <TextBlock Text="语速" FontSize="8" Margin="0,0,0,4" Foreground="{DynamicResource Subtle}" />
-                                    <ComboBox x:Name="TtsSpeedCombo" Height="32" FontSize="9.5" />
+                                    <ComboBox x:Name="TtsSpeedCombo" Height="32" FontSize="9.5" Style="{StaticResource TtsCombo}" ItemContainerStyle="{StaticResource TtsComboItem}" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="2">
                                     <TextBlock Text="格式" FontSize="8" Margin="0,0,0,4" Foreground="{DynamicResource Subtle}" />
