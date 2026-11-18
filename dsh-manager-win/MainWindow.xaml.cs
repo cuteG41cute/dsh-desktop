@@ -2156,7 +2156,31 @@ public partial class MainWindow : Window
                     row.Children.Add(name);
                     row.Children.Add(size);
 
-                    if (Services.AudioCppService.ModelReady(m))
+                    if (_audioDl.TryGetValue(m.Id, out var dl))
+                    {
+                        var box = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+                        var bar = new ProgressBar
+                        {
+                            Width = 110, Height = 6, Minimum = 0, Maximum = 1,
+                            Value = dl.Total > 0 ? Math.Min(1.0, (double)dl.Done / dl.Total) : 0,
+                            VerticalAlignment = VerticalAlignment.Center,
+                        };
+                        var txt = new TextBlock
+                        {
+                            FontSize = 8.5, Margin = new Thickness(8, 0, 0, 0),
+                            VerticalAlignment = VerticalAlignment.Center,
+                            Foreground = (Brush)FindResource("Muted"),
+                            Text = dl.Total > 0
+                                ? FmtSpeed(dl.Speed) + " · " + (int)(dl.Done * 100.0 / dl.Total) + "%"
+                                : FmtSpeed(dl.Speed),
+                        };
+                        box.Children.Add(bar);
+                        box.Children.Add(txt);
+                        _audioDlUi[m.Id] = (bar, txt);
+                        Grid.SetColumn(box, 2);
+                        row.Children.Add(box);
+                    }
+                    else if (Services.AudioCppService.ModelReady(m))
                     {
                         var badge = new Border
                         {
@@ -2234,17 +2258,45 @@ public partial class MainWindow : Window
 
     private async System.Threading.Tasks.Task DownloadAudioModel(Services.AudioCppService.Model model)
     {
+        if (_audioDl.ContainsKey(model.Id)) return;
+        _audioDl[model.Id] = new AudioDlState { Done = 0, Total = model.Size, Speed = 0 };
+        UpdateTtsCard();
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        long lastDone = 0;
+        double lastSec = 0;
+
         try
         {
             var (ok, msg) = await Services.AudioCppService.DownloadModelAsync(model, (done, total, name) =>
+            {
+                var now = sw.Elapsed.TotalSeconds;
+                var dt = Math.Max(0.001, now - lastSec);
+                var inst = (done - lastDone) / dt;
+                lastDone = done;
+                lastSec = now;
+                var st = _audioDl.TryGetValue(model.Id, out var s) ? s : new AudioDlState();
+                st.Done = done;
+                st.Total = total > 0 ? total : st.Total;
+                st.Speed = st.Speed > 0 ? st.Speed * 0.7 + inst * 0.3 : inst;
+                _audioDl[model.Id] = st;
+
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    if (TtsDownloadText != null)
-                        TtsDownloadText.Text = name + " " + (total > 0 ? (int)(done * 100.0 / total) + "%" : "");
-                })));
+                    if (_audioDlUi.TryGetValue(model.Id, out var ui))
+                    {
+                        if (st.Total > 0) ui.Bar.Value = Math.Min(1.0, (double)st.Done / st.Total);
+                        ui.Text.Text = st.Total > 0
+                            ? FmtSpeed(st.Speed) + " · " + (int)(st.Done * 100.0 / st.Total) + "%"
+                            : FmtSpeed(st.Speed);
+                    }
+                }));
+            });
             Toast(msg);
         }
         catch (Exception ex) { Toast("下载失败：" + ex.Message); }
+        _audioDl.Remove(model.Id);
+        _audioDlUi.Remove(model.Id);
         UpdateTtsCard();
     }
 
@@ -2513,6 +2565,24 @@ public partial class MainWindow : Window
     }
 
     private bool _ttsDownloading;
+
+    // 模型下载进度（按模型 id）：用于行内进度条 + 速度显示
+    private sealed class AudioDlState
+    {
+        public long Done;
+        public long Total;
+        public double Speed;
+    }
+
+    private readonly Dictionary<string, AudioDlState> _audioDl = new();
+    private readonly Dictionary<string, (ProgressBar Bar, TextBlock Text)> _audioDlUi = new();
+
+    private static string FmtSpeed(double bytesPerSec)
+    {
+        if (bytesPerSec >= 1024 * 1024) return (bytesPerSec / 1024 / 1024).ToString("0.0") + " MB/s";
+        if (bytesPerSec >= 1024) return (bytesPerSec / 1024).ToString("0") + " KB/s";
+        return bytesPerSec.ToString("0") + " B/s";
+    }
 
     private async void OnTtsDownload(object sender, RoutedEventArgs e)
     {

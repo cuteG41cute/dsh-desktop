@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 
 import gi
 
@@ -2357,6 +2358,9 @@ class ManagerWindow(Gtk.Window):
         return False
 
     def _refresh_acpp(self, running):
+        if not hasattr(self, '_acpp_dl'):
+            self._acpp_dl = {}
+            self._acpp_dl_ui = {}
         inst = acpp.installed_models()
         self.lbl_tts_port.set_text('%d · 仅本机访问' % acpp.PORT)
         self.lbl_tts_endpoint.set_text('http://127.0.0.1:%d/v1' % acpp.PORT)
@@ -2372,17 +2376,33 @@ class ManagerWindow(Gtk.Window):
             self.tts_model_box.remove(ch)
         for m in acpp.MODELS:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            row.set_size_request(-1, 30)
             ready_m = acpp.model_ready(m)
-            row.pack_start(self._label(m['label'], 'card-sub'), False, False, 0)
+            name_lbl = self._label(m['label'], 'card-sub')
+            name_lbl.set_hexpand(True)
+            name_lbl.set_halign(Gtk.Align.START)
+            row.pack_start(name_lbl, True, True, 0)
             row.pack_start(self._label('%.0f MB' % (m['size'] / 1024 / 1024), 'field-hint'),
                            False, False, 0)
-            if ready_m:
+            dl = self._acpp_dl.get(m['id'])
+            if dl is not None:
+                box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                bar = Gtk.ProgressBar()
+                bar.set_size_request(120, 6)
+                bar.set_fraction(min(1.0, (dl['done'] / dl['total']) if dl['total'] else 0))
+                lbl = self._label('', 'field-hint')
+                box.pack_start(bar, False, False, 0)
+                box.pack_start(lbl, False, False, 0)
+                self._acpp_dl_ui[m['id']] = (bar, lbl)
+                row.pack_start(box, False, False, 0)
+            elif ready_m:
                 row.pack_start(self._label('已下载', 'card-sub'), False, False, 0)
             else:
                 row.pack_start(self._button('', '下载', 'btn', 'btn-secondary',
                                             handler=lambda _b, mm=m: self.on_tts_download_model(mm)),
                                False, False, 0)
             self.tts_model_box.pack_start(row, False, False, 0)
+            row.show_all()
         if not ok_bin:
             self.lbl_tts_hint.set_text('先装运行时（约 70 MB），再下载模型')
         elif not inst:
@@ -2544,22 +2564,63 @@ class ManagerWindow(Gtk.Window):
         self._tts_bg(job)
 
     def on_tts_download_model(self, model):
-        self.pb_tts.set_fraction(0)
-        self.pb_tts.set_visible(True)
+        if not hasattr(self, '_acpp_dl'):
+            self._acpp_dl = {}
+            self._acpp_dl_ui = {}
+        mid = model['id']
+        if mid in self._acpp_dl:
+            return
+        self._acpp_dl[mid] = {'done': 0, 'total': model['size'], 'speed': 0.0}
+        self._refresh_tts()
+
+        t0 = time.time()
+        last = {'n': 0, 't': t0}
 
         def progress(done, total, name):
-            frac = (done / total) if total else 0
-            GLib.idle_add(lambda: (self.pb_tts.set_fraction(min(1.0, frac)), False)[1])
+            now = time.time()
+            dt = max(0.001, now - last['t'])
+            inst = (done - last['n']) / dt
+            last['n'] = done
+            last['t'] = now
+            st = self._acpp_dl.get(mid) or {'done': 0, 'total': total, 'speed': 0.0}
+            st['done'] = done
+            st['total'] = total or st.get('total') or 0
+            st['speed'] = st['speed'] * 0.7 + inst * 0.3 if st.get('speed') else inst
+            self._acpp_dl[mid] = st
+
+            def paint():
+                ui = self._acpp_dl_ui.get(mid)
+                if not ui:
+                    return False
+                bar, lbl = ui
+                if st['total']:
+                    bar.set_fraction(min(1.0, st['done'] / st['total']))
+                    lbl.set_text('%s · %d%%' % (self._fmt_speed(st['speed']),
+                                                int(st['done'] * 100 / st['total'])))
+                else:
+                    lbl.set_text(self._fmt_speed(st['speed']))
+                return False
+            GLib.idle_add(paint)
 
         def job():
             ok, msg = acpp.download_model(model, progress)
 
             def done():
+                self._acpp_dl.pop(mid, None)
+                self._acpp_dl_ui.pop(mid, None)
                 self._toast(msg if ok else ('下载失败：' + msg))
                 self._refresh_tts()
                 return False
             GLib.idle_add(done)
         self._tts_bg(job)
+
+    @staticmethod
+    def _fmt_speed(bps):
+        if bps >= 1024 * 1024:
+            return '%.1f MB/s' % (bps / 1024 / 1024)
+        if bps >= 1024:
+            return '%.0f KB/s' % (bps / 1024)
+        return '%.0f B/s' % bps
 
     def on_tts_open_dir(self, *_):
         p = tts_svc.paths()['root']
