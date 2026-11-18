@@ -2393,6 +2393,62 @@ public partial class MainWindow : Window
         await System.Threading.Tasks.Task.CompletedTask;
     }
 
+    private System.Windows.Threading.DispatcherTimer _voiceStatusTimer;
+    private DateTime _voiceStatusStart;
+
+    private void StartVoiceStatus(string label)
+    {
+        try
+        {
+            if (TtsVoiceStatusBox == null || TtsVoiceStatusText == null) return;
+            _voiceStatusStart = DateTime.Now;
+            TtsVoiceStatusText.Text = "0.0 秒 · " + label;
+            TtsVoiceStatusBar.Visibility = Visibility.Visible;
+            TtsVoiceStatusBar.IsIndeterminate = true;
+            TtsVoiceStatusBox.Visibility = Visibility.Visible;
+            _voiceStatusTimer ??= new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(100),
+            };
+            _voiceStatusTimer.Tick -= VoiceStatusTick;
+            _voiceStatusTimer.Tick += VoiceStatusTick;
+            _voiceStatusTimer.Start();
+        }
+        catch { }
+    }
+
+    private void VoiceStatusTick(object sender, EventArgs e)
+    {
+        if (TtsVoiceStatusText == null) return;
+        var secs = (DateTime.Now - _voiceStatusStart).TotalSeconds;
+        TtsVoiceStatusText.Text = string.Format("{0:F1} 秒 · 生成中…", secs);
+    }
+
+    private void StopVoiceStatus(string doneText = null)
+    {
+        try
+        {
+            _voiceStatusTimer?.Stop();
+            if (TtsVoiceStatusBox == null || TtsVoiceStatusText == null) return;
+            if (string.IsNullOrEmpty(doneText))
+            {
+                TtsVoiceStatusBox.Visibility = Visibility.Collapsed;
+                return;
+            }
+            var secs = (DateTime.Now - _voiceStatusStart).TotalSeconds;
+            TtsVoiceStatusText.Text = string.Format("{0:F1} 秒 · {1}", secs, doneText);
+            TtsVoiceStatusBar.Visibility = Visibility.Collapsed;
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
+            t.Tick += (_, _) =>
+            {
+                t.Stop();
+                TtsVoiceStatusBox.Visibility = Visibility.Collapsed;
+            };
+            t.Start();
+        }
+        catch { }
+    }
+
     private void SetVoiceRowPlaying(Border border, Border avatar, StackPanel bars, Button btn, bool playing)
     {
         try
@@ -2586,6 +2642,7 @@ public partial class MainWindow : Window
             }
             ResetVoiceRowPlaying();
             var voice = name;
+            StartVoiceStatus("生成中…");
             var mid = ActiveAudioModel(Services.AudioCppService.Installed());
             listen.IsEnabled = false;
             _ttsSynthBusy = true;
@@ -2600,6 +2657,7 @@ public partial class MainWindow : Window
                 {
                     listen.IsEnabled = true;
                     _ttsSynthBusy = false;
+                    StopVoiceStatus("生成完成");
                     SetVoiceRowPlaying(border, avatar, bars, listen, true);
                     PlayTtsWav(r.Wav, ResetVoiceRowPlaying);
                     Toast("「" + voice + "」需要 eSpeak-ng（当前运行时未内置），已用中文音色 zf_xiaobei 试听");
@@ -2610,10 +2668,15 @@ public partial class MainWindow : Window
             _ttsSynthBusy = false;
             if (ok)
             {
+                StopVoiceStatus("生成完成");
                 SetVoiceRowPlaying(border, avatar, bars, listen, true);
                 PlayTtsWav(wav, ResetVoiceRowPlaying);
             }
-            else Toast("试听失败：" + err);
+            else
+            {
+                StopVoiceStatus(null);
+                Toast("试听失败：" + err);
+            }
         };
         actions.Children.Add(listen);
 

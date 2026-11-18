@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)][string]$Version
 )
 
@@ -29,7 +29,7 @@ $deb = 'dsh-desktop/linux/manager/build-deb.sh'
 $b = [System.IO.File]::ReadAllText((Resolve-Path $deb), [System.Text.Encoding]::UTF8)
 $b = [regex]::Replace($b, '(?m)^VERSION="[^"]+"', "VERSION=`"$Version`"")
 [System.IO.File]::WriteAllText((Resolve-Path $deb), $b, (New-Object System.Text.UTF8Encoding($false)))
-if ((Get-Item $deb).Length -lt 1000) { throw "build-deb.sh 被写坏了（$((Get-Item $deb).Length) 字节）" }
+if ((Get-Item $deb).Length -lt 1000) { throw "build-deb.sh was truncated to $((Get-Item $deb).Length) bytes" }
 Write-Host "linux:   $deb -> $Version"
 
 Write-Host ''

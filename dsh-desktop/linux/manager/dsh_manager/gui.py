@@ -2295,6 +2295,16 @@ class ManagerWindow(Gtk.Window):
         voice_scroll.set_size_request(-1, 320)
         voice_scroll.add(self.tts_voice_box)
         voices.pack_start(voice_scroll, False, False, 0)
+        self.tts_voice_status = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.tts_voice_status.set_margin_top(8)
+        self.tts_voice_status_bar = Gtk.ProgressBar()
+        self.tts_voice_status_bar.set_size_request(70, 4)
+        self.tts_voice_status_bar.set_valign(Gtk.Align.CENTER)
+        self.tts_voice_status_lbl = self._label('', 'field-hint')
+        self.tts_voice_status.pack_start(self.tts_voice_status_bar, False, False, 0)
+        self.tts_voice_status.pack_start(self.tts_voice_status_lbl, False, False, 0)
+        self.tts_voice_status.set_visible(False)
+        voices.pack_start(self.tts_voice_status, False, False, 0)
         page.pack_start(voices, False, False, 0)
 
         # ---- 朗读接入卡 ----
@@ -2553,9 +2563,42 @@ class ManagerWindow(Gtk.Window):
                            False, False, 0)
         return row
 
+    def _start_voice_status(self, label='生成中…'):
+        import time
+        self._voice_status_t0 = time.time()
+        self._voice_status_gen = getattr(self, '_voice_status_gen', 0) + 1
+        gen = self._voice_status_gen
+        self.tts_voice_status_lbl.set_text('0.0 秒 · ' + label)
+        self.tts_voice_status_bar.set_visible(True)
+        self.tts_voice_status_bar.pulse()
+        self.tts_voice_status.set_visible(True)
+
+        def tick():
+            if getattr(self, '_voice_status_gen', 0) != gen:
+                return False
+            self.tts_voice_status_lbl.set_text('%.1f 秒 · 生成中…' % (time.time() - self._voice_status_t0))
+            self.tts_voice_status_bar.pulse()
+            return True
+        GLib.timeout_add(120, tick)
+
+    def _stop_voice_status(self, done_text=None):
+        import time
+        self._voice_status_gen = getattr(self, '_voice_status_gen', 0) + 1
+        if not done_text:
+            self.tts_voice_status.set_visible(False)
+            return
+        self.tts_voice_status_lbl.set_text('%.1f 秒 · %s' % (time.time() - getattr(self, '_voice_status_t0', time.time()), done_text))
+        self.tts_voice_status_bar.set_visible(False)
+
+        def hide():
+            self.tts_voice_status.set_visible(False)
+            return False
+        GLib.timeout_add(2500, hide)
+
     def on_tts_preview_audio(self, name):
         def job():
             self._acpp_synth_busy = True
+            GLib.idle_add(lambda: (self._start_voice_status('生成中…'), False)[1])
             mid = acpp.active_model()
             ok, err, wav, secs, _el = acpp.synthesize(acpp.preview_text(name), mid, name)
             if not ok and mid == 'kokoro' and name != 'zf_xiaobei':
@@ -2567,10 +2610,12 @@ class ManagerWindow(Gtk.Window):
                         '「%s」需要 eSpeak-ng（未内置），已用 zf_xiaobei 试听' % name), False)[1])
                     return
             if ok:
+                GLib.idle_add(lambda: (self._stop_voice_status('生成完成'), False)[1])
                 okp, pmsg = tts_svc.play(wav)
                 GLib.idle_add(lambda: (self._toast('试听 %s' % name if okp else pmsg), False)[1])
             else:
-                GLib.idle_add(lambda: (self._toast('试听失败：' + err), False)[1])
+                GLib.idle_add(lambda: (self._stop_voice_status(None),
+                                       self._toast('试听失败：' + err), False)[2])
             self._acpp_synth_busy = False
         self._tts_bg(job)
 

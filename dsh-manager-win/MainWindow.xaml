@@ -868,6 +868,19 @@
                                     </ControlTemplate>
                                 </Button.Template>
                             </Button>
+
+                            <!-- 试听/合成状态：生成中显示耗时与不确定进度条 -->
+                            <Border x:Name="TtsVoiceStatusBox" Margin="0,8,0,0" CornerRadius="8"
+                                    Padding="9,6" Background="{DynamicResource AccentSoft}" Visibility="Collapsed">
+                                <StackPanel Orientation="Horizontal">
+                                    <ProgressBar x:Name="TtsVoiceStatusBar" Width="70" Height="4"
+                                                 IsIndeterminate="True" VerticalAlignment="Center"
+                                                 Foreground="{DynamicResource Accent}" />
+                                    <TextBlock x:Name="TtsVoiceStatusText" Text="0.0 秒 · 生成中…"
+                                               FontSize="8.5" Margin="8,0,0,0" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource Muted}" />
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
 
                         <Border Grid.Column="1" Background="{DynamicResource InnerBorder}" />
