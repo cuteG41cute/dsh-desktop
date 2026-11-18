@@ -761,18 +761,35 @@
                         </Grid>
                     </Border>
 
-                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                        <TextBlock Text="推理后端" FontSize="8.5" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource Subtle}" />
-                        <ComboBox x:Name="TtsBackendCombo" Width="240" Height="28" FontSize="9"
-                                  Margin="8,0,0,0" SelectionChanged="OnTtsBackendChanged" />
-                        <TextBlock x:Name="TtsRuntimeText" Text="" FontSize="8.5" Margin="10,0,0,0"
-                                   VerticalAlignment="Center" Foreground="{DynamicResource Muted}" />
-                        <Button x:Name="TtsRuntimeBtn" Content="安装运行时" Style="{StaticResource BtnSecondary}"
-                                Height="28" Padding="12,0" FontSize="9" Margin="10,0,0,0"
-                                Click="OnTtsDownloadRuntime" Visibility="Collapsed" />
-                    </StackPanel>
-                    <StackPanel x:Name="TtsModelList" Margin="0,8,0,0" />
+                    <Border Margin="20,12,20,0" CornerRadius="9" BorderThickness="1"
+                            BorderBrush="{DynamicResource InnerBorder}" Background="{DynamicResource Card}"
+                            Padding="12,10">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="推理后端" FontSize="8" Foreground="{DynamicResource Subtle}" />
+                                    <ComboBox x:Name="TtsBackendCombo" Width="220" Height="28" FontSize="9"
+                                              Margin="0,4,0,0" SelectionChanged="OnTtsBackendChanged" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" x:Name="TtsRuntimeText" Text="" FontSize="8.5"
+                                           Margin="14,0,0,0" VerticalAlignment="Bottom" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource Muted}" />
+                                <Button Grid.Column="2" x:Name="TtsRuntimeBtn" Content="安装运行时"
+                                        Style="{StaticResource BtnSecondary}" Height="28" Padding="12,0"
+                                        FontSize="9" VerticalAlignment="Bottom"
+                                        Click="OnTtsDownloadRuntime" Visibility="Collapsed" />
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource InnerBorder}" Margin="0,10,0,0" />
+                            <TextBlock Text="模型库" FontSize="8" Margin="0,8,0,4"
+                                       Foreground="{DynamicResource Subtle}" />
+                            <StackPanel x:Name="TtsModelList" />
+                        </StackPanel>
+                    </Border>
 
                     <StackPanel x:Name="TtsDownloadBox" Orientation="Horizontal" Margin="20,12,20,0"
                                 Visibility="Collapsed">

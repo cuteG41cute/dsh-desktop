@@ -2133,36 +2133,66 @@ public partial class MainWindow : Window
                 TtsModelList.Children.Clear();
                 foreach (var m in Services.AudioCppService.Models)
                 {
-                    var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
-                    row.Children.Add(new TextBlock
+                    var row = new Grid { Margin = new Thickness(0, 3, 0, 3), MinHeight = 26 };
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(84) });
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                    var name = new TextBlock
                     {
-                        Text = m.Label, FontSize = 9, Width = 220,
+                        Text = m.Label, FontSize = 9,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
                         Foreground = (Brush)FindResource("Text"),
-                    });
-                    row.Children.Add(new TextBlock
+                    };
+                    var size = new TextBlock
                     {
-                        Text = (m.Size / 1024 / 1024) + " MB", FontSize = 8.5, Width = 90,
+                        Text = (m.Size / 1024 / 1024) + " MB", FontSize = 8.5,
+                        VerticalAlignment = VerticalAlignment.Center,
                         Foreground = (Brush)FindResource("Subtle"),
-                    });
+                    };
+                    Grid.SetColumn(name, 0);
+                    Grid.SetColumn(size, 1);
+                    row.Children.Add(name);
+                    row.Children.Add(size);
+
                     if (Services.AudioCppService.ModelReady(m))
                     {
-                        row.Children.Add(new TextBlock
+                        var badge = new Border
                         {
-                            Text = "已下载", FontSize = 8.5, Foreground = (Brush)FindResource("Accent"),
-                        });
+                            Background = (Brush)FindResource("AccentSoft"),
+                            CornerRadius = new CornerRadius(7),
+                            Padding = new Thickness(7, 1, 7, 1),
+                            VerticalAlignment = VerticalAlignment.Center,
+                        };
+                        badge.Child = new TextBlock
+                        {
+                            Text = "已下载", FontSize = 8,
+                            Foreground = (Brush)FindResource("Accent"),
+                        };
+                        Grid.SetColumn(badge, 2);
+                        row.Children.Add(badge);
                     }
                     else
                     {
                         var b = new Button
                         {
-                            Content = "下载", Style = (Style)FindResource("BtnCompact"),
-                            Height = 24, Padding = new Thickness(10, 0, 10, 0), FontSize = 8.5,
+                            Content = "下载", Style = (Style)FindResource("BtnSecondary"),
+                            Height = 24, Padding = new Thickness(12, 0, 12, 0), FontSize = 8.5,
                         };
                         var model = m;
                         b.Click += async (_, _) => await DownloadAudioModel(model);
+                        Grid.SetColumn(b, 2);
                         row.Children.Add(b);
                     }
                     TtsModelList.Children.Add(row);
+                    if (m != Services.AudioCppService.Models[^1])
+                        TtsModelList.Children.Add(new Border
+                        {
+                            Height = 1,
+                            Background = (Brush)FindResource("InnerBorder"),
+                            Margin = new Thickness(0, 2, 0, 2),
+                        });
                 }
             }
             if (TtsDownloadBox != null) TtsDownloadBox.Visibility = Visibility.Collapsed;
