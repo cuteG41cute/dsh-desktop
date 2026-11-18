@@ -65,7 +65,7 @@
         <Setter Property="FontSize" Value="9" />
         <Setter Property="Padding" Value="9,0,26,0" />
         <Setter Property="Foreground" Value="{DynamicResource Text}" />
-        <Setter Property="Background" Value="{DynamicResource Card}" />
+        <Setter Property="Background" Value="{DynamicResource CardSolid}" />
         <Setter Property="BorderBrush" Value="{DynamicResource InnerBorder}" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="Template">
@@ -73,6 +73,8 @@
                 <ControlTemplate TargetType="ComboBox">
                     <Grid>
                         <ToggleButton x:Name="Toggle" Focusable="False" ClickMode="Press"
+                                      Background="{TemplateBinding Background}"
+                                      BorderBrush="{TemplateBinding BorderBrush}"
                                       IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
                             <ToggleButton.Template>
                                 <ControlTemplate TargetType="ToggleButton">
