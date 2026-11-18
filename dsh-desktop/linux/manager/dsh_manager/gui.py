@@ -2454,6 +2454,8 @@ class ManagerWindow(Gtk.Window):
             self._fill_tts_voices()
 
     def _fill_acpp_voices(self, inst):
+        if getattr(self, '_acpp_synth_busy', False):
+            return
         ok, err, models = acpp.models()
         combo = self.tts_voice_combo
         user = acpp.voices() if ok else []
@@ -2518,6 +2520,7 @@ class ManagerWindow(Gtk.Window):
 
     def on_tts_preview_audio(self, name):
         def job():
+            self._acpp_synth_busy = True
             mid = acpp.active_model()
             ok, err, wav, secs, _el = acpp.synthesize('你好，这是这个音色的试听。', mid, name)
             if not ok and mid == 'kokoro' and name != 'zf_xiaobei':
@@ -2533,6 +2536,7 @@ class ManagerWindow(Gtk.Window):
                 GLib.idle_add(lambda: (self._toast('试听 %s' % name if okp else pmsg), False)[1])
             else:
                 GLib.idle_add(lambda: (self._toast('试听失败：' + err), False)[1])
+            self._acpp_synth_busy = False
         self._tts_bg(job)
 
     def on_tts_rename_audio_voice(self, name):
@@ -2943,8 +2947,10 @@ class ManagerWindow(Gtk.Window):
 
         def job():
             if self._active_backend() == 'audiocpp':
+                self._acpp_synth_busy = True
                 mid = acpp.active_model()
                 ok, err, wav, secs, _el = acpp.synthesize(text, mid, voice)
+                self._acpp_synth_busy = False
                 if not ok:
                     GLib.idle_add(lambda: (self.lbl_tts_play.set_text('失败：' + err), False)[1])
                     return

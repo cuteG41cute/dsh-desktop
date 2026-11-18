@@ -2299,11 +2299,13 @@ public partial class MainWindow : Window
 
     private async System.Threading.Tasks.Task RefreshAudioVoicesAsync(List<Services.AudioCppService.Model> inst)
     {
+        if (_ttsSynthBusy) return;   // 合成中服务是单线程忙的，别去挤它
         _ttsVoicesBusy = true;
         try
         {
             var act = ActiveAudioModel(inst);
-            var userVoices = Services.AudioCppService.Voices();
+            // HTTP 必须放到线程池：Voices() 内部是同步等待，放 UI 线程会把窗口卡死
+            var userVoices = await System.Threading.Tasks.Task.Run(() => Services.AudioCppService.Voices());
             var presets = Services.AudioCppService.PresetVoices(act)
                 .Where(p => !userVoices.Contains(p)).ToList();
             var all = new List<string>(userVoices);
@@ -2449,6 +2451,7 @@ public partial class MainWindow : Window
             var voice = name;
             var mid = ActiveAudioModel(Services.AudioCppService.Installed());
             listen.IsEnabled = false;
+            _ttsSynthBusy = true;
             var (ok, err, wav, secs, _el) = await Services.AudioCppService.SynthesizeAsync(
                 "你好，这是这个音色的试听。", mid, voice);
             if (!ok && mid == "kokoro" && voice != "zf_xiaobei")
@@ -2466,6 +2469,7 @@ public partial class MainWindow : Window
                 }
             }
             listen.IsEnabled = true;
+            _ttsSynthBusy = false;
             if (ok) PlayTtsWav(wav, null);
             else Toast("试听失败：" + err);
         };
@@ -2883,6 +2887,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, (ProgressBar Bar, TextBlock Text)> _audioDlUi = new();
     private readonly Dictionary<string, System.Threading.CancellationTokenSource> _audioDlCts = new();
     private string _audioVoiceSig = "";
+    private volatile bool _ttsSynthBusy;
     private readonly Dictionary<string, Border> _audioVoiceBadges = new();
 
     private static string FmtSpeed(double bytesPerSec)
@@ -3008,7 +3013,9 @@ public partial class MainWindow : Window
             var inst = Services.AudioCppService.Installed();
             var mid = ActiveAudioModel(inst);
             if (TtsSynthStatus != null) TtsSynthStatus.Text = "合成中…（audio.cpp）";
+            _ttsSynthBusy = true;
             var (aok, aerr, awav, asecs, ael) = await Services.AudioCppService.SynthesizeAsync(text, mid, voice);
+            _ttsSynthBusy = false;
             if (!aok)
             {
                 if (TtsSynthStatus != null) TtsSynthStatus.Text = "失败：" + aerr;

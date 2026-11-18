@@ -458,6 +458,7 @@ public static class AudioCppService
         try
         {
             using var http = Client();
+            http.Timeout = TimeSpan.FromSeconds(5);
             var json = http.GetStringAsync($"http://127.0.0.1:{Port}/v1/models").GetAwaiter().GetResult();
             using var doc = JsonDocument.Parse(json);
             if (doc.RootElement.TryGetProperty("data", out var data))
@@ -474,6 +475,7 @@ public static class AudioCppService
         try
         {
             using var http = Client();
+            http.Timeout = TimeSpan.FromSeconds(5);
             var json = http.GetStringAsync($"http://127.0.0.1:{Port}/v1/audio/voices").GetAwaiter().GetResult();
             using var doc = JsonDocument.Parse(json);
             if (doc.RootElement.TryGetProperty("voices", out var v) && v.ValueKind == JsonValueKind.Array)
