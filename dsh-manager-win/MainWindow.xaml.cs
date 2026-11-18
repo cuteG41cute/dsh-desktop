@@ -2451,6 +2451,20 @@ public partial class MainWindow : Window
             listen.IsEnabled = false;
             var (ok, err, wav, secs, _el) = await Services.AudioCppService.SynthesizeAsync(
                 "你好，这是这个音色的试听。", mid, voice);
+            if (!ok && mid == "kokoro" && voice != "zf_xiaobei")
+            {
+                // 英文 preset / 克隆音色在 Kokoro 上需要 eSpeak-ng，当前运行时没内置：
+                // 用中文音色兜底试听，并说明原因，而不是直接报错。
+                var r = await Services.AudioCppService.SynthesizeAsync(
+                    "你好，这是这个音色的试听。", mid, "zf_xiaobei");
+                if (r.Ok)
+                {
+                    listen.IsEnabled = true;
+                    PlayTtsWav(r.Wav, null);
+                    Toast("「" + voice + "」需要 eSpeak-ng（当前运行时未内置），已用中文音色 zf_xiaobei 试听");
+                    return;
+                }
+            }
             listen.IsEnabled = true;
             if (ok) PlayTtsWav(wav, null);
             else Toast("试听失败：" + err);

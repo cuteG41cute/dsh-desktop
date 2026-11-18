@@ -2520,6 +2520,14 @@ class ManagerWindow(Gtk.Window):
         def job():
             mid = acpp.active_model()
             ok, err, wav, secs, _el = acpp.synthesize('你好，这是这个音色的试听。', mid, name)
+            if not ok and mid == 'kokoro' and name != 'zf_xiaobei':
+                ok, err, wav, secs, _el = acpp.synthesize('你好，这是这个音色的试听。',
+                                                           mid, 'zf_xiaobei')
+                if ok:
+                    tts_svc.play(wav)
+                    GLib.idle_add(lambda: (self._toast(
+                        '「%s」需要 eSpeak-ng（未内置），已用 zf_xiaobei 试听' % name), False)[1])
+                    return
             if ok:
                 okp, pmsg = tts_svc.play(wav)
                 GLib.idle_add(lambda: (self._toast('试听 %s' % name if okp else pmsg), False)[1])
