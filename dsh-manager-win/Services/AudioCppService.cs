@@ -102,6 +102,10 @@ public static class AudioCppService
         catch { }
     }
 
+    /// <summary>能用中文参考音色克隆的模型（默认音色 = 甘雨）。</summary>
+    private static readonly HashSet<string> GanyuDefaultModels =
+        new() { "qwen3-tts", "omnivoice", "moss-nano", "cosyvoice3", "index-tts2" };
+
     public static string ModelPath(Model m) => Path.Combine(ModelsDir, m.File);
 
     public static bool ModelReady(Model m)
@@ -339,8 +343,13 @@ public static class AudioCppService
                 ["task"] = "tts",
                 ["mode"] = "offline",
             };
-            if (!string.IsNullOrEmpty(m.DefaultVoice))
-                entry["default_voice_preset"] = new Dictionary<string, object> { ["voice_id"] = m.DefaultVoice };
+            // 中文克隆类模型默认挂「甘雨」；英文/日文模型保持自己的默认
+            var presetVoice = m.DefaultVoice;
+            if (string.IsNullOrEmpty(presetVoice) && GanyuDefaultModels.Contains(m.Id)
+                && File.Exists(Path.Combine(VoicesDir, "甘雨.wav")))
+                presetVoice = "甘雨";
+            if (!string.IsNullOrEmpty(presetVoice))
+                entry["default_voice_preset"] = new Dictionary<string, object> { ["voice_id"] = presetVoice };
             list.Add(entry);
         }
         var cfg = new Dictionary<string, object>
@@ -405,6 +414,48 @@ public static class AudioCppService
             if (!Running) return (true, "audio.cpp 已停止");
         }
         return (false, "停止失败：端口 " + Port + " 仍被占用");
+    }
+
+    /// <summary>内置参考音色「甘雨」的转录文本（与 runtime/ganyu.wav 配套）。</summary>
+    private const string GanyuPrompt = "虽说夜兰小姐每年有将近七成时间缺勤，但凝光会给她这样的特权，想必事出有因。";
+
+    /// <summary>把内置的甘雨参考音频释放到 voice_dir（只写一次，用户改过就不覆盖）。</summary>
+    public static void EnsureBundledVoice()
+    {
+        try
+        {
+            Directory.CreateDirectory(VoicesDir);
+            var wav = Path.Combine(VoicesDir, "甘雨.wav");
+            var prompt = Path.Combine(VoicesDir, "prompt_text");
+            var asm = System.Reflection.Assembly.GetExecutingAssembly();
+            var res = asm.GetManifestResourceNames()
+                .FirstOrDefault(n => n.EndsWith("ganyu.wav", StringComparison.OrdinalIgnoreCase));
+
+            if (!File.Exists(wav) && res != null)
+            {
+                using var src = asm.GetManifestResourceStream(res);
+                using var dst = File.Create(wav);
+                src.CopyTo(dst);
+            }
+
+            var lines = new List<string>();
+            var has = false;
+            if (File.Exists(prompt))
+            {
+                foreach (var line in File.ReadAllLines(prompt))
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    if (line.Split('|')[0].Trim() == "甘雨") { has = true; }
+                    lines.Add(line);
+                }
+            }
+            if (!has)
+            {
+                lines.Add("甘雨|" + GanyuPrompt);
+                File.WriteAllLines(prompt, lines, new UTF8Encoding(false));
+            }
+        }
+        catch { }
     }
 
     /// <summary>Kokoro 的内置音色（audio.cpp 不走 /v1/audio/voices 暴露 preset，这里按官方列表内置）。</summary>

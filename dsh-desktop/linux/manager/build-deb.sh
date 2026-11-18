@@ -10,7 +10,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # dsh-desktop/linux/manag
 MANAGER_DIR="$HERE"
 LINUX_DIR="$(cd "$HERE/.." && pwd)"                    # dsh-desktop/linux
 DESKTOP_DIR="$(cd "$LINUX_DIR/.." && pwd)"             # dsh-desktop
-VERSION="3.4.2"
+VERSION="3.5.0"
 OUT="$HERE"
 
 while [ $# -gt 0 ]; do
@@ -59,6 +59,8 @@ if [ -f "$LINUX_DIR/share/audio-cpp/audiocpp_server" ]; then
     mkdir -p "$STAGE/usr/lib/dsh-manager/audio-cpp"
     install -m 0755 "$LINUX_DIR/share/audio-cpp/audiocpp_server" "$STAGE/usr/lib/dsh-manager/audio-cpp/audiocpp_server"
     install -m 0644 "$LINUX_DIR/share/audio-cpp/espeak-ng-data.bin" "$STAGE/usr/lib/dsh-manager/audio-cpp/espeak-ng-data.bin"
+    [ -f "$LINUX_DIR/share/audio-cpp/ganyu.wav" ] && install -m 0644 "$LINUX_DIR/share/audio-cpp/ganyu.wav" "$STAGE/usr/lib/dsh-manager/audio-cpp/ganyu.wav"
+    [ -f "$LINUX_DIR/share/audio-cpp/ganyu.txt" ] && install -m 0644 "$LINUX_DIR/share/audio-cpp/ganyu.txt" "$STAGE/usr/lib/dsh-manager/audio-cpp/ganyu.txt"
 else
     echo "提示：没有 share/audio-cpp 运行时，管理器会改为在线下载（不含 eSpeak）" >&2
 fi

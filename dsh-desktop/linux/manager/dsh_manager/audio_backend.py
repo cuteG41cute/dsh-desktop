@@ -400,6 +400,39 @@ def download_model(model, progress=None, cancel=None):
         return False, '已取消'
 
 
+GANYU_PROMPT = '虽说夜兰小姐每年有将近七成时间缺勤，但凝光会给她这样的特权，想必事出有因。'
+GANYU_MODELS = {'qwen3-tts', 'omnivoice', 'moss-nano', 'cosyvoice3', 'index-tts2'}
+
+
+def ensure_bundled_voice():
+    """把 deb 自带 / 仓库里的甘雨参考音频释放到 voice_dir。"""
+    p = paths()
+    os.makedirs(p['voices'], exist_ok=True)
+    wav = os.path.join(p['voices'], '甘雨.wav')
+    prompt = os.path.join(p['voices'], 'prompt_text')
+    if not os.path.isfile(wav):
+        src = os.path.join(SYSTEM_DIR, 'ganyu.wav')
+        if not os.path.isfile(src):
+            here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            src = os.path.join(here, 'share', 'audio-cpp', 'ganyu.wav')
+        if os.path.isfile(src):
+            shutil.copyfile(src, wav)
+    lines = []
+    has = False
+    if os.path.isfile(prompt):
+        for line in io.open(prompt, encoding='utf-8', errors='replace'):
+            line = line.rstrip('\n')
+            if not line.strip():
+                continue
+            if line.split('|')[0].strip() == '甘雨':
+                has = True
+            lines.append(line)
+    if not has:
+        lines.append('甘雨|' + GANYU_PROMPT)
+        with io.open(prompt, 'w', encoding='utf-8') as fh:
+            fh.write('\n'.join(lines) + '\n')
+
+
 def write_config(active_ids):
     """按选中的模型生成 server.json。"""
     p = paths()
@@ -415,8 +448,11 @@ def write_config(active_ids):
             'task': 'tts',
             'mode': 'offline',
         }
-        if m.get('default_voice'):
-            entry['default_voice_preset'] = {'voice_id': m['default_voice']}
+        preset = m.get('default_voice') or ''
+        if not preset and m['id'] in GANYU_MODELS and os.path.isfile(os.path.join(p['voices'], '甘雨.wav')):
+            preset = '甘雨'
+        if preset:
+            entry['default_voice_preset'] = {'voice_id': preset}
         models.append(entry)
     cfg = {
         'host': '127.0.0.1',
@@ -440,6 +476,7 @@ def start(active_ids):
         return True, 'audio.cpp 已在运行'
     if not ready():
         return False, '还没下载 audio.cpp 运行时'
+    ensure_bundled_voice()
     cfg = write_config(active_ids)
     if not cfg['models']:
         return False, '没有可用的模型（先下载至少一个）'
