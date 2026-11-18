@@ -2455,15 +2455,24 @@ class ManagerWindow(Gtk.Window):
 
     def _fill_acpp_voices(self, inst):
         ok, err, models = acpp.models()
-        box = self.tts_voice_box
-        for child in list(box.get_children()):
-            box.remove(child)
         combo = self.tts_voice_combo
-        combo.remove_all()
         user = acpp.voices() if ok else []
         mid = models[0] if models else acpp.active_model()
         presets = [v for v in acpp.preset_voices(mid) if v not in user]
         allv = user + presets
+        want = acpp.active_voice()
+        if want not in allv:
+            want = allv[0] if allv else ''
+        sig = mid + '|' + ','.join(allv)
+        if getattr(self, '_acpp_voice_sig', '') == sig and combo.get_model() is not None:
+            if want and (combo.get_active_text() or '') != want:
+                combo.set_active(allv.index(want))
+            return
+        self._acpp_voice_sig = sig
+        box = self.tts_voice_box
+        for child in list(box.get_children()):
+            box.remove(child)
+        combo.remove_all()
         self.lbl_tts_voices_title.set_text('参考音色 · %d' % len(allv))
         for name in user:
             box.pack_start(self._audio_voice_row(name, '参考音频', False), False, False, 0)
@@ -2471,12 +2480,22 @@ class ManagerWindow(Gtk.Window):
             box.pack_start(self._audio_voice_row(name, '内置预设音色', True), False, False, 0)
         for name in allv:
             combo.append_text(name)
-        if combo.get_active() < 0 and allv:
-            combo.set_active(0)
+        if allv:
+            acpp.set_active_voice(want)
+            combo.set_active(allv.index(want))
         box.show_all()
         if not allv:
             box.pack_start(self._label('（后端未就绪或没有音色）', 'card-sub'), False, False, 0)
             box.show_all()
+
+        if not getattr(self, '_acpp_voice_connected', False):
+            self._acpp_voice_connected = True
+
+            def on_changed(_c):
+                name = _c.get_active_text() or ''
+                if name:
+                    acpp.set_active_voice(name)
+            combo.connect('changed', on_changed)
 
     def _audio_voice_row(self, name, subtitle, preset):
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)

@@ -2304,36 +2304,76 @@ public partial class MainWindow : Window
         {
             var act = ActiveAudioModel(inst);
             var userVoices = Services.AudioCppService.Voices();
-            var presets = Services.AudioCppService.PresetVoices(act);
-            var selected = (TtsVoiceCombo?.SelectedItem as string) ?? "";
+            var presets = Services.AudioCppService.PresetVoices(act)
+                .Where(p => !userVoices.Contains(p)).ToList();
+            var all = new List<string>(userVoices);
+            all.AddRange(presets);
 
-            if (TtsVoiceList != null)
+            var sig = act + "|" + string.Join(",", all);
+            var want = Services.AppSettings.AudioVoice;
+            if (!string.IsNullOrEmpty(want) && !all.Contains(want)) want = "";
+
+            if (sig == _audioVoiceSig && TtsVoiceCombo != null && TtsVoiceCombo.Items.Count == all.Count)
             {
-                TtsVoiceList.Children.Clear();
-                TtsVoiceCombo?.Items.Clear();
-
-                foreach (var v in userVoices)
-                {
-                    TtsVoiceList.Children.Add(BuildAudioVoiceRow(v, "参考音频", false, v == selected));
-                    TtsVoiceCombo?.Items.Add(v);
-                }
-                foreach (var pv in presets)
-                {
-                    if (userVoices.Contains(pv)) continue;
-                    TtsVoiceList.Children.Add(BuildAudioVoiceRow(pv, "内置预设音色", true, pv == selected));
-                    TtsVoiceCombo?.Items.Add(pv);
-                }
-                if (TtsVoiceCombo != null && TtsVoiceCombo.Items.Count > 0 && selected == "")
-                {
-                    TtsVoiceCombo.SelectedIndex = 0;
-                }
-                if (TtsVoiceCount != null)
-                    TtsVoiceCount.Text = (userVoices.Count + presets.Count).ToString();
+                // 音色集合没变：只同步选中项和「默认」标签，不重建（否则每秒闪一次）
+                var target = !string.IsNullOrEmpty(want) ? want
+                    : ((TtsVoiceCombo.SelectedItem as string) ?? (all.Count > 0 ? all[0] : ""));
+                if (!string.IsNullOrEmpty(target) && (TtsVoiceCombo.SelectedItem as string) != target)
+                    TtsVoiceCombo.SelectedItem = target;
+                UpdateAudioVoiceBadges(target);
+                return;
             }
+
+            _audioVoiceSig = sig;
+            _audioVoiceBadges.Clear();
+            if (TtsVoiceList != null) TtsVoiceList.Children.Clear();
+            TtsVoiceCombo?.Items.Clear();
+
+            foreach (var v in userVoices)
+            {
+                TtsVoiceList.Children.Add(BuildAudioVoiceRow(v, "参考音频", false, v == want));
+                TtsVoiceCombo?.Items.Add(v);
+            }
+            foreach (var pv in presets)
+            {
+                TtsVoiceList.Children.Add(BuildAudioVoiceRow(pv, "内置预设音色", true, pv == want));
+                TtsVoiceCombo?.Items.Add(pv);
+            }
+            if (TtsVoiceCount != null) TtsVoiceCount.Text = all.Count.ToString();
+
+            if (TtsVoiceCombo != null && all.Count > 0)
+            {
+                var target = !string.IsNullOrEmpty(want) ? want : all[0];
+                Services.AppSettings.AudioVoice = target;
+                TtsVoiceCombo.SelectedItem = target;
+            }
+            UpdateAudioVoiceBadges(Services.AppSettings.AudioVoice);
         }
         catch { }
         finally { _ttsVoicesBusy = false; }
         await System.Threading.Tasks.Task.CompletedTask;
+    }
+
+    private void UpdateAudioVoiceBadges(string selected)
+    {
+        foreach (var kv in _audioVoiceBadges)
+        {
+            if (kv.Value != null)
+                kv.Value.Visibility = kv.Key == selected ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    private void OnTtsVoiceChanged(object sender, SelectionChangedEventArgs e)
+    {
+        try
+        {
+            var v = TtsVoiceCombo?.SelectedItem as string;
+            if (string.IsNullOrEmpty(v)) return;
+            Services.AppSettings.AudioVoice = v;
+            Services.AppSettings.Save();
+            UpdateAudioVoiceBadges(v);
+        }
+        catch { }
     }
 
     private Border BuildAudioVoiceRow(string name, string subtitle, bool preset, bool isDefault)
@@ -2387,6 +2427,8 @@ public partial class MainWindow : Window
             {
                 Text = "默认", FontSize = 7.5, Foreground = (Brush)FindResource("Accent"),
             };
+            tag.Visibility = isDefault ? Visibility.Visible : Visibility.Collapsed;
+            _audioVoiceBadges[name] = tag;
             nameRow.Children.Add(tag);
         }
         meta.Children.Add(nameRow);
@@ -2826,6 +2868,8 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, AudioDlState> _audioDl = new();
     private readonly Dictionary<string, (ProgressBar Bar, TextBlock Text)> _audioDlUi = new();
     private readonly Dictionary<string, System.Threading.CancellationTokenSource> _audioDlCts = new();
+    private string _audioVoiceSig = "";
+    private readonly Dictionary<string, Border> _audioVoiceBadges = new();
 
     private static string FmtSpeed(double bytesPerSec)
     {

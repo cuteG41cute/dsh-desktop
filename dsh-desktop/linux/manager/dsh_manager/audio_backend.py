@@ -184,6 +184,25 @@ def preset_voices(mid):
     return list(KOKORO_VOICES) if mid == 'kokoro' else []
 
 
+
+def _voice_file():
+    return os.path.join(paths()['root'], 'voice.json')
+
+
+def active_voice():
+    try:
+        with open(_voice_file(), 'r', encoding='utf-8') as fh:
+            return (json.load(fh) or {}).get('voice') or ''
+    except (OSError, ValueError):
+        return ''
+
+
+def set_active_voice(name):
+    os.makedirs(paths()['root'], exist_ok=True)
+    with open(_voice_file(), 'w', encoding='utf-8') as fh:
+        json.dump({'voice': name}, fh)
+
+
 def add_voice(name, wav_path, ref_text=''):
     """把一个参考音频登记成 audio.cpp 的音色：voices/<name>.wav + prompt_text 里 name|文本。"""
     p = paths()

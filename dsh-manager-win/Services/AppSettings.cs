@@ -21,6 +21,9 @@ public static class AppSettings
     /// <summary>audio.cpp 后端里当前选中的模型 id（空 = 用第一个已下载的）。</summary>
     public static string TtsModel { get; set; } = "";
 
+    /// <summary>audio.cpp 后端里当前选中的音色（空 = 第一个）。</summary>
+    public static string AudioVoice { get; set; } = "";
+
     private sealed class Model
     {
         public int LogLines { get; set; } = 800;
@@ -28,6 +31,7 @@ public static class AppSettings
         public bool WebDragOut { get; set; } = true;
         public string TtsBackend { get; set; } = "audiocpp";
         public string TtsModel { get; set; } = "";
+        public string AudioVoice { get; set; } = "";
     }
 
     private static string PathFile => Path.Combine(
@@ -49,6 +53,7 @@ public static class AppSettings
                 WebDragOut = m.WebDragOut;
                 if (!string.IsNullOrEmpty(m.TtsBackend)) TtsBackend = m.TtsBackend;
                 if (!string.IsNullOrEmpty(m.TtsModel)) TtsModel = m.TtsModel;
+                if (!string.IsNullOrEmpty(m.AudioVoice)) AudioVoice = m.AudioVoice;
             }
         }
         catch { }
@@ -67,6 +72,7 @@ public static class AppSettings
                 WebDragOut = WebDragOut,
                 TtsBackend = TtsBackend,
                 TtsModel = TtsModel,
+                AudioVoice = AudioVoice,
             },
                 new JsonSerializerOptions { WriteIndented = true }));
         }
