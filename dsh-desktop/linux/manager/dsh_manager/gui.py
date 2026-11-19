@@ -2391,7 +2391,8 @@ class ManagerWindow(Gtk.Window):
         self.pb_count.set_hexpand(True)
         row.pack_start(self.pb_count, True, True, 0)
         for text, handler in (('刷新', self.on_pb_refresh), ('导出…', self.on_pb_export),
-                              ('备份', self.on_pb_backup), ('导入…', self.on_pb_import)):
+                              ('备份', self.on_pb_backup), ('导入…', self.on_pb_import),
+                              ('从备份新建…', self.on_pb_new_from_backup)):
             row.pack_start(self._button('', text, 'btn', 'btn-secondary', handler=handler), False, False, 0)
         pb.pack_start(row, False, False, 0)
         self.pb_list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -2428,6 +2429,8 @@ class ManagerWindow(Gtk.Window):
                                         handler=self.on_pb_dav_test), False, False, 0)
         dav_box.pack_start(self._button('', '上传全部', 'btn', 'btn-secondary',
                                         handler=self.on_pb_dav_upload), False, False, 0)
+        dav_box.pack_start(self._button('', '从远端恢复…', 'btn', 'btn-secondary',
+                                        handler=self.on_pb_dav_restore), False, False, 0)
         pb.pack_start(dav_box, False, False, 0)
 
         self._pb_projects = []

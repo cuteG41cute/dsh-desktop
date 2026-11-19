@@ -2602,7 +2602,7 @@ public partial class MainWindow : Window
                     PbExpStage.Text = s;
                     PbExpBar.Value = Math.Min(90, PbExpBar.Value + 12);
                     PbExpPercent.Text = (int)PbExpBar.Value + "%";
-                })), home, token);
+                })), home, token, PbExpAttachments.IsChecked == true);
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (ok)

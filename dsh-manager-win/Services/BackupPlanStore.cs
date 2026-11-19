@@ -159,7 +159,8 @@ public static class BackupRunner
                 : Path.Combine(targetDir, SafeName(p.Title) + ".dshproj");
             var (success, msg) = ProjectMigration.Export(
                 new ProjectMigration.ProjectInfo(p.Id, p.Path, p.Title, p.Sessions),
-                file, plan.IncludeProjectFiles, log, ProjectCatalog.HomeFor(instance));
+                file, plan.IncludeProjectFiles, log, ProjectCatalog.HomeFor(instance),
+                default, plan.IncludeAttachments);
             if (success)
             {
                 ok++;

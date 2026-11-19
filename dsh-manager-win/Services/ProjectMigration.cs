@@ -7,7 +7,9 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading;
+using ZstdSharp;
 
 namespace DshManager.Services;
 
@@ -89,7 +91,8 @@ public static class ProjectMigration
 
     /// <summary>导出：manifest + 注册表条目 + 会话记录 + （可选）项目文件。</summary>
     public static (bool Ok, string Message) Export(ProjectInfo project, string bundlePath, bool includeFiles,
-        Action<string> log = null, string dshHome = null, CancellationToken ct = default)
+        Action<string> log = null, string dshHome = null, CancellationToken ct = default,
+        bool includeAttachments = true)
     {
         var wsFile = WorkspaceFileFor(dshHome);
         var sessionsRoot = SessionsRootFor(dshHome);
@@ -133,6 +136,36 @@ public static class ProjectMigration
                 var sessionDir = Path.Combine(sessionsRoot, key);
                 log?.Invoke("会话目录：" + sessionDir);
                 if (Directory.Exists(sessionDir)) AddDir(tar, sessionDir, "sessions", ct);
+
+                if (includeAttachments && Directory.Exists(sessionDir))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var sf in Directory.EnumerateFiles(sessionDir, "*.zstd", SearchOption.AllDirectories))
+                    {
+                        if (!sf.EndsWith(".jsonl.zstd", StringComparison.OrdinalIgnoreCase)) continue;
+                        try { foreach (var id in SessionAttachmentIds(sf)) ids.Add(id); }
+                        catch { }
+                    }
+                    var attRoot = Path.Combine(dshHome ?? DshHome, "attachments", "v1");
+                    var added = 0;
+                    foreach (var id in ids)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        var shard = id.Substring(0, 2);
+                        var obj = Path.Combine(attRoot, "objects", shard, id);
+                        if (File.Exists(obj)) { AddFile(tar, obj, "attachments/objects/" + shard + "/" + id); added++; }
+                        var fobj = Path.Combine(attRoot, "file-objects", shard, id);
+                        if (File.Exists(fobj)) { AddFile(tar, fobj, "attachments/file-objects/" + shard + "/" + id); added++; }
+                        var fdir = Path.Combine(attRoot, "files", shard, id);
+                        if (Directory.Exists(fdir))
+                        {
+                            AddDir(tar, fdir, "attachments/files/" + shard + "/" + id, ct);
+                            added++;
+                        }
+                    }
+                    log?.Invoke("附件 " + added + " 个");
+                }
 
                 if (includeFiles && Directory.Exists(project.Path))
                 {
@@ -248,6 +281,15 @@ public static class ProjectMigration
                 log?.Invoke("会话缓存 " + Directory.GetFiles(srcCache, "*.json").Length + " 个");
             }
 
+            // 2.6) 附件（内容寻址，直接复制到实例的 attachments/v1）
+            var srcAtt = Path.Combine(work, "attachments");
+            if (Directory.Exists(srcAtt))
+            {
+                var destAtt = Path.Combine(dshHome ?? DshHome, "attachments", "v1");
+                CopyDir(srcAtt, destAtt);
+                log?.Invoke("附件已恢复");
+            }
+
             // 3) 注册表
             JsonNode root;
             if (File.Exists(wsFile))
@@ -310,6 +352,17 @@ public static class ProjectMigration
             return (true, $"已导入「{title}」到 {destProject}；重启实例后出现在项目列表里");
         }
         catch (Exception ex) { return (false, "导入失败：" + ex.Message); }
+    }
+
+    /// <summary>从会话文件里解压并提取 attachmentId（sha256）。</summary>
+    private static IEnumerable<string> SessionAttachmentIds(string sessionFile)
+    {
+        using var fs = File.OpenRead(sessionFile);
+        using var zs = new DecompressionStream(fs);
+        using var reader = new StreamReader(zs, Encoding.UTF8);
+        var text = reader.ReadToEnd();
+        foreach (Match m in Regex.Matches(text, "\"attachmentId\":\"sha256:([0-9a-f]{64})\""))
+            yield return m.Groups[1].Value;
     }
 
     private static string HashTree(string dir)

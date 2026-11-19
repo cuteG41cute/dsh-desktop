@@ -139,7 +139,7 @@ public partial class App : Application
             var p = Services.ProjectMigration.ListProjects()
                 .FirstOrDefault(x => x.Title.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0);
             if (p == null) { Console.WriteLine("project not found: " + needle); Shutdown(2); return; }
-            var (ok, msg) = Services.ProjectMigration.Export(p, outFile, false, Console.WriteLine);
+            var (ok, msg) = Services.ProjectMigration.Export(p, outFile, true, Console.WriteLine);
             Console.WriteLine("ok=" + ok + " msg=" + msg);
             Shutdown(ok ? 0 : 1);
             return;
