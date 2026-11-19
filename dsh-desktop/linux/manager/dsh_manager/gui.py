@@ -30,6 +30,7 @@ from . import plugins as plug  # noqa: E402
 from . import tts as tts_svc  # noqa: E402
 from . import audio_backend as acpp  # noqa: E402
 from . import project_migration as mig  # noqa: E402
+from . import project_catalog as pcat  # noqa: E402
 from .core import (DEFAULT_DSH, DEFAULT_NODE, MANAGER_LIB, MANAGER_VERSION,  # noqa: E402
                    FALLBACK_DSH_VERSIONS, FALLBACK_NODE_VERSIONS,
                    Manager, append_manager_log, config_dir, load_settings,
@@ -2377,6 +2378,32 @@ class ManagerWindow(Gtk.Window):
         self.lbl_mig_status.set_margin_top(6)
         migcard.pack_start(self.lbl_mig_status, False, False, 0)
         page.pack_start(migcard, False, False, 0)
+
+        # ---- 项目备份卡 ----
+        pb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        pb.get_style_context().add_class('card')
+        pb.set_margin_top(16)
+        pb.pack_start(self._label('项目备份 / 恢复', 'card-label'), False, False, 0)
+        pb.pack_start(self._label('按实例查看项目；导出、备份、恢复都以项目为单位', 'card-sub'), False, False, 0)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        row.set_margin_top(10)
+        self.pb_count = self._label('', 'field-hint')
+        self.pb_count.set_hexpand(True)
+        row.pack_start(self.pb_count, True, True, 0)
+        for text, handler in (('刷新', self.on_pb_refresh), ('导出…', self.on_pb_export),
+                              ('备份', self.on_pb_backup), ('导入…', self.on_pb_import)):
+            row.pack_start(self._button('', text, 'btn', 'btn-secondary', handler=handler), False, False, 0)
+        pb.pack_start(row, False, False, 0)
+        self.pb_list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.pb_list.set_margin_top(8)
+        pb.pack_start(self.pb_list, False, False, 0)
+        self.pb_status = self._label('', 'field-hint')
+        self.pb_status.set_margin_top(6)
+        pb.pack_start(self.pb_status, False, False, 0)
+        page.pack_start(pb, False, False, 0)
+        self._pb_home = os.environ.get('DSH_HOME') or os.path.expanduser('~/.dsh')
+        self._pb_projects = []
+
 
 
 

@@ -4,6 +4,33 @@ using System.Windows;
 
 namespace DshManager.ViewModels;
 
+/// <summary>WebDAV 项目勾选行。</summary>
+public sealed class DavProjectVm
+{
+    public string Id { get; init; } = "";
+    public string Path { get; init; } = "";
+    public string Title { get; init; } = "";
+    public string SizeText { get; init; } = "";
+    public bool Checked { get; set; }
+}
+
+/// <summary>WebDAV 远端备份行。</summary>
+public sealed class DavRemoteVm
+{
+    public string Url { get; init; } = "";
+    public string Title { get; init; } = "";
+    public string Meta { get; init; } = "";
+}
+
+/// <summary>任务日志行。</summary>
+public sealed class TaskLogRowVm
+{
+    public string At { get; init; } = "";
+    public string Type { get; init; } = "";
+    public string Message { get; init; } = "";
+    public string Detail { get; init; } = "";
+}
+
 /// <summary>备份历史行。</summary>
 public sealed class BackupRowVm
 {

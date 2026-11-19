@@ -462,6 +462,7 @@ public partial class App : Application
                 if (modal == "export") win.OpenFirstProjectExport();
                 else if (modal == "import") win.OpenImportModal();
                 else if (modal == "backup") win.OpenBackupTabForShot();
+                else if (modal == "handoff") win.OpenHandoffFirst();
             }
         }
         var delayMs = Environment.GetCommandLineArgs().Contains("--modal") ? 2600 : 900;

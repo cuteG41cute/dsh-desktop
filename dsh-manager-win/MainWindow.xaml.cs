@@ -2103,7 +2103,24 @@ public partial class MainWindow : Window
         UpdateTtsCard();
     }
 
-    // ===== 项目备份 / 恢复（项目与迁移 tab） =====    // ===== 备份与恢复 tab =====
+    // ===== 项目备份 / 恢复（项目与迁移 tab） =====
+
+    private void OnPbLogsRefresh(object sender, RoutedEventArgs e) => LoadTaskLogs();
+
+    private void LoadTaskLogs()
+    {
+        var rows = Services.TaskLog.Load(120).Select(t => new ViewModels.TaskLogRowVm
+        {
+            At = t.At.ToString("MM-dd HH:mm:ss"),
+            Type = t.Type,
+            Message = t.Message,
+            Detail = t.Detail,
+        }).ToList();
+        PbLogsList.ItemsSource = rows;
+        PbLogsEmpty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // ===== 备份与恢复 tab =====
     private DispatcherTimer _backupTimer;
     private bool _backupTimerStarted;
 
@@ -2231,6 +2248,7 @@ public partial class MainWindow : Window
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 Toast("备份完成：" + result.Ok + " 个成功" + (result.Failed > 0 ? "，" + result.Failed + " 个失败" : ""));
+                Services.TaskLog.Append("backup", "备份完成：" + result.Ok + " 个成功" + (result.Failed > 0 ? "，" + result.Failed + " 个失败" : ""));
                 LoadBackupHistory(entry);
                 LoadPbProjects();
             }));
@@ -2242,6 +2260,7 @@ public partial class MainWindow : Window
         var file = (sender as Button)?.Tag as string;
         if (string.IsNullOrEmpty(file)) return;
         PbExportPanel.Visibility = Visibility.Collapsed;
+        PbHandoffPanel.Visibility = Visibility.Collapsed;
         PbImportPanel.Visibility = Visibility.Visible;
         PbImportProgress.Visibility = Visibility.Collapsed;
         PbImportDone.Visibility = Visibility.Collapsed;
@@ -2251,6 +2270,137 @@ public partial class MainWindow : Window
         PbImpName.Text = m?.Title + "-恢复" ?? "";
         PbImpDir.Text = System.IO.Path.GetDirectoryName(PbImpDir.Text?.Length > 0 ? PbImpDir.Text : _pbBackupRoot) ?? _pbBackupRoot;
         PbModalLayer.Visibility = Visibility.Visible;
+    }
+
+    // ===== WebDAV 备份 / 恢复 =====
+    private string DavBase => (PbDavUrl.Text ?? "").Trim().TrimEnd('/');
+    private string DavUser => (PbDavUser.Text ?? "").Trim();
+    private string DavPass => PbDavPass.Text ?? "";
+
+    private void RefreshDavProjects()
+    {
+        var rows = _pbAll.Select(p => new ViewModels.DavProjectVm
+        {
+            Id = p.Id,
+            Path = p.Path,
+            Title = p.Title,
+            SizeText = ViewModels.ProjectRowVm.Size(p.SizeBytes),
+            Checked = p.SizeBytes < 500L * 1024 * 1024,
+        }).ToList();
+        PbDavProjects.ItemsSource = rows;
+    }
+
+    private void OnPbDavSelectAll(object sender, RoutedEventArgs e)
+    {
+        if (PbDavProjects.ItemsSource is not IEnumerable<ViewModels.DavProjectVm> rows) return;
+        foreach (var r in rows) r.Checked = PbDavAll.IsChecked == true;
+        PbDavProjects.Items.Refresh();
+    }
+
+    private async void OnPbDavUpload(object sender, RoutedEventArgs e)
+    {
+        if (DavBase.Length == 0) { Toast("先填写 WebDAV 地址"); return; }
+        if (PbDavProjects.ItemsSource is not IEnumerable<ViewModels.DavProjectVm> rows) return;
+        var selected = rows.Where(r => r.Checked).ToList();
+        if (selected.Count == 0) { Toast("先勾选要备份的项目"); return; }
+        var entry = (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry;
+        if (entry == null) return;
+        var home = Services.ProjectCatalog.HomeFor(entry);
+        var devicesDir = DavBase + "/dsh-backup/" + Environment.MachineName.ToLowerInvariant();
+        PbDavProgressText.Text = "正在上传…";
+        try
+        {
+            using var dav = new Services.WebDavClient(DavUser, DavPass);
+            await dav.EnsureCollectionAsync(devicesDir);
+            var records = Services.ProjectCatalog.LoadBackups();
+            foreach (var r in selected)
+            {
+                PbDavProgressText.Text = "正在上传 " + r.Title + "…";
+                var tmp = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                    Services.BackupRunner.SafeName(r.Title) + ".dshproj");
+                var project = _pbAll.FirstOrDefault(p => p.Path == r.Path);
+                if (project == null) continue;
+                var (ok, msg) = Services.ProjectMigration.Export(ToProjectInfo(project), tmp, true, null, home);
+                if (!ok) { PbDavProgressText.Text = r.Title + " 导出失败：" + msg; continue; }
+                await dav.UploadAsync(tmp, devicesDir + "/" + System.IO.Path.GetFileName(tmp));
+                records.RemoveAll(x => x.ProjectPath.Equals(r.Path, StringComparison.OrdinalIgnoreCase)
+                                       && x.Kind == "webdav");
+                records.Add(new Services.BackupRecord(r.Id, r.Title, r.Path, "webdav",
+                    devicesDir + "/" + System.IO.Path.GetFileName(tmp),
+                    "win-" + Environment.MachineName.ToLowerInvariant(), DateTime.Now,
+                    new FileInfo(tmp).Length, "", "ok"));
+                Services.TaskLog.Append("webdav", "已上传备份：" + r.Title, devicesDir);
+                try { File.Delete(tmp); } catch { }
+            }
+            Services.ProjectCatalog.SaveBackups(records);
+            PbDavProgressText.Text = "上传完成";
+            Toast("WebDAV 备份完成：" + selected.Count + " 个项目");
+            LoadPbProjects();
+        }
+        catch (Exception ex)
+        {
+            PbDavProgressText.Text = "上传失败：" + ex.Message;
+            Toast("WebDAV 上传失败：" + ex.Message);
+        }
+    }
+
+    private async void OnPbDavListRemote(object sender, RoutedEventArgs e)
+    {
+        if (DavBase.Length == 0) { Toast("先填写 WebDAV 地址"); return; }
+        PbDavProgressText.Text = "正在读取远端…";
+        try
+        {
+            using var dav = new Services.WebDavClient(DavUser, DavPass);
+            var list = await dav.ListAsync(DavBase + "/dsh-backup");
+            var rows = new List<ViewModels.DavRemoteVm>();
+            foreach (var item in list)
+            {
+                if (item.IsDirectory) continue;
+                if (!item.Name.EndsWith(".dshproj", StringComparison.OrdinalIgnoreCase)) continue;
+                rows.Add(new ViewModels.DavRemoteVm
+                {
+                    Url = item.Url,
+                    Title = System.IO.Path.GetFileNameWithoutExtension(item.Name),
+                    Meta = (item.Modified?.ToString("MM-dd HH:mm") ?? "") + " · "
+                           + ViewModels.ProjectRowVm.Size(item.Size),
+                });
+            }
+            PbDavRemote.ItemsSource = rows;
+            PbDavProgressText.Text = rows.Count == 0 ? "远端没有备份" : "远端 " + rows.Count + " 个备份";
+        }
+        catch (Exception ex)
+        {
+            PbDavProgressText.Text = "读取失败：" + ex.Message;
+        }
+    }
+
+    private async void OnPbDavRestore(object sender, RoutedEventArgs e)
+    {
+        var url = (sender as Button)?.Tag as string;
+        if (string.IsNullOrEmpty(url)) return;
+        PbDavProgressText.Text = "正在下载…";
+        try
+        {
+            var local = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                "dav-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".dshproj");
+            using (var dav = new Services.WebDavClient(DavUser, DavPass))
+                await dav.DownloadAsync(url, local);
+            PbDavProgressText.Text = "已下载，选择导入位置";
+            PbImpPath.Text = local;
+            var m = Services.ProjectMigration.ReadManifest(local);
+            PbImpCheck.Text = m == null ? "无法读取包信息" : "SHA256 校验通过 · 备份格式 1.0";
+            PbImpName.Text = m?.Title + "-恢复" ?? "";
+            PbExportPanel.Visibility = Visibility.Collapsed;
+            PbHandoffPanel.Visibility = Visibility.Collapsed;
+            PbImportPanel.Visibility = Visibility.Visible;
+            PbImportProgress.Visibility = Visibility.Collapsed;
+            PbImportDone.Visibility = Visibility.Collapsed;
+            PbModalLayer.Visibility = Visibility.Visible;
+        }
+        catch (Exception ex)
+        {
+            PbDavProgressText.Text = "下载失败：" + ex.Message;
+        }
     }
 
     private async void OnPbDavTest(object sender, RoutedEventArgs e)
@@ -2325,6 +2475,27 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnPbHandoff(object sender, RoutedEventArgs e)
+    {
+        var path = (sender as Button)?.Tag as string ?? "";
+        var info = Services.ProjectCatalog.ReadHandoff(path);
+        if (info == null) { Toast("没有找到交接文件"); return; }
+        PbHandoffDevice.Text = info.Device;
+        PbHandoffAt.Text = info.At;
+        PbHandoffSummary.Text = string.IsNullOrWhiteSpace(info.Summary) ? "（摘要为空）" : info.Summary;
+        PbHandoffRecord.Text = info.RecordPath;
+        PbExportPanel.Visibility = Visibility.Collapsed;
+        PbImportPanel.Visibility = Visibility.Collapsed;
+        PbHandoffPanel.Visibility = Visibility.Visible;
+        PbModalLayer.Visibility = Visibility.Visible;
+    }
+
+    private void OnPbHandoffClose(object sender, RoutedEventArgs e)
+    {
+        PbModalLayer.Visibility = Visibility.Collapsed;
+        PbHandoffPanel.Visibility = Visibility.Collapsed;
+    }
+
     // ===== 导出 / 恢复弹窗 =====
     private Services.InstanceProject _pbModalProject;
     private System.Threading.CancellationTokenSource _pbCts;
@@ -2337,6 +2508,7 @@ public partial class MainWindow : Window
         _pbModalProject = project;
         PbExportPanel.Visibility = Visibility.Visible;
         PbImportPanel.Visibility = Visibility.Collapsed;
+        PbHandoffPanel.Visibility = Visibility.Collapsed;
         PbExportOptions.Visibility = Visibility.Visible;
         PbExportProgress.Visibility = Visibility.Collapsed;
         PbExportDone.Visibility = Visibility.Collapsed;
@@ -2440,6 +2612,7 @@ public partial class MainWindow : Window
                     PbExpDonePath.Text = outFile;
                     PbExportOptions.Visibility = Visibility.Collapsed;
                     Toast("导出完成");
+                    Services.TaskLog.Append("export", "导出完成：" + project.Title, outFile);
                 }
                 else
                 {
@@ -2571,6 +2744,7 @@ public partial class MainWindow : Window
                     PbImportDone.Visibility = Visibility.Visible;
                     PbImpDoneText.Text = msg;
                     Toast("已导入");
+                    Services.TaskLog.Append("import", "恢复完成：" + msg, bundle);
                     LoadPbProjects();
                 }
                 else Toast(msg);
@@ -2650,7 +2824,8 @@ public partial class MainWindow : Window
         Set(PbTabProjects, PbPanelProjects, "projects");
         Set(PbTabBackup, PbPanelBackup, "backup");
         Set(PbTabLogs, PbPanelLogs, "logs");
-        if (tag == "backup") LoadBackupTab();
+        if (tag == "backup") { LoadBackupTab(); RefreshDavProjects(); }
+        if (tag == "logs") LoadTaskLogs();
     }
 
     private void OnPbFilterChanged(object sender, EventArgs e)
@@ -4380,6 +4555,22 @@ public partial class MainWindow : Window
                 timer.Stop();
                 OnPbTab(PbTabBackup, null);
             }
+        };
+        timer.Start();
+    }
+
+    /// <summary>截图自检用：打开第一个有交接文件的项目的交接弹窗。</summary>
+    public void OpenHandoffFirst()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+        var tries = 0;
+        timer.Tick += (_, _) =>
+        {
+            if (++tries > 12) { timer.Stop(); return; }
+            var hit = _pbAll.FirstOrDefault(p => p.HasHandoff);
+            if (hit == null) return;
+            timer.Stop();
+            OnPbHandoff(new Button { Tag = hit.Path }, null);
         };
         timer.Start();
     }

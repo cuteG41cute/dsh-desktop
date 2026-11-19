@@ -45,7 +45,7 @@ def project_key(cwd):
 
 
 def list_projects():
-    path = workspace_file()
+    path = workspace_file() if not dsh_home else os.path.join(dsh_home, 'storages', 'workspace.json')
     if not os.path.isfile(path):
         return []
     try:
@@ -77,7 +77,7 @@ def _add_dir(tar, root, prefix):
                 pass
 
 
-def export(project, bundle_path, include_files=False, log=None):
+def export(project, bundle_path, include_files=False, log=None, dsh_home=None):
     path = workspace_file()
     if not os.path.isfile(path):
         return False, '找不到 workspace.json：%s' % path
@@ -109,7 +109,7 @@ def export(project, bundle_path, include_files=False, log=None):
                 os.remove(ep)
 
             key = project_key(project['path'])
-            sdir = os.path.join(sessions_root(), key)
+            sdir = os.path.join(sessions_root() if not dsh_home else os.path.join(dsh_home, 'sessions'), key)
             if log:
                 log('会话目录：%s' % sdir)
             if os.path.isdir(sdir):
@@ -129,7 +129,7 @@ def export(project, bundle_path, include_files=False, log=None):
         return False, '导出失败：%s' % exc
 
 
-def import_bundle(bundle_path, dest_root, log=None):
+def import_bundle(bundle_path, dest_root, log=None, dsh_home=None):
     work = tempfile.mkdtemp(prefix='dshproj-')
     try:
         with tarfile.open(bundle_path, 'r:gz') as tar:
@@ -161,7 +161,7 @@ def import_bundle(bundle_path, dest_root, log=None):
         src_sessions = os.path.join(work, 'sessions')
         session_ids = []
         if os.path.isdir(src_sessions):
-            dest_sessions = os.path.join(sessions_root(), project_key(dest_project))
+            dest_sessions = os.path.join(sessions_root() if not dsh_home else os.path.join(dsh_home, 'sessions'), project_key(dest_project))
             if os.path.isdir(dest_sessions):
                 shutil.rmtree(dest_sessions)
             shutil.copytree(src_sessions, dest_sessions)
@@ -170,7 +170,7 @@ def import_bundle(bundle_path, dest_root, log=None):
             if log:
                 log('会话 %d 个' % len(session_ids))
 
-        wf = workspace_file()
+        wf = workspace_file() if not dsh_home else os.path.join(dsh_home, 'storages', 'workspace.json')
         if os.path.isfile(wf):
             with open(wf, encoding='utf-8') as fh:
                 data = json.load(fh)

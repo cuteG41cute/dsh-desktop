@@ -860,12 +860,14 @@
                                                             <TextBlock Text="{Binding BadgeText}" FontSize="7.5"
                                                                        Foreground="{DynamicResource Accent}" />
                                                         </Border>
-                                                        <Border Margin="6,0,0,0" CornerRadius="9" Padding="6,1"
-                                                                Background="{DynamicResource SuccessSoft}" VerticalAlignment="Center"
+                                                        <Button Margin="6,0,0,0" Padding="6,1" Height="20"
+                                                                Background="{DynamicResource SuccessSoft}" BorderThickness="0"
+                                                                VerticalAlignment="Center" Cursor="Hand"
+                                                                Tag="{Binding Path}" Click="OnPbHandoff"
                                                                 Visibility="{Binding HandoffVisibility}">
                                                             <TextBlock Text="{Binding HandoffText}" FontSize="7.5"
                                                                        Foreground="{DynamicResource Success}" />
-                                                        </Border>
+                                                        </Button>
                                                     </StackPanel>
                                                     <TextBlock Text="{Binding MetaLine}" FontSize="8.5" Margin="0,4,0,0"
                                                                Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis" />
@@ -1082,16 +1084,94 @@
                                         </Grid>
                                     </StackPanel>
                                 </Border>
-                                <TextBlock Text="WebDAV 上传将在下一轮接入（先把连接测试跑通）。" FontSize="8.5"
-                                           Margin="2,10,0,0" Foreground="{DynamicResource Subtle}" />
+                                <Grid Margin="0,14,0,6">
+                                    <TextBlock Text="选择要备份的项目" FontSize="10" FontWeight="SemiBold"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource Text}" />
+                                    <CheckBox x:Name="PbDavAll" Content="全选" FontSize="9"
+                                              HorizontalAlignment="Right" VerticalAlignment="Center"
+                                              Checked="OnPbDavSelectAll" Unchecked="OnPbDavSelectAll" />
+                                </Grid>
+                                <ItemsControl x:Name="PbDavProjects">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Margin="0,0,0,5" CornerRadius="8" BorderThickness="1"
+                                                    BorderBrush="{DynamicResource InnerBorder}"
+                                                    Background="{DynamicResource CardSolid}" Padding="10,6">
+                                                <Grid>
+                                                    <CheckBox IsChecked="{Binding Checked, Mode=TwoWay}" FontSize="9"
+                                                              Content="{Binding Title}" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding SizeText}" FontSize="8" HorizontalAlignment="Right"
+                                                               VerticalAlignment="Center" Foreground="{DynamicResource Subtle}" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,6">
+                                    <TextBlock x:Name="PbDavProgressText" Text="" FontSize="8.5" Margin="0,0,10,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource Muted}" />
+                                    <Button Content="备份选中" Style="{StaticResource BtnPrimary}" Height="30"
+                                            Padding="16,0" FontSize="9" Click="OnPbDavUpload" />
+                                    <Button Content="从远端恢复…" Style="{StaticResource BtnSecondary}" Height="30"
+                                            Padding="14,0" FontSize="9" Margin="8,0,0,0" Click="OnPbDavListRemote" />
+                                </StackPanel>
+                                <ItemsControl x:Name="PbDavRemote">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Margin="0,0,0,5" CornerRadius="8" BorderThickness="1"
+                                                    BorderBrush="{DynamicResource InnerBorder}"
+                                                    Background="{DynamicResource CardSolid}" Padding="10,6">
+                                                <Grid>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Title}" FontSize="9" FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource Text}" />
+                                                        <TextBlock Text="{Binding Meta}" FontSize="8" Margin="0,2,0,0"
+                                                                   Foreground="{DynamicResource Muted}" />
+                                                    </StackPanel>
+                                                    <Button Content="恢复" Style="{StaticResource BtnCompact}" Height="26"
+                                                            Padding="10,0" FontSize="8.5" HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center" Tag="{Binding Url}"
+                                                            Click="OnPbDavRestore" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
                         </StackPanel>
 
                         <!-- 任务日志 -->
                         <StackPanel x:Name="PbPanelLogs" Visibility="Collapsed" Margin="16,12,16,16">
-                            <TextBlock Text="任务日志" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Text}" />
-                            <TextBlock Text="执行导出 / 恢复 / 备份后，这里会显示时间、结果与详情。" FontSize="8.5" Margin="0,6,0,0"
-                                       Foreground="{DynamicResource Subtle}" />
+                            <Grid Margin="0,0,0,8">
+                                <TextBlock Text="任务日志" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource Text}" />
+                                <Button Content="刷新" Style="{StaticResource BtnCompact}" Height="26" Padding="10,0"
+                                        FontSize="8.5" HorizontalAlignment="Right" Click="OnPbLogsRefresh" />
+                            </Grid>
+                            <TextBlock x:Name="PbLogsEmpty" Text="还没有任务记录" FontSize="9" Margin="2,8,0,8"
+                                       Foreground="{DynamicResource Subtle}" Visibility="Collapsed" />
+                            <ItemsControl x:Name="PbLogsList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="0,0,0,5" CornerRadius="8" BorderThickness="1"
+                                                BorderBrush="{DynamicResource InnerBorder}" Background="{DynamicResource CardSolid}"
+                                                Padding="10,7">
+                                            <StackPanel>
+                                                <Grid>
+                                                    <TextBlock Text="{Binding At}" FontSize="8" FontFamily="{StaticResource MonoFont}"
+                                                               Foreground="{DynamicResource Subtle}" />
+                                                    <TextBlock Text="{Binding Type}" FontSize="8" HorizontalAlignment="Right"
+                                                               Foreground="{DynamicResource Accent}" />
+                                                </Grid>
+                                                <TextBlock Text="{Binding Message}" FontSize="9" Margin="0,3,0,0"
+                                                           TextWrapping="Wrap" Foreground="{DynamicResource Text}" />
+                                                <TextBlock Text="{Binding Detail}" FontSize="8" Margin="0,2,0,0"
+                                                           TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </StackPanel>
                 </StackPanel>
@@ -1724,6 +1804,43 @@
                             <Button Content="关闭" Style="{StaticResource BtnPrimary}" Height="30" Padding="16,0"
                                     FontSize="9" Margin="8,0,0,0" Click="OnPbExportClose" />
                         </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- 交接 -->
+                <StackPanel x:Name="PbHandoffPanel" Visibility="Collapsed" Margin="26,22,26,22">
+                    <Grid Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock Text="跨设备交接" FontSize="17" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Text}" />
+                            <TextBlock Text="这个项目在另一台设备上继续过，交接摘要会随项目一起迁移。" FontSize="9"
+                                       Margin="0,5,0,0" Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                        <Button Content="✕" Style="{StaticResource BtnCompact}" Width="30" Height="30"
+                                HorizontalAlignment="Right" VerticalAlignment="Top" Click="OnPbHandoffClose" />
+                    </Grid>
+                    <Grid Margin="0,2,0,6">
+                        <TextBlock Text="来源设备" FontSize="8" Foreground="{DynamicResource Subtle}" />
+                        <TextBlock x:Name="PbHandoffDevice" Text="" FontSize="9.5" HorizontalAlignment="Right"
+                                   Foreground="{DynamicResource Text}" />
+                    </Grid>
+                    <Grid Margin="0,4,0,6">
+                        <TextBlock Text="交接时间" FontSize="8" Foreground="{DynamicResource Subtle}" />
+                        <TextBlock x:Name="PbHandoffAt" Text="" FontSize="9.5" HorizontalAlignment="Right"
+                                   Foreground="{DynamicResource Muted}" />
+                    </Grid>
+                    <TextBlock Text="摘要" FontSize="8" Margin="0,6,0,4" Foreground="{DynamicResource Subtle}" />
+                    <Border CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                            Background="{DynamicResource CardSolid}" Padding="12,10">
+                        <TextBlock x:Name="PbHandoffSummary" Text="" FontSize="9" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource Muted}" MaxHeight="180" />
+                    </Border>
+                    <TextBlock Text="完整记录" FontSize="8" Margin="0,10,0,4" Foreground="{DynamicResource Subtle}" />
+                    <TextBlock x:Name="PbHandoffRecord" Text="" FontSize="8.5" FontFamily="{StaticResource MonoFont}"
+                               Foreground="{DynamicResource Muted}" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                        <Button Content="知道了" Style="{StaticResource BtnPrimary}" Height="30" Padding="16,0"
+                                FontSize="9" Click="OnPbHandoffClose" />
                     </StackPanel>
                 </StackPanel>
 

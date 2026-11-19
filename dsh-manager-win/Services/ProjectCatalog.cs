@@ -189,6 +189,31 @@ public static class ProjectCatalog
         return (last?.ToLocalTime(), size);
     }
 
+    public sealed record HandoffInfo(string Device, string At, string Title, string Summary, string RecordPath);
+
+    /// <summary>读取项目最近的交接文件（.dsh/handoff/*.json）。</summary>
+    public static HandoffInfo ReadHandoff(string projectPath)
+    {
+        try
+        {
+            var dir = Path.Combine(projectPath, ".dsh", "handoff");
+            if (!Directory.Exists(dir)) return null;
+            var file = Directory.GetFiles(dir, "*.json")
+                .Where(f => !Path.GetFileName(f).StartsWith("."))
+                .OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
+            if (file == null) return null;
+            var node = JsonNode.Parse(File.ReadAllText(file));
+            if (node == null) return null;
+            return new HandoffInfo(
+                node["deviceShort"]?.GetValue<string>() ?? node["deviceId"]?.GetValue<string>() ?? "另一台设备",
+                node["exportedAt"]?.GetValue<string>() ?? File.GetLastWriteTime(file).ToString("MM-dd HH:mm"),
+                node["title"]?.GetValue<string>() ?? "",
+                node["summary"]?.GetValue<string>() ?? "",
+                node["fullPath"]?.GetValue<string>() ?? Path.GetFileName(file));
+        }
+        catch { return null; }
+    }
+
     public static List<BackupRecord> LoadBackups()
     {
         try
