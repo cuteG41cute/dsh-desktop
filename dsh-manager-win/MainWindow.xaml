@@ -681,8 +681,279 @@
                 </Border>
             </Grid>
 
+            <!-- 项目备份 / 恢复 卡 -->
             <Border Style="{StaticResource CardStyle}" Margin="0,18,0,0" Padding="0">
                 <StackPanel>
+                    <Button x:Name="PbCardTrigger" Style="{StaticResource CardSummaryBtn}" Click="OnToggleProjectBackup">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Width="44" Height="44" CornerRadius="13">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#7C6CF0" Offset="0" />
+                                        <GradientStop Color="#B08CF5" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Path Width="20" Height="20" Data="{StaticResource Icon.folder}"
+                                      Style="{StaticResource IconPath}" Stroke="White"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="项目备份 / 恢复" FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource Text}" />
+                                    <Border x:Name="PbCardBadge" Margin="8,0,0,0" CornerRadius="9" Padding="7,2"
+                                            Background="{DynamicResource SuccessSoft}" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="5" Height="5" Fill="{DynamicResource Success}" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="PbCardBadgeText" Text="备份正常" FontSize="8" Margin="5,0,0,0"
+                                                       Foreground="{DynamicResource Success}" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Text="项目迁移、定期备份与 WebDAV 远端副本，均以项目为单位。"
+                                           FontSize="8.5" Margin="0,4,0,0" Foreground="{DynamicResource Muted}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,14,0">
+                                <TextBlock x:Name="PbCardSummary" Text="0 个项目" FontSize="9.5" FontWeight="SemiBold"
+                                           HorizontalAlignment="Right" Foreground="{DynamicResource Text}" />
+                                <TextBlock x:Name="PbCardSummarySub" Text="本地目录 + NAS" FontSize="8" Margin="0,3,0,0"
+                                           HorizontalAlignment="Right" Foreground="{DynamicResource Subtle}" />
+                            </StackPanel>
+                            <Path x:Name="PbCardChevron" Grid.Column="3" Width="12" Height="12"
+                                  Data="{StaticResource Icon.chevron}" Style="{StaticResource IconPath}"
+                                  Stroke="{DynamicResource Muted}" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                                <Path.RenderTransform>
+                                    <RotateTransform x:Name="PbCardChevronRotate" Angle="0" />
+                                </Path.RenderTransform>
+                            </Path>
+                        </Grid>
+                    </Button>
+
+                    <StackPanel x:Name="PbCardBody" Visibility="Collapsed">
+                        <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource InnerBorder}" Padding="8,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="PbTabProjects" Content="项目与迁移" Style="{StaticResource PbTabBtn}"
+                                        Tag="projects" Click="OnPbTab" />
+                                <Button x:Name="PbTabBackup" Content="备份与恢复" Style="{StaticResource PbTabBtn}"
+                                        Tag="backup" Click="OnPbTab" />
+                                <Button x:Name="PbTabLogs" Content="任务日志" Style="{StaticResource PbTabBtn}"
+                                        Tag="logs" Click="OnPbTab" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 项目与迁移 -->
+                        <StackPanel x:Name="PbPanelProjects" Margin="16,12,16,16">
+                            <Border CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                    Background="{DynamicResource CardSolid}" Padding="12,9" Margin="0,0,0,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="数据范围" FontSize="8" Foreground="{DynamicResource Subtle}"
+                                               VerticalAlignment="Center" />
+                                    <ComboBox x:Name="PbInstanceCombo" Grid.Column="1" Width="230" Height="32" Margin="10,0,0,0"
+                                              FontSize="9" Style="{StaticResource TtsCombo}"
+                                              ItemContainerStyle="{StaticResource TtsComboItem}"
+                                              SelectionChanged="OnPbInstanceChanged" />
+                                    <TextBlock x:Name="PbInstanceMeta" Grid.Column="2" Margin="14,0,0,0" FontSize="8.5"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource Muted}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock x:Name="PbInstanceCounts" Grid.Column="3" FontSize="8.5"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource Muted}" />
+                                </Grid>
+                            </Border>
+
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="236" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                        Background="{DynamicResource CardSolid}" Padding="10,6">
+                                    <Grid>
+                                        <TextBox x:Name="PbSearch" FontSize="9" BorderThickness="0" Background="Transparent"
+                                                 TextChanged="OnPbFilterChanged" />
+                                        <TextBlock x:Name="PbSearchHint" Text="搜索项目…" FontSize="9"
+                                                   VerticalAlignment="Center" IsHitTestVisible="False"
+                                                   Foreground="{DynamicResource Subtle}" />
+                                    </Grid>
+                                </Border>
+                                <ComboBox x:Name="PbFilter" Grid.Column="1" Width="118" Height="32" Margin="8,0,0,0" FontSize="9"
+                                          Style="{StaticResource TtsCombo}" ItemContainerStyle="{StaticResource TtsComboItem}"
+                                          SelectionChanged="OnPbFilterChanged">
+                                    <ComboBoxItem Content="全部项目" Tag="all" />
+                                    <ComboBoxItem Content="未备份" Tag="none" />
+                                    <ComboBoxItem Content="已备份" Tag="backup" />
+                                    <ComboBoxItem Content="有更新" Tag="outdated" />
+                                </ComboBox>
+                                <ComboBox x:Name="PbSort" Grid.Column="2" Width="126" Height="32" Margin="8,0,0,0" FontSize="9"
+                                          Style="{StaticResource TtsCombo}" ItemContainerStyle="{StaticResource TtsComboItem}"
+                                          SelectionChanged="OnPbFilterChanged">
+                                    <ComboBoxItem Content="排序：最近活动" Tag="activity" />
+                                    <ComboBoxItem Content="排序：名称" Tag="title" />
+                                    <ComboBoxItem Content="排序：体积" Tag="size" />
+                                </ComboBox>
+                                <TextBlock x:Name="PbListCount" Grid.Column="3" Margin="12,0,0,0" FontSize="8.5"
+                                           VerticalAlignment="Center" Foreground="{DynamicResource Subtle}" />
+                                <Button x:Name="PbBackupAllBtn" Grid.Column="4" Content="全部备份" Style="{StaticResource BtnSecondary}"
+                                        Height="32" Padding="14,0" FontSize="9" Click="OnPbBackupAll" />
+                                <Button x:Name="PbCreateBtn" Grid.Column="5" Content="+ 从备份新建" Style="{StaticResource BtnPrimary}"
+                                        Height="32" Padding="14,0" FontSize="9" Margin="8,0,0,0" Click="OnPbCreateFromBackup" />
+                            </Grid>
+
+                            <TextBlock x:Name="PbLoadingState" Text="正在读取项目…" FontSize="9"
+                                       Foreground="{DynamicResource Muted}" Margin="4,10,0,10" Visibility="Collapsed" />
+                            <StackPanel x:Name="PbEmptyState" Visibility="Collapsed" Margin="0,26,0,26">
+                                <TextBlock Text="这个实例还没有项目" FontSize="11" FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" Foreground="{DynamicResource Text}" />
+                                <TextBlock Text="项目会在 DSH 里创建；也可以从已有备份导入一个新项目。"
+                                           FontSize="8.5" Margin="0,6,0,0" HorizontalAlignment="Center"
+                                           Foreground="{DynamicResource Subtle}" />
+                            </StackPanel>
+                            <StackPanel x:Name="PbErrorState" Visibility="Collapsed" Margin="0,26,0,26">
+                                <TextBlock Text="无法读取项目列表" FontSize="11" FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" Foreground="{DynamicResource Danger}" />
+                                <TextBlock x:Name="PbErrorText" Text="" FontSize="8.5" Margin="0,6,0,0"
+                                           HorizontalAlignment="Center" Foreground="{DynamicResource Subtle}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <TextBlock x:Name="PbNoResult" Text="没有匹配的项目" FontSize="9"
+                                       Foreground="{DynamicResource Subtle}" Margin="4,10,0,10" Visibility="Collapsed" />
+
+                            <ItemsControl x:Name="PbProjectList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="0,0,0,8" CornerRadius="10" BorderThickness="1"
+                                                BorderBrush="{DynamicResource InnerBorder}"
+                                                Background="{DynamicResource CardSolid}" Padding="12,10">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border Width="32" Height="32" CornerRadius="9"
+                                                        Background="{DynamicResource AccentSoft}" VerticalAlignment="Top">
+                                                    <Path Width="15" Height="15" Data="{StaticResource Icon.folder}"
+                                                          Style="{StaticResource IconPath}" Stroke="{DynamicResource Accent}"
+                                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+                                                <StackPanel Grid.Column="1" Margin="11,0,12,0">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding Title}" FontSize="10.5" FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource Text}" TextTrimming="CharacterEllipsis" />
+                                                        <Border Margin="8,0,0,0" CornerRadius="9" Padding="6,1"
+                                                                Background="{DynamicResource AccentSoft}" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding BadgeText}" FontSize="7.5"
+                                                                       Foreground="{DynamicResource Accent}" />
+                                                        </Border>
+                                                        <Border Margin="6,0,0,0" CornerRadius="9" Padding="6,1"
+                                                                Background="{DynamicResource SuccessSoft}" VerticalAlignment="Center"
+                                                                Visibility="{Binding HandoffVisibility}">
+                                                            <TextBlock Text="{Binding HandoffText}" FontSize="7.5"
+                                                                       Foreground="{DynamicResource Success}" />
+                                                        </Border>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding MetaLine}" FontSize="8.5" Margin="0,4,0,0"
+                                                               Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding BackupLine}" FontSize="8" Margin="0,2,0,0"
+                                                               Foreground="{DynamicResource Subtle}" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Button Content="导出" Style="{StaticResource BtnCompact}" Height="26"
+                                                            Padding="10,0" FontSize="8.5" Tag="{Binding Path}" Click="OnPbExport" />
+                                                    <Button Content="备份" Style="{StaticResource BtnCompact}" Height="26"
+                                                            Padding="10,0" FontSize="8.5" Margin="6,0,0,0" Tag="{Binding Path}" Click="OnPbBackup" />
+                                                    <Button Content="恢复" Style="{StaticResource BtnCompact}" Height="26"
+                                                            Padding="10,0" FontSize="8.5" Margin="6,0,0,0" Tag="{Binding Path}" Click="OnPbRestore" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <TextBlock x:Name="PbFooter" Text="" FontSize="8" Margin="2,6,0,0"
+                                       Foreground="{DynamicResource Subtle}" />
+                        </StackPanel>
+
+                        <!-- 备份与恢复（下一步接入计划/历史/WebDAV） -->
+                        <StackPanel x:Name="PbPanelBackup" Visibility="Collapsed" Margin="16,12,16,16">
+                            <TextBlock Text="备份计划" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Text}" />
+                            <TextBlock Text="备份计划、历史与 WebDAV 将在下一步接入。" FontSize="8.5" Margin="0,6,0,0"
+                                       Foreground="{DynamicResource Subtle}" />
+                        </StackPanel>
+
+                        <!-- 任务日志 -->
+                        <StackPanel x:Name="PbPanelLogs" Visibility="Collapsed" Margin="16,12,16,16">
+                            <TextBlock Text="任务日志" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Text}" />
+                            <TextBlock Text="执行导出 / 恢复 / 备份后，这里会显示时间、结果与详情。" FontSize="8.5" Margin="0,6,0,0"
+                                       Foreground="{DynamicResource Subtle}" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}" Margin="0,18,0,0" Padding="0">
+                <StackPanel>
+            <Button x:Name="VoiceCardTrigger" Style="{StaticResource CardSummaryBtn}" Click="OnToggleVoiceCard">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Border Width="44" Height="44" CornerRadius="13">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#7C6CF0" Offset="0" />
+                                <GradientStop Color="#B08CF5" Offset="1" />
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <Path Width="20" Height="20" Data="{StaticResource Icon.mic}"
+                              Style="{StaticResource IconPath}" Stroke="White"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="本地语音模型" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Text}" />
+                            <TextBlock x:Name="VoiceCardStatus" Text="已停止" FontSize="8" Margin="8,0,0,0"
+                                       VerticalAlignment="Center" Foreground="{DynamicResource Subtle}" />
+                        </StackPanel>
+                        <TextBlock Text="Qwen3-TTS · OpenAI 兼容 /v1/audio/speech" FontSize="8.5" Margin="0,4,0,0"
+                                   Foreground="{DynamicResource Muted}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,14,0">
+                        <TextBlock x:Name="VoiceCardSummary" Text="2 个参考音色" FontSize="9.5" FontWeight="SemiBold"
+                                   HorizontalAlignment="Right" Foreground="{DynamicResource Text}" />
+                        <TextBlock Text="127.0.0.1:8092" FontSize="8" Margin="0,3,0,0"
+                                   HorizontalAlignment="Right" Foreground="{DynamicResource Subtle}" />
+                    </StackPanel>
+                    <Path x:Name="VoiceCardChevron" Grid.Column="3" Width="12" Height="12"
+                          Data="{StaticResource Icon.chevron}" Style="{StaticResource IconPath}"
+                          Stroke="{DynamicResource Muted}" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                        <Path.RenderTransform>
+                            <RotateTransform x:Name="VoiceCardChevronRotate" Angle="0" />
+                        </Path.RenderTransform>
+                    </Path>
+                </Grid>
+            </Button>
+            <StackPanel x:Name="VoiceCardBody" Visibility="Collapsed">
                     <!-- Hero -->
                     <Grid Margin="20,16,20,14">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -999,49 +1270,8 @@
                             </TextBlock>
                         </StackPanel>
                     </Border>
+            </StackPanel>
                 </StackPanel>
-            </Border>
-            <Border Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="20,16">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="项目迁移" FontSize="12" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource Text}" />
-                        <TextBlock Text="把项目（目录 + 会话记录）打包带走，在另一台机器的 DSH 里导入"
-                                   FontSize="8" Margin="8,0,0,0" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource Subtle}" />
-                    </StackPanel>
-
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="项目迁移" FontSize="12" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource Text}" />
-                            <TextBlock Text="把项目（目录 + 会话记录）打包带走，在另一台机器的 DSH 里导入"
-                                       FontSize="8" Margin="8,0,0,0" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource Subtle}" />
-                        </StackPanel>
-
-                        <Grid Margin="0,10,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <ComboBox x:Name="MigProjectCombo" Grid.Column="0" Height="32" FontSize="9"
-                                      Style="{StaticResource TtsCombo}" ItemContainerStyle="{StaticResource TtsComboItem}" />
-                            <Button Grid.Column="1" Content="导出…" Style="{StaticResource BtnSecondary}"
-                                    Height="32" Padding="14,0" FontSize="9" Margin="8,0,0,0" Click="OnMigrateExport" />
-                            <Button Grid.Column="2" Content="导入…" Style="{StaticResource BtnSecondary}"
-                                    Height="32" Padding="14,0" FontSize="9" Margin="8,0,0,0" Click="OnMigrateImport" />
-                        </Grid>
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <CheckBox x:Name="MigIncludeFiles" Content="包含项目文件" IsChecked="True" FontSize="8.5"
-                                      Foreground="{DynamicResource Muted}" />
-                            <TextBlock Text="（跳过 node_modules / .git / bin / obj / dist）" FontSize="8"
-                                       Margin="6,0,0,0" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource Subtle}" />
-                        </StackPanel>
-                        <TextBlock x:Name="MigStatus" Text="" FontSize="8.5" Margin="0,6,0,0"
-                                   TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
-                                    </StackPanel>
             </Border>
         </StackPanel>
     </ScrollViewer>
@@ -1229,7 +1459,165 @@
                 </Grid>
                 </Grid>
                 </Canvas>
+                <!-- 迁移弹窗层 -->
+    <Grid x:Name="PbModalLayer" Visibility="Collapsed" Background="#66000000">
+        <Border Width="560" MaxHeight="640" CornerRadius="18" Background="{DynamicResource CardSolid}"
+                BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}" HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+            <Grid>
+                <!-- 导出 -->
+                <StackPanel x:Name="PbExportPanel" Visibility="Collapsed" Margin="26,22,26,22">
+                    <Grid Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock Text="导出项目" FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource Text}" />
+                            <TextBlock Text="生成包含项目文件、会话和附件的迁移包。" FontSize="9" Margin="0,5,0,0"
+                                       Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                        <Button Content="✕" Style="{StaticResource BtnCompact}" Width="30" Height="30"
+                                HorizontalAlignment="Right" VerticalAlignment="Top" Click="OnPbExportClose" />
+                    </Grid>
+                    <Border CornerRadius="9" Background="{DynamicResource AccentSoft}" Padding="12,9" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock x:Name="PbExportProject" Text="" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Text}" />
+                            <TextBlock x:Name="PbExportSource" Text="" FontSize="8" Margin="0,3,0,0"
+                                       Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                    </Border>
+                    <StackPanel x:Name="PbExportOptions">
+                        <CheckBox x:Name="PbExpSessions" Content="会话历史" IsChecked="True" FontSize="9.5" Margin="0,0,0,8" />
+                        <CheckBox x:Name="PbExpFiles" Content="项目文件（含 .dsh 隐藏配置、记忆库和文件历史）" IsChecked="True"
+                                  FontSize="9.5" Margin="0,0,0,8" />
+                        <CheckBox x:Name="PbExpAttachments" Content="引用附件" IsChecked="True" FontSize="9.5" Margin="0,0,0,8" />
+                        <CheckBox x:Name="PbExpConfig" Content="机器配置（端口与路径，不包含密钥）" FontSize="9.5" Margin="0,0,0,12" />
+                    </StackPanel>
+                    <TextBlock Text="保存到" FontSize="8" Foreground="{DynamicResource Subtle}" />
+                    <Grid Margin="0,5,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                Background="{DynamicResource Card}" Padding="10,7">
+                            <TextBox x:Name="PbExpPath" FontSize="9" BorderThickness="0" Background="Transparent" />
+                        </Border>
+                        <Button Grid.Column="1" Content="浏览" Style="{StaticResource BtnSecondary}" Height="32"
+                                Padding="14,0" FontSize="9" Margin="8,0,0,0" Click="OnPbExpBrowse" />
+                    </Grid>
+                    <Grid Margin="0,12,0,0">
+                        <TextBlock x:Name="PbExpSize" Text="" FontSize="8.5" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Subtle}" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="取消" Style="{StaticResource BtnSecondary}" Height="32" Padding="16,0"
+                                    FontSize="9" Click="OnPbExportClose" />
+                            <Button Content="导出" Style="{StaticResource BtnPrimary}" Height="32" Padding="18,0"
+                                    FontSize="9" Margin="8,0,0,0" Click="OnPbExportStart" />
+                        </StackPanel>
+                    </Grid>
+                    <StackPanel x:Name="PbExportProgress" Visibility="Collapsed" Margin="0,14,0,0">
+                        <TextBlock x:Name="PbExpStage" Text="准备中…" FontSize="9" Foreground="{DynamicResource Muted}" />
+                        <ProgressBar x:Name="PbExpBar" Height="6" Minimum="0" Maximum="100" Margin="0,8,0,0"
+                                     Value="0" Foreground="{DynamicResource Accent}" Background="{DynamicResource InnerBorder}" />
+                        <Grid Margin="0,8,0,0">
+                            <TextBlock x:Name="PbExpPercent" Text="0%" FontSize="8.5" Foreground="{DynamicResource Subtle}" />
+                            <Button Content="取消导出" Style="{StaticResource BtnCompact}" Height="26" Padding="10,0"
+                                    FontSize="8.5" HorizontalAlignment="Right" Click="OnPbExpCancel" />
+                        </Grid>
+                    </StackPanel>
+                    <StackPanel x:Name="PbExportDone" Visibility="Collapsed" Margin="0,14,0,0">
+                        <TextBlock Text="导出完成" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Success}" />
+                        <TextBlock x:Name="PbExpDonePath" Text="" FontSize="8.5" Margin="0,6,0,0" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource Muted}" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                            <Button Content="在文件夹中显示" Style="{StaticResource BtnSecondary}" Height="30" Padding="14,0"
+                                    FontSize="9" Click="OnPbExpShowFolder" />
+                            <Button Content="关闭" Style="{StaticResource BtnPrimary}" Height="30" Padding="16,0"
+                                    FontSize="9" Margin="8,0,0,0" Click="OnPbExportClose" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- 恢复 -->
+                <StackPanel x:Name="PbImportPanel" Visibility="Collapsed" Margin="26,22,26,22">
+                    <Grid Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock Text="恢复项目" FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource Text}" />
+                            <TextBlock Text="预览备份内容并选择写入方式，预检完成前不会修改项目。" FontSize="9" Margin="0,5,0,0"
+                                       Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                        <Button Content="✕" Style="{StaticResource BtnCompact}" Width="30" Height="30"
+                                HorizontalAlignment="Right" VerticalAlignment="Top" Click="OnPbImportClose" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                Background="{DynamicResource Card}" Padding="10,7">
+                            <TextBox x:Name="PbImpPath" FontSize="9" BorderThickness="0" Background="Transparent" />
+                        </Border>
+                        <Button Grid.Column="1" Content="浏览…" Style="{StaticResource BtnSecondary}" Height="32"
+                                Padding="14,0" FontSize="9" Margin="8,0,0,0" Click="OnPbImpBrowse" />
+                    </Grid>
+                    <TextBlock x:Name="PbImpCheck" Text="" FontSize="8.5" Margin="0,7,0,0" Foreground="{DynamicResource Success}" />
+                    <StackPanel Margin="0,10,0,0">
+                        <TextBlock Text="处理方式" FontSize="8" Foreground="{DynamicResource Subtle}" />
+                        <RadioButton x:Name="PbImpModeNew" Content="导入为新项目（保留当前项目，使用新项目名称）"
+                                     IsChecked="True" FontSize="9" Margin="0,6,0,4" GroupName="impMode" />
+                        <RadioButton x:Name="PbImpModeMerge" Content="合并到现有项目（合并会话与文件，按冲突规则处理）"
+                                     FontSize="9" GroupName="impMode" />
+                    </StackPanel>
+                    <TextBlock Text="新项目名称" FontSize="8" Margin="0,10,0,4" Foreground="{DynamicResource Subtle}" />
+                    <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                            Background="{DynamicResource Card}" Padding="10,7">
+                        <TextBox x:Name="PbImpName" FontSize="9" BorderThickness="0" Background="Transparent" />
+                    </Border>
+                    <TextBlock Text="目标目录" FontSize="8" Margin="0,9,0,4" Foreground="{DynamicResource Subtle}" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                Background="{DynamicResource Card}" Padding="10,7">
+                            <TextBox x:Name="PbImpDir" FontSize="9" BorderThickness="0" Background="Transparent" />
+                        </Border>
+                        <Button Grid.Column="1" Content="浏览" Style="{StaticResource BtnSecondary}" Height="32"
+                                Padding="14,0" FontSize="9" Margin="8,0,0,0" Click="OnPbImpBrowseDir" />
+                    </Grid>
+                    <Grid Margin="0,12,0,0">
+                        <TextBlock x:Name="PbImpInfo" Text="" FontSize="8.5" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Subtle}" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="取消" Style="{StaticResource BtnSecondary}" Height="32" Padding="16,0"
+                                    FontSize="9" Click="OnPbImportClose" />
+                            <Button Content="开始导入" Style="{StaticResource BtnPrimary}" Height="32" Padding="18,0"
+                                    FontSize="9" Margin="8,0,0,0" Click="OnPbImportStart" />
+                        </StackPanel>
+                    </Grid>
+                    <StackPanel x:Name="PbImportProgress" Visibility="Collapsed" Margin="0,14,0,0">
+                        <TextBlock x:Name="PbImpStage" Text="准备中…" FontSize="9" Foreground="{DynamicResource Muted}" />
+                        <ProgressBar x:Name="PbImpBar" Height="6" Minimum="0" Maximum="100" Margin="0,8,0,0"
+                                     Value="0" Foreground="{DynamicResource Accent}" Background="{DynamicResource InnerBorder}" />
+                    </StackPanel>
+                    <StackPanel x:Name="PbImportDone" Visibility="Collapsed" Margin="0,14,0,0">
+                        <TextBlock Text="已导入，重启实例后可见" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Success}" />
+                        <TextBlock x:Name="PbImpDoneText" Text="" FontSize="8.5" Margin="0,6,0,0" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource Muted}" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                            <Button Content="稍后" Style="{StaticResource BtnSecondary}" Height="30" Padding="14,0"
+                                    FontSize="9" Click="OnPbImportClose" />
+                            <Button Content="立即重启实例" Style="{StaticResource BtnPrimary}" Height="30" Padding="16,0"
+                                    FontSize="9" Margin="8,0,0,0" Click="OnPbRestartInstance" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
             </Grid>
+        </Border>
+    </Grid>
+</Grid>
         </Border>
     </Border>
 </Window>

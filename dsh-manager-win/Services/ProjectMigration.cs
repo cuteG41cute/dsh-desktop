@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 
 namespace DshManager.Services;
 
@@ -25,8 +26,14 @@ public static class ProjectMigration
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh")
             : Environment.GetEnvironmentVariable("DSH_HOME");
 
-    private static string WorkspaceFile => Path.Combine(DshHome, "storages", "workspace.json");
-    private static string SessionsRoot => Path.Combine(DshHome, "sessions");
+    private static string WorkspaceFile => WorkspaceFileFor(null);
+    private static string SessionsRoot => SessionsRootFor(null);
+
+    private static string WorkspaceFileFor(string home) =>
+        Path.Combine(home ?? DshHome, "storages", "workspace.json");
+
+    private static string SessionsRootFor(string home) =>
+        Path.Combine(home ?? DshHome, "sessions");
 
     /// <summary>DSH 的 projectKey：分隔符折叠成 '-'，其他不安全字符转 ~XXXX。</summary>
     public static string ProjectKey(string cwd)
@@ -82,11 +89,13 @@ public static class ProjectMigration
 
     /// <summary>导出：manifest + 注册表条目 + 会话记录 + （可选）项目文件。</summary>
     public static (bool Ok, string Message) Export(ProjectInfo project, string bundlePath, bool includeFiles,
-        Action<string> log = null)
+        Action<string> log = null, string dshHome = null, CancellationToken ct = default)
     {
+        var wsFile = WorkspaceFileFor(dshHome);
+        var sessionsRoot = SessionsRootFor(dshHome);
         try
         {
-            if (!File.Exists(WorkspaceFile)) return (false, "找不到 DSH 的 workspace.json：" + WorkspaceFile);
+            if (!File.Exists(wsFile)) return (false, "找不到 DSH 的 workspace.json：" + wsFile);
             var tmp = bundlePath + ".tmp";
             if (File.Exists(tmp)) File.Delete(tmp);
 
@@ -97,24 +106,41 @@ public static class ProjectMigration
             using (var gz = new GZipStream(fs, CompressionLevel.Optimal, false))
             using (var tar = new TarWriter(gz, TarEntryFormat.Pax, true))
             {
+                ct.ThrowIfCancellationRequested();
                 AddText(tar, "manifest.json", JsonSerializer.Serialize(manifest,
                     new JsonSerializerOptions { WriteIndented = true }));
 
-                var json = JsonNode.Parse(File.ReadAllText(WorkspaceFile));
+                var json = JsonNode.Parse(File.ReadAllText(wsFile));
                 var entry = json?["tables"]?["workspaces"]?[project.Id];
                 if (entry != null) AddText(tar, "state/workspace-entry.json", entry.ToJsonString());
+                var sessionIds = entry?["sessionIds"]?.AsArray()?
+                    .Select(x => x?.GetValue<string>() ?? "").Where(s => s.Length > 0)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase) ?? new HashSet<string>();
+
+                // 会话缓存（标题、token 统计、goal）按 sessionId 过滤
+                var cacheRoot = Path.Combine(dshHome ?? DshHome, "storages", "session_projcache", "sessions");
+                if (Directory.Exists(cacheRoot) && project.SessionCount > 0)
+                {
+                    foreach (var f in Directory.EnumerateFiles(cacheRoot, "*.json"))
+                    {
+                        var name = Path.GetFileNameWithoutExtension(f);
+                        if (name != null && sessionIds.Contains(name))
+                            AddFile(tar, f, "state/projcache/" + Path.GetFileName(f));
+                    }
+                }
 
                 var key = ProjectKey(project.Path);
-                var sessionDir = Path.Combine(SessionsRoot, key);
+                var sessionDir = Path.Combine(sessionsRoot, key);
                 log?.Invoke("会话目录：" + sessionDir);
-                if (Directory.Exists(sessionDir)) AddDir(tar, sessionDir, "sessions");
+                if (Directory.Exists(sessionDir)) AddDir(tar, sessionDir, "sessions", ct);
 
                 if (includeFiles && Directory.Exists(project.Path))
                 {
+                    ct.ThrowIfCancellationRequested();
                     log?.Invoke("打包项目文件：" + project.Path);
-                    AddDir(tar, project.Path, "project", skip: new[]
+                    AddDir(tar, project.Path, "project", ct, skip: new[]
                     {
-                        "node_modules", ".git", ".dsh-backup", "bin", "obj", "dist", ".vs",
+                        "node_modules", ".git", ".dsh-backup", "bin", "obj", "dist", ".vs", ".tmp",
                     });
                 }
             }
@@ -125,12 +151,16 @@ public static class ProjectMigration
             log?.Invoke($"完成：{Path.GetFileName(bundlePath)}（{size:F1} MB）");
             return (true, $"已导出「{project.Title}」（{size:F1} MB）");
         }
+        catch (OperationCanceledException) { return (false, "已取消导出"); }
         catch (Exception ex) { return (false, "导出失败：" + ex.Message); }
     }
 
     /// <summary>导入：解包到新目录、复制会话、写注册表；需要重启实例后可见。</summary>
-    public static (bool Ok, string Message) Import(string bundlePath, string destRoot, Action<string> log = null)
+    public static (bool Ok, string Message) Import(string bundlePath, string destRoot, Action<string> log = null,
+        string dshHome = null)
     {
+        var wsFile = WorkspaceFileFor(dshHome);
+        var sessionsRoot = SessionsRootFor(dshHome);
         try
         {
             var work = Path.Combine(Path.GetTempPath(), "dshproj-" + Guid.NewGuid().ToString("N"));
@@ -185,17 +215,28 @@ public static class ProjectMigration
             var sessionIds = new List<string>();
             if (Directory.Exists(srcSessions))
             {
-                var destSessions = Path.Combine(SessionsRoot, newKey);
+                var destSessions = Path.Combine(sessionsRoot, newKey);
                 CopyDir(srcSessions, destSessions);
                 foreach (var d in Directory.GetDirectories(srcSessions))
                     sessionIds.Add(Path.GetFileName(d));
                 log?.Invoke($"会话 {sessionIds.Count} 个 → {destSessions}");
             }
 
+            // 2.5) 会话缓存（标题 / 统计 / goal）
+            var srcCache = Path.Combine(work, "state", "projcache");
+            if (Directory.Exists(srcCache))
+            {
+                var destCache = Path.Combine(dshHome ?? DshHome, "storages", "session_projcache", "sessions");
+                Directory.CreateDirectory(destCache);
+                foreach (var f in Directory.GetFiles(srcCache, "*.json"))
+                    File.Copy(f, Path.Combine(destCache, Path.GetFileName(f)), true);
+                log?.Invoke("会话缓存 " + Directory.GetFiles(srcCache, "*.json").Length + " 个");
+            }
+
             // 3) 注册表
             JsonNode root;
-            if (File.Exists(WorkspaceFile))
-                root = JsonNode.Parse(File.ReadAllText(WorkspaceFile)) ?? new JsonObject();
+            if (File.Exists(wsFile))
+                root = JsonNode.Parse(File.ReadAllText(wsFile)) ?? new JsonObject();
             else
             {
                 root = new JsonObject
@@ -228,15 +269,53 @@ public static class ProjectMigration
             var ids = root["global"]?["workspaceIds"]?.AsArray();
             if (ids != null) ids.Add(id);
 
-            var backup = WorkspaceFile + ".bak-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
-            if (File.Exists(WorkspaceFile)) File.Copy(WorkspaceFile, backup, true);
-            File.WriteAllText(WorkspaceFile, root.ToJsonString(),
+            var backup = wsFile + ".bak-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            if (File.Exists(wsFile)) File.Copy(wsFile, backup, true);
+            File.WriteAllText(wsFile, root.ToJsonString(),
                 new UTF8Encoding(false));
 
             try { Directory.Delete(work, true); } catch { }
             return (true, $"已导入「{title}」到 {destProject}；重启实例后出现在项目列表里");
         }
         catch (Exception ex) { return (false, "导入失败：" + ex.Message); }
+    }
+
+    private static void AddFile(TarWriter tar, string file, string name)
+    {
+        try
+        {
+            var entry = new PaxTarEntry(TarEntryType.RegularFile, name) { DataStream = File.OpenRead(file) };
+            tar.WriteEntry(entry);
+            entry.DataStream?.Dispose();
+        }
+        catch { }
+    }
+
+    /// <summary>读取备份包的 manifest（预览用）。</summary>
+    public static (string Title, string SourcePath, string CreatedAt, int Sessions, string DeviceShort)? ReadManifest(string bundlePath)
+    {
+        try
+        {
+            using var fs = File.OpenRead(bundlePath);
+            using var gz = new GZipStream(fs, CompressionMode.Decompress);
+            using var tar = new TarReader(gz);
+            TarEntry e;
+            while ((e = tar.GetNextEntry()) != null)
+            {
+                if (e.Name == "manifest.json" && e.DataStream != null)
+                {
+                    using var reader = new StreamReader(e.DataStream);
+                    var node = JsonNode.Parse(reader.ReadToEnd());
+                    if (node == null) return null;
+                    return (node["Title"]?.GetValue<string>() ?? node["title"]?.GetValue<string>() ?? "项目",
+                            node["SourcePath"]?.GetValue<string>() ?? node["sourcePath"]?.GetValue<string>() ?? "",
+                            node["CreatedAt"]?.GetValue<string>() ?? node["createdAt"]?.GetValue<string>() ?? "",
+                            0, "win-" + Environment.MachineName.ToLowerInvariant());
+                }
+            }
+        }
+        catch { }
+        return null;
     }
 
     private static void AddText(TarWriter tar, string name, string text)
@@ -246,11 +325,13 @@ public static class ProjectMigration
         tar.WriteEntry(entry);
     }
 
-    private static void AddDir(TarWriter tar, string root, string prefix, string[] skip = null)
+    private static void AddDir(TarWriter tar, string root, string prefix, CancellationToken ct = default,
+        string[] skip = null)
     {
         skip ??= Array.Empty<string>();
         foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
         {
+            ct.ThrowIfCancellationRequested();
             var rel = Path.GetRelativePath(root, file).Replace('\\', '/');
             if (skip.Any(s => rel.Split('/').Any(part => part.Equals(s, StringComparison.OrdinalIgnoreCase))))
                 continue;

@@ -43,6 +43,29 @@ public partial class App : Application
             MessageBox.Show(ex.Exception.Message, "DeepSeek Harness 管理器");
         };
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => Log("domain: " + ex.ExceptionObject);
+        // 调试专用：--list-projects [实例标签|all]
+        var lp = Array.IndexOf(e.Args, "--list-projects");
+        if (lp >= 0)
+        {
+            AttachConsole(-1);
+            var want = lp + 1 < e.Args.Length ? e.Args[lp + 1] : "all";
+            var entries = Services.InstanceRegistry.Load();
+            foreach (var inst in entries)
+            {
+                if (want != "all" && !inst.Label.Equals(want, StringComparison.OrdinalIgnoreCase)) continue;
+                var home = Services.ProjectCatalog.HomeFor(inst);
+                Console.WriteLine($"== {inst.Label} :{inst.Port} home={home}");
+                foreach (var p in Services.ProjectCatalog.ListProjects(inst))
+                {
+                    var act = p.LastActivity?.ToString("MM-dd HH:mm") ?? "-";
+                    var bak = p.LastBackupAt?.ToString("MM-dd HH:mm") ?? "-";
+                    Console.WriteLine($"   {p.Title} | {p.Sessions} 会话 | {p.SizeBytes / 1024 / 1024} MB | 活动 {act} | 备份 {p.BackupState} {bak} {p.BackupLocation} | handoff={p.HasHandoff}");
+                }
+            }
+            Shutdown(0);
+            return;
+        }
+
         // 调试专用：--migrate-export <标题片段> <out.dshproj> / --migrate-import <包> <目标目录>
         var mi = Array.IndexOf(e.Args, "--migrate-export");
         if (mi >= 0 && mi + 2 < e.Args.Length)
@@ -367,8 +390,18 @@ public partial class App : Application
             var page = Environment.GetCommandLineArgs().SkipWhile(a => a != "--page").Skip(1).FirstOrDefault() ?? "";
             if (page == "settings") win.OpenSettingsPage();
             else if (page == "tts") win.OpenTtsPage();
+            if (Environment.GetCommandLineArgs().Contains("--expand"))
+            {
+                var which = Environment.GetCommandLineArgs().SkipWhile(a => a != "--expand").Skip(1).FirstOrDefault();
+                if (which == "pb") win.ExpandProjectCard();
+                else if (which == "voice") win.ExpandVoiceCard();
+                var modal = Environment.GetCommandLineArgs().SkipWhile(a => a != "--modal").Skip(1).FirstOrDefault();
+                if (modal == "export") win.OpenFirstProjectExport();
+                else if (modal == "import") win.OpenImportModal();
+            }
         }
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
+        var delayMs = Environment.GetCommandLineArgs().Contains("--modal") ? 2600 : 900;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(delayMs) };
         timer.Tick += (_, _) =>
         {
             timer.Stop();

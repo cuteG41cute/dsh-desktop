@@ -10,7 +10,7 @@ import tempfile
 import time
 import uuid
 
-SKIP = {'node_modules', '.git', '.dsh-backup', 'bin', 'obj', 'dist', '.vs'}
+SKIP = {'node_modules', '.git', '.dsh-backup', 'bin', 'obj', 'dist', '.vs', '.tmp'}
 
 
 def dsh_home():

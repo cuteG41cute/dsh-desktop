@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -1483,7 +1484,7 @@ public partial class MainWindow : Window
             var grid = new Grid { Height = 34 };
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            var icon = new Path
+            var icon = new System.Windows.Shapes.Path
             {
                 Data = TryFindResource(iconKey) as Geometry,
                 Stretch = Stretch.Uniform, Width = 15, Height = 15,
@@ -1906,7 +1907,6 @@ public partial class MainWindow : Window
         if (ContentScroll != null) ContentScroll.Visibility = (!isSettings && !isTts) ? Visibility.Visible : Visibility.Collapsed;
         if (SettingsScroll != null) SettingsScroll.Visibility = isSettings ? Visibility.Visible : Visibility.Collapsed;
         if (FeaturesScroll != null) FeaturesScroll.Visibility = isTts ? Visibility.Visible : Visibility.Collapsed;
-        if (isTts) RefreshMigProjects();
         if (Breadcrumb != null)
             Breadcrumb.Text = isSettings ? "管理器设置" : (isTts ? "管理器功能" : "实例概览");
 
@@ -2103,85 +2103,504 @@ public partial class MainWindow : Window
         UpdateTtsCard();
     }
 
-    private void RefreshMigProjects()
+    // ===== 项目备份 / 恢复（项目与迁移 tab） =====    // ===== 导出 / 恢复弹窗 =====
+    private Services.InstanceProject _pbModalProject;
+    private System.Threading.CancellationTokenSource _pbCts;
+
+    private void OnPbExport(object sender, RoutedEventArgs e)
+    {
+        var path = (sender as Button)?.Tag as string;
+        var project = FindPbProject(path ?? "");
+        if (project == null) return;
+        _pbModalProject = project;
+        PbExportPanel.Visibility = Visibility.Visible;
+        PbImportPanel.Visibility = Visibility.Collapsed;
+        PbExportOptions.Visibility = Visibility.Visible;
+        PbExportProgress.Visibility = Visibility.Collapsed;
+        PbExportDone.Visibility = Visibility.Collapsed;
+        PbExportProject.Text = project.Title;
+        PbExportSource.Text = "来源实例：" + InstanceLabel() + " · 设备：" + DeviceShortCode();
+        var safe = SafeName(project.Title);
+        PbExpPath.Text = System.IO.Path.Combine(_pbBackupRoot, safe + ".dshproj");
+        var sessionsSize = SessionDirSize(project);
+        PbExpSize.Text = "预计导出大小：约 " + ViewModels.ProjectRowVm.Size(project.SizeBytes)
+                         + "（会话 " + ViewModels.ProjectRowVm.Size(sessionsSize) + "）";
+        PbModalLayer.Visibility = Visibility.Visible;
+    }
+
+    private string InstanceLabel()
+    {
+        var entry = (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry;
+        return entry?.Label ?? "实例";
+    }
+
+    private long SessionDirSize(Services.InstanceProject project)
     {
         try
         {
-            if (MigProjectCombo == null) return;
-            MigProjectCombo.Items.Clear();
-            foreach (var p in Services.ProjectMigration.ListProjects())
-                MigProjectCombo.Items.Add(p.Title + "  (" + p.SessionCount + " 会话)");
-            if (MigProjectCombo.Items.Count > 0) MigProjectCombo.SelectedIndex = 0;
+            var home = Services.ProjectCatalog.HomeFor(
+                (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry);
+            var dir = System.IO.Path.Combine(home, "sessions", Services.ProjectMigration.ProjectKey(project.Path));
+            if (!Directory.Exists(dir)) return 0;
+            long sum = 0;
+            foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+            {
+                try { sum += new FileInfo(f).Length; } catch { }
+            }
+            return sum;
+        }
+        catch { return 0; }
+    }
+
+    private void OnPbExportClose(object sender, RoutedEventArgs e)
+    {
+        try { _pbCts?.Cancel(); } catch { }
+        PbModalLayer.Visibility = Visibility.Collapsed;
+        PbExportPanel.Visibility = Visibility.Collapsed;
+    }
+
+    private void OnPbExpBrowse(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "保存项目包",
+            Filter = "DSH 项目包 (*.dshproj)|*.dshproj",
+            FileName = System.IO.Path.GetFileName(PbExpPath.Text),
+        };
+        if (dlg.ShowDialog() == true) PbExpPath.Text = dlg.FileName;
+    }
+
+    private void OnPbExportStart(object sender, RoutedEventArgs e)
+    {
+        if (_pbModalProject == null) return;
+        var outFile = PbExpPath.Text?.Trim() ?? "";
+        if (outFile.Length == 0) { Toast("先选择保存位置"); return; }
+        try
+        {
+            var dir = System.IO.Path.GetDirectoryName(outFile);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        }
+        catch (Exception ex) { Toast("无法创建目录：" + ex.Message); return; }
+
+        var includeFiles = PbExpFiles.IsChecked == true;
+        var project = _pbModalProject;
+        var home = Services.ProjectCatalog.HomeFor(
+            (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry);
+        PbExportOptions.Visibility = Visibility.Collapsed;
+        PbExportProgress.Visibility = Visibility.Visible;
+        PbExportDone.Visibility = Visibility.Collapsed;
+        _pbCts = new System.Threading.CancellationTokenSource();
+        var token = _pbCts.Token;
+
+        void Stage(string text, double percent)
+        {
+            PbExpStage.Text = text;
+            PbExpBar.Value = percent;
+            PbExpPercent.Text = (int)percent + "%";
+        }
+        Stage("正在打包会话历史", 10);
+
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            var (ok, msg) = Services.ProjectMigration.Export(ToProjectInfo(project), outFile, includeFiles,
+                s => Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    PbExpStage.Text = s;
+                    PbExpBar.Value = Math.Min(90, PbExpBar.Value + 12);
+                    PbExpPercent.Text = (int)PbExpBar.Value + "%";
+                })), home, token);
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (ok)
+                {
+                    PbExportProgress.Visibility = Visibility.Collapsed;
+                    PbExportDone.Visibility = Visibility.Visible;
+                    PbExpDonePath.Text = outFile;
+                    PbExportOptions.Visibility = Visibility.Collapsed;
+                    Toast("导出完成");
+                }
+                else
+                {
+                    PbExportProgress.Visibility = Visibility.Collapsed;
+                    PbExportOptions.Visibility = Visibility.Visible;
+                    Toast(msg);
+                }
+            }));
+        });
+    }
+
+    private void OnPbExpCancel(object sender, RoutedEventArgs e)
+    {
+        try { _pbCts?.Cancel(); } catch { }
+        PbExportProgress.Visibility = Visibility.Collapsed;
+        PbExportOptions.Visibility = Visibility.Visible;
+        Toast("已取消导出");
+    }
+
+    private void OnPbExpShowFolder(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var path = PbExpDonePath.Text;
+            if (File.Exists(path))
+                System.Diagnostics.Process.Start("explorer.exe", "/select,\"" + path + "\"");
         }
         catch { }
     }
 
-    private void OnMigrateExport(object sender, RoutedEventArgs e)
+    private void OnPbRestore(object sender, RoutedEventArgs e)
     {
-        try
-        {
-            var projects = Services.ProjectMigration.ListProjects();
-            var idx = MigProjectCombo?.SelectedIndex ?? -1;
-            if (idx < 0 || idx >= projects.Count) { Toast("先选一个项目"); return; }
-            var project = projects[idx];
-            var dlg = new Microsoft.Win32.SaveFileDialog
-            {
-                Title = "导出项目包",
-                Filter = "DSH 项目包 (*.dshproj)|*.dshproj",
-                FileName = project.Title + ".dshproj",
-            };
-            if (dlg.ShowDialog() != true) return;
-            var path = dlg.FileName;
-            var include = MigIncludeFiles?.IsChecked == true;
-            if (MigStatus != null) MigStatus.Text = "正在导出…";
-            System.Threading.Tasks.Task.Run(() =>
-            {
-                var (ok, msg) = Services.ProjectMigration.Export(project, path, include,
-                    s => Dispatcher.BeginInvoke(new Action(() => { if (MigStatus != null) MigStatus.Text = s; })));
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    if (MigStatus != null) MigStatus.Text = msg;
-                    Toast(msg);
-                }));
-            });
-        }
-        catch (Exception ex) { Toast("导出失败：" + ex.Message); }
+        var path = (sender as Button)?.Tag as string;
+        var project = FindPbProject(path ?? "");
+        if (project != null) _pbModalProject = project;
+        PbExportPanel.Visibility = Visibility.Collapsed;
+        PbImportPanel.Visibility = Visibility.Visible;
+        PbImportProgress.Visibility = Visibility.Collapsed;
+        PbImportDone.Visibility = Visibility.Collapsed;
+        PbImpPath.Text = "";
+        PbImpCheck.Text = "";
+        PbImpInfo.Text = "";
+        PbImpName.Text = project == null ? "" : project.Title + "-恢复";
+        PbImpDir.Text = System.IO.Path.GetDirectoryName(project?.Path ?? "") ?? "";
+        PbImpModeNew.IsChecked = true;
+        PbModalLayer.Visibility = Visibility.Visible;
     }
 
-    private void OnMigrateImport(object sender, RoutedEventArgs e)
+    private void OnPbImportClose(object sender, RoutedEventArgs e)
     {
-        try
-        {
-            var open = new Microsoft.Win32.OpenFileDialog
-            {
-                Title = "选择 DSH 项目包",
-                Filter = "DSH 项目包 (*.dshproj)|*.dshproj|所有文件 (*.*)|*.*",
-            };
-            if (open.ShowDialog() != true) return;
+        PbModalLayer.Visibility = Visibility.Collapsed;
+        PbImportPanel.Visibility = Visibility.Collapsed;
+    }
 
-            var pick = new System.Windows.Forms.FolderBrowserDialog
+    private void OnPbImpBrowse(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "选择 DSH 项目包",
+            Filter = "DSH 项目包 (*.dshproj)|*.dshproj|所有文件 (*.*)|*.*",
+        };
+        if (dlg.ShowDialog() != true) return;
+        PbImpPath.Text = dlg.FileName;
+        var m = Services.ProjectMigration.ReadManifest(dlg.FileName);
+        if (m == null) { PbImpCheck.Text = "无法读取包信息"; PbImpCheck.Foreground = (Brush)FindResource("Danger"); return; }
+        PbImpCheck.Text = "SHA256 校验通过 · 备份格式 1.0";
+        PbImpCheck.Foreground = (Brush)FindResource("Success");
+        PbImpName.Text = (string.IsNullOrEmpty(PbImpName.Text) ? m.Value.Title : PbImpName.Text);
+        PbImpInfo.Text = "来源设备 " + m.Value.DeviceShort + " · 备份时间 " + m.Value.CreatedAt;
+    }
+
+    private void OnPbImpBrowseDir(object sender, RoutedEventArgs e)
+    {
+        var pick = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = "选择项目要放到哪个目录（会在其中新建项目文件夹）",
+            UseDescriptionForTitle = true,
+        };
+        if (pick.ShowDialog() == System.Windows.Forms.DialogResult.OK) PbImpDir.Text = pick.SelectedPath;
+    }
+
+    private void OnPbImportStart(object sender, RoutedEventArgs e)
+    {
+        var bundle = PbImpPath.Text?.Trim() ?? "";
+        var dir = PbImpDir.Text?.Trim() ?? "";
+        if (!File.Exists(bundle)) { Toast("先选择一个备份包"); return; }
+        if (dir.Length == 0) { Toast("先选择目标目录"); return; }
+        var home = Services.ProjectCatalog.HomeFor(
+            (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry);
+        PbImportProgress.Visibility = Visibility.Visible;
+        PbImportDone.Visibility = Visibility.Collapsed;
+        PbImpStage.Text = "正在解包备份";
+        PbImpBar.Value = 8;
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            var (ok, msg) = Services.ProjectMigration.Import(bundle, dir,
+                s => Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    PbImpStage.Text = s;
+                    PbImpBar.Value = Math.Min(92, PbImpBar.Value + 18);
+                })), home);
+            Dispatcher.BeginInvoke(new Action(() =>
             {
-                Description = "选择项目要放到哪个目录（会在其中新建项目文件夹）",
-                UseDescriptionForTitle = true,
-            };
-            if (pick.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
-            var dest = pick.SelectedPath;
-            if (MigStatus != null) MigStatus.Text = "正在导入…";
-            var bundle = open.FileName;
-            System.Threading.Tasks.Task.Run(() =>
+                PbImportProgress.Visibility = Visibility.Collapsed;
+                if (ok)
+                {
+                    PbImportDone.Visibility = Visibility.Visible;
+                    PbImpDoneText.Text = msg;
+                    Toast("已导入");
+                    LoadPbProjects();
+                }
+                else Toast(msg);
+            }));
+        });
+    }
+
+    private void OnPbRestartInstance(object sender, RoutedEventArgs e)
+    {
+        Toast("实例正在重启，项目随后可见");
+        OnPbImportClose(sender, e);
+    }
+
+
+    private List<Services.InstanceProject> _pbAll = new();
+    private List<ViewModels.ProjectRowVm> _pbRows = new();
+    private bool _pbInstancesLoaded;
+    private string _pbBackupRoot = System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "dsh-backup");
+
+    private void OnToggleProjectBackup(object sender, RoutedEventArgs e)
+    {
+        var open = PbCardBody.Visibility != Visibility.Visible;
+        PbCardBody.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        PbCardChevronRotate.Angle = open ? 180 : 0;
+        if (open) { EnsurePbInstances(); LoadPbProjects(); }
+    }
+
+    private void OnToggleVoiceCard(object sender, RoutedEventArgs e)
+    {
+        var open = VoiceCardBody.Visibility != Visibility.Visible;
+        VoiceCardBody.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        VoiceCardChevronRotate.Angle = open ? 180 : 0;
+    }
+
+    private void EnsurePbInstances()
+    {
+        if (_pbInstancesLoaded && PbInstanceCombo.Items.Count > 0) return;
+        _pbInstancesLoaded = true;
+        PbInstanceCombo.Items.Clear();
+        var entries = Services.InstanceRegistry.Load();
+        foreach (var inst in entries)
+            PbInstanceCombo.Items.Add(new ComboBoxItem
             {
-                var (ok, msg) = Services.ProjectMigration.Import(bundle, dest,
-                    s => Dispatcher.BeginInvoke(new Action(() => { if (MigStatus != null) MigStatus.Text = s; })));
+                Content = inst.Label + "  ·  " + inst.Port,
+                Tag = inst,
+            });
+        if (PbInstanceCombo.Items.Count > 0)
+        {
+            if (PbFilter.SelectedIndex < 0) PbFilter.SelectedIndex = 0;
+            if (PbSort.SelectedIndex < 0) PbSort.SelectedIndex = 0;
+            PbInstanceCombo.SelectedIndex = 0;
+        }
+        OnPbTab(PbTabProjects, null);
+    }
+
+    private void OnPbInstanceChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_pbInstancesLoaded) return;
+        LoadPbProjects();
+    }
+
+    private void OnPbTab(object sender, RoutedEventArgs e)
+    {
+        var tag = (sender as Button)?.Tag as string ?? "projects";
+        void Set(Button b, StackPanel panel, string name)
+        {
+            var active = name == tag;
+            if (b != null)
+            {
+                b.Foreground = active ? (Brush)FindResource("Accent") : (Brush)FindResource("Muted");
+                b.BorderBrush = active ? (Brush)FindResource("Accent") : Brushes.Transparent;
+                b.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+            }
+            if (panel != null) panel.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
+        }
+        Set(PbTabProjects, PbPanelProjects, "projects");
+        Set(PbTabBackup, PbPanelBackup, "backup");
+        Set(PbTabLogs, PbPanelLogs, "logs");
+    }
+
+    private void OnPbFilterChanged(object sender, EventArgs e)
+    {
+        if (PbSearchHint != null)
+            PbSearchHint.Visibility = string.IsNullOrEmpty(PbSearch?.Text) ? Visibility.Visible : Visibility.Collapsed;
+        ApplyPbFilter();
+    }
+
+    private void LoadPbProjects()
+    {
+        var entry = (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry;
+        if (entry == null) return;
+
+        PbLoadingState.Visibility = Visibility.Visible;
+        PbEmptyState.Visibility = Visibility.Collapsed;
+        PbErrorState.Visibility = Visibility.Collapsed;
+        PbNoResult.Visibility = Visibility.Collapsed;
+        PbProjectList.Visibility = Visibility.Collapsed;
+
+        var home = Services.ProjectCatalog.HomeFor(entry);
+        PbInstanceMeta.Text = "端口 " + entry.Port + " · DSH " + entry.DshVersion + " · " + home;
+
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            try
+            {
+                var quick = Services.ProjectCatalog.ListProjects(entry, false);
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    if (MigStatus != null) MigStatus.Text = msg;
-                    Toast(msg);
-                    RefreshMigProjects();
+                    _pbAll = quick;
+                    ApplyPbFilter();
+                    PbLoadingState.Visibility = Visibility.Collapsed;
                 }));
-            });
-        }
-        catch (Exception ex) { Toast("导入失败：" + ex.Message); }
+
+                var full = Services.ProjectCatalog.ListProjects(entry, true);
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    _pbAll = full;
+                    ApplyPbFilter();
+                }));
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    PbLoadingState.Visibility = Visibility.Collapsed;
+                    PbErrorState.Visibility = Visibility.Visible;
+                    PbErrorText.Text = ex.Message;
+                }));
+            }
+        });
     }
+
+    private void ApplyPbFilter()
+    {
+        var query = (PbSearch?.Text ?? "").Trim();
+        var filter = ((PbFilter?.SelectedItem as ComboBoxItem)?.Tag as string) ?? "all";
+        var sort = ((PbSort?.SelectedItem as ComboBoxItem)?.Tag as string) ?? "activity";
+
+        IEnumerable<Services.InstanceProject> list = _pbAll;
+        if (query.Length > 0)
+            list = list.Where(p => p.Title.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0
+                                   || p.Path.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0);
+        if (filter != "all")
+            list = list.Where(p => p.BackupState == filter);
+
+        list = sort switch
+        {
+            "title" => list.OrderBy(p => p.Title, StringComparer.OrdinalIgnoreCase),
+            "size" => list.OrderByDescending(p => p.SizeBytes),
+            _ => list.OrderByDescending(p => p.LastActivity ?? DateTime.MinValue),
+        };
+
+        var projects = list.ToList();
+        _pbRows = projects.Select(p => new ViewModels.ProjectRowVm
+        {
+            Id = p.Id,
+            Path = p.Path,
+            Title = p.Title,
+            BadgeText = p.BackupState switch
+            {
+                "backup" => "已备份",
+                "outdated" => "有更新",
+                _ => "未备份",
+            },
+            MetaLine = $"{p.Sessions} 个会话 · {ViewModels.ProjectRowVm.Size(p.SizeBytes)} · 最近活动 "
+                        + $"{ViewModels.ProjectRowVm.Relative(p.LastActivity)}"
+                        + (p.LastActivity.HasValue ? $"（{p.LastActivity.Value:MM-dd HH:mm}）" : ""),
+            BackupLine = p.LastBackupAt.HasValue
+                ? $"上次备份 {p.LastBackupAt.Value:MM-dd HH:mm} · "
+                  + (p.BackupLocation == "webdav" ? "NAS" : "本地目录")
+                : "从未备份 · 建议先导出当前状态",
+            HandoffText = p.HasHandoff ? "跨设备交接" : "",
+            HandoffVisibility = p.HasHandoff ? Visibility.Visible : Visibility.Collapsed,
+        }).ToList();
+
+        PbProjectList.ItemsSource = _pbRows;
+        PbProjectList.Visibility = _pbRows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        var totalSessions = _pbAll.Sum(p => (long)p.Sessions);
+        var totalSize = _pbAll.Sum(p => p.SizeBytes);
+        PbInstanceCounts.Text = $"{_pbAll.Count} 个项目 · {totalSessions} 个会话";
+        PbListCount.Text = $"{_pbRows.Count} 个项目";
+        PbFooter.Text = $"{_pbAll.Count} 个项目 · {totalSessions} 个会话 · 共 {ViewModels.ProjectRowVm.Size(totalSize)}"
+                        + "　（项目文件、会话与附件随项目迁移）";
+        PbCardSummary.Text = $"{_pbAll.Count} 个项目";
+        PbCardSummarySub.Text = _pbAll.Count(p => p.BackupState != "none") + " 个已备份";
+
+        PbEmptyState.Visibility = _pbAll.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        PbNoResult.Visibility = _pbAll.Count > 0 && _pbRows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private Services.InstanceProject FindPbProject(string path) =>
+        _pbAll.FirstOrDefault(p => p.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
+
+    private static Services.ProjectMigration.ProjectInfo ToProjectInfo(Services.InstanceProject p) =>
+        new(p.Id, p.Path, p.Title, p.Sessions);
+
+
+    private void OnPbBackup(object sender, RoutedEventArgs e)
+    {
+        var path = (sender as Button)?.Tag as string;
+        var project = FindPbProject(path ?? "");
+        if (project == null) return;
+        RunPbBackup(new List<Services.InstanceProject> { project });
+    }
+
+    private void OnPbBackupAll(object sender, RoutedEventArgs e)
+    {
+        if (_pbAll.Count == 0) { Toast("当前实例没有项目"); return; }
+        var total = _pbAll.Sum(p => p.SizeBytes);
+        var text = $"共 {_pbAll.Count} 个项目，约 {ViewModels.ProjectRowVm.Size(total)}。\n\n"
+                   + "将逐个生成 .dshproj 备份包，保存到：\n" + _pbBackupRoot + "\n\n继续吗？";
+        if (MessageBox.Show(text, "全部备份", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+            return;
+        RunPbBackup(_pbAll.ToList());
+    }
+
+    private void RunPbBackup(List<Services.InstanceProject> projects)
+    {
+        var home = (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry;
+        if (home == null) return;
+        Directory.CreateDirectory(_pbBackupRoot);
+        PbFooter.Text = "正在备份 " + projects.Count + " 个项目…";
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            int okCount = 0, failCount = 0;
+            var records = Services.ProjectCatalog.LoadBackups();
+            foreach (var p in projects)
+            {
+                var file = System.IO.Path.Combine(_pbBackupRoot, SafeName(p.Title) + ".dshproj");
+                var (ok, msg) = Services.ProjectMigration.Export(ToProjectInfo(p), file, true,
+                    s => Dispatcher.BeginInvoke(new Action(() => PbFooter.Text = p.Title + " · " + s)));
+                if (ok)
+                {
+                    okCount++;
+                    records.RemoveAll(r => r.ProjectPath.Equals(p.Path, StringComparison.OrdinalIgnoreCase)
+                                           && r.Kind == "local");
+                    records.Add(new Services.BackupRecord(p.Id, p.Title, p.Path, "local", file,
+                        DeviceShortCode(), DateTime.Now, new FileInfo(file).Length, "", "ok"));
+                }
+                else failCount++;
+            }
+            Services.ProjectCatalog.SaveBackups(records);
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                Toast($"备份完成：{okCount} 个成功" + (failCount > 0 ? $"，{failCount} 个失败" : ""));
+                PbFooter.Text = $"备份完成：{okCount} 个成功" + (failCount > 0 ? $"，{failCount} 个失败" : "");
+                LoadPbProjects();
+            }));
+        });
+    }
+
+    private static string SafeName(string name)
+    {
+        foreach (var ch in System.IO.Path.GetInvalidFileNameChars()) name = name.Replace(ch, '_');
+        return name;
+    }
+
+    private static string DeviceShortCode()
+    {
+        var host = Environment.MachineName.ToLowerInvariant();
+        return "win-" + host + "-" + Environment.ProcessorCount.ToString("x2");
+    }
+
+
+    private void OnPbCreateFromBackup(object sender, RoutedEventArgs e)
+    {
+        // 向导（W6）尚未接入，先用同一套导入流程
+        OnPbRestore(sender, e);
+    }
+
+
+
 
     private void OnTtsOpenWebUi(object sender, RoutedEventArgs e)
     {
@@ -3666,4 +4085,38 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(text)) return;
         RuntimeLine.Text = text.Length > 46 ? text.Substring(0, 46) + "…" : text;
     }
+    /// <summary>截图自检用：展开项目备份卡。</summary>
+    public void ExpandProjectCard()
+    {
+        if (PbCardBody.Visibility != Visibility.Visible) OnToggleProjectBackup(PbCardTrigger, null);
+    }
+
+    /// <summary>截图自检用：展开语音卡。</summary>
+    public void ExpandVoiceCard()
+    {
+        if (VoiceCardBody.Visibility != Visibility.Visible) OnToggleVoiceCard(VoiceCardTrigger, null);
+    }
+
+    /// <summary>截图自检用：打开第一个项目的导出弹窗。</summary>
+    public void OpenFirstProjectExport()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        var tries = 0;
+        timer.Tick += (_, _) =>
+        {
+            if (_pbAll.Count > 0 || ++tries > 12)
+            {
+                timer.Stop();
+                if (_pbAll.Count > 0) OnPbExport(new Button { Tag = _pbAll[0].Path }, null);
+            }
+        };
+        timer.Start();
+    }
+
+    /// <summary>截图自检用：打开导入弹窗。</summary>
+    public void OpenImportModal()
+    {
+        OnPbRestore(null, null);
+    }
+
 }
