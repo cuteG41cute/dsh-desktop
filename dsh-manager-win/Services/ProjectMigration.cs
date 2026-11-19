@@ -157,8 +157,9 @@ public static class ProjectMigration
 
     /// <summary>导入：解包到新目录、复制会话、写注册表；需要重启实例后可见。</summary>
     public static (bool Ok, string Message) Import(string bundlePath, string destRoot, Action<string> log = null,
-        string dshHome = null)
+        string dshHome = null, string mergeIntoPath = null)
     {
+        var merge = !string.IsNullOrEmpty(mergeIntoPath);
         var wsFile = WorkspaceFileFor(dshHome);
         var sessionsRoot = SessionsRootFor(dshHome);
         try
@@ -194,7 +195,7 @@ public static class ProjectMigration
 
             // 1) 项目文件
             var srcProject = Path.Combine(work, "project");
-            var destProject = Path.Combine(destRoot, title);
+            var destProject = merge ? mergeIntoPath! : Path.Combine(destRoot, title);
             if (Directory.Exists(srcProject))
             {
                 if (Directory.Exists(destProject))
@@ -216,9 +217,23 @@ public static class ProjectMigration
             if (Directory.Exists(srcSessions))
             {
                 var destSessions = Path.Combine(sessionsRoot, newKey);
-                CopyDir(srcSessions, destSessions);
+                Directory.CreateDirectory(destSessions);
                 foreach (var d in Directory.GetDirectories(srcSessions))
-                    sessionIds.Add(Path.GetFileName(d));
+                {
+                    var name = Path.GetFileName(d);
+                    var target = Path.Combine(destSessions, name);
+                    if (Directory.Exists(target))
+                    {
+                        // 同名会话：内容相同则跳过；不同则保留双份
+                        var a = HashTree(d);
+                        var b = HashTree(target);
+                        if (a == b) { sessionIds.Add(name); continue; }
+                        name = name + "-" + Guid.NewGuid().ToString("N").Substring(0, 6);
+                        target = Path.Combine(destSessions, name);
+                    }
+                    CopyDir(d, target);
+                    sessionIds.Add(name);
+                }
                 log?.Invoke($"会话 {sessionIds.Count} 个 → {destSessions}");
             }
 
@@ -259,15 +274,32 @@ public static class ProjectMigration
             var newSessions = new JsonArray();
             foreach (var s in sessionIds) newSessions.Add(s);
 
-            var entryNode = new JsonObject
+            var existing = workspaces.FirstOrDefault(kv =>
+                (kv.Value?["path"]?.GetValue<string>() ?? "").Equals(destProject, StringComparison.OrdinalIgnoreCase));
+            if (existing.Key != null)
             {
-                ["path"] = destProject,
-                ["title"] = title,
-                ["sessionIds"] = newSessions,
-            };
-            workspaces[id] = entryNode;
-            var ids = root["global"]?["workspaceIds"]?.AsArray();
-            if (ids != null) ids.Add(id);
+                var arr = existing.Value?["sessionIds"]?.AsArray();
+                if (arr == null)
+                {
+                    arr = new JsonArray();
+                    existing.Value!["sessionIds"] = arr;
+                }
+                foreach (var s in sessionIds)
+                    if (!arr.Any(x => x?.GetValue<string>() == s)) arr.Add(s);
+                log?.Invoke("已合并到现有项目：" + title);
+            }
+            else
+            {
+                var entryNode = new JsonObject
+                {
+                    ["path"] = destProject,
+                    ["title"] = title,
+                    ["sessionIds"] = newSessions,
+                };
+                workspaces[id] = entryNode;
+                var ids = root["global"]?["workspaceIds"]?.AsArray();
+                if (ids != null) ids.Add(id);
+            }
 
             var backup = wsFile + ".bak-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
             if (File.Exists(wsFile)) File.Copy(wsFile, backup, true);
@@ -278,6 +310,22 @@ public static class ProjectMigration
             return (true, $"已导入「{title}」到 {destProject}；重启实例后出现在项目列表里");
         }
         catch (Exception ex) { return (false, "导入失败：" + ex.Message); }
+    }
+
+    private static string HashTree(string dir)
+    {
+        try
+        {
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            foreach (var f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories).OrderBy(x => x))
+            {
+                var bytes = File.ReadAllBytes(f);
+                sha.TransformBlock(bytes, 0, bytes.Length, null, 0);
+            }
+            sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+            return Convert.ToHexString(sha.Hash ?? Array.Empty<byte>());
+        }
+        catch { return Guid.NewGuid().ToString("N"); }
     }
 
     private static void AddFile(TarWriter tar, string file, string name)

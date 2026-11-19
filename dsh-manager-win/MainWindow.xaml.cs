@@ -2304,7 +2304,29 @@ public partial class MainWindow : Window
         var bundle = PbImpPath.Text?.Trim() ?? "";
         var dir = PbImpDir.Text?.Trim() ?? "";
         if (!File.Exists(bundle)) { Toast("先选择一个备份包"); return; }
+        var merge = PbImpModeMerge.IsChecked == true;
+        if (merge)
+        {
+            if (_pbModalProject == null) { Toast("先选一个要合并的项目"); return; }
+            dir = _pbModalProject.Path;
+            if (MessageBox.Show(
+                "恢复会覆盖当前项目中的同名文件，开始前会先自动导出当前状态。\n\n项目：" + _pbModalProject.Title
+                + "\n继续吗？", "确认合并并恢复项目？", MessageBoxButton.OKCancel, MessageBoxImage.Warning)
+                != MessageBoxResult.OK) return;
+            try
+            {
+                Directory.CreateDirectory(System.IO.Path.Combine(_pbBackupRoot, "before-restore"));
+                var pre = System.IO.Path.Combine(_pbBackupRoot, "before-restore",
+                    SafeName(_pbModalProject.Title) + "-" + DateTime.Now.ToString("MMddHHmmss") + ".dshproj");
+                var home2 = Services.ProjectCatalog.HomeFor(
+                    (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry);
+                var preResult = Services.ProjectMigration.Export(ToProjectInfo(_pbModalProject), pre, true, null, home2);
+                if (!preResult.Ok) { Toast("自动导出失败，已中止：" + preResult.Message); return; }
+            }
+            catch (Exception ex) { Toast("自动导出失败，已中止：" + ex.Message); return; }
+        }
         if (dir.Length == 0) { Toast("先选择目标目录"); return; }
+        var mergePath = merge ? dir : null;
         var home = Services.ProjectCatalog.HomeFor(
             (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry);
         PbImportProgress.Visibility = Visibility.Visible;
@@ -2318,7 +2340,7 @@ public partial class MainWindow : Window
                 {
                     PbImpStage.Text = s;
                     PbImpBar.Value = Math.Min(92, PbImpBar.Value + 18);
-                })), home);
+                })), home, mergePath);
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 PbImportProgress.Visibility = Visibility.Collapsed;
