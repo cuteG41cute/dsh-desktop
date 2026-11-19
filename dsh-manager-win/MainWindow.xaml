@@ -986,9 +986,31 @@
                         </StackPanel>
                     </Grid>
 
-                    <!-- 项目迁移 -->
-                    <Border Height="1" Background="{DynamicResource InnerBorder}" Margin="0,18,0,0" />
-                    <StackPanel Margin="0,14,0,0">
+                    <!-- 运行说明 -->
+                    <Border Background="{DynamicResource AccentSoft}" Padding="20,11">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Width="12" Height="12" Data="{StaticResource Icon.info}"
+                                  Style="{StaticResource IconPath}" Stroke="{DynamicResource Accent}"
+                                  VerticalAlignment="Center" />
+                            <TextBlock Margin="7,0,0,0" FontSize="8.5" TextWrapping="Wrap" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Muted}">
+                                <Run Text="运行说明" FontWeight="SemiBold" />
+                                <Run Text="　服务由管理器启动 / 停止，日志位于 services\tts\logs\server.log；CPU 推理速度约为实时的 0.3 倍，长文本请先在管理页合成再播放。" />
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="20,16">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="项目迁移" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Text}" />
+                        <TextBlock Text="把项目（目录 + 会话记录）打包带走，在另一台机器的 DSH 里导入"
+                                   FontSize="8" Margin="8,0,0,0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Subtle}" />
+                    </StackPanel>
+
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="项目迁移" FontSize="12" FontWeight="SemiBold"
                                        Foreground="{DynamicResource Text}" />
@@ -1019,22 +1041,7 @@
                         </StackPanel>
                         <TextBlock x:Name="MigStatus" Text="" FontSize="8.5" Margin="0,6,0,0"
                                    TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
-                    </StackPanel>
-
-                    <!-- 运行说明 -->
-                    <Border Background="{DynamicResource AccentSoft}" Padding="20,11">
-                        <StackPanel Orientation="Horizontal">
-                            <Path Width="12" Height="12" Data="{StaticResource Icon.info}"
-                                  Style="{StaticResource IconPath}" Stroke="{DynamicResource Accent}"
-                                  VerticalAlignment="Center" />
-                            <TextBlock Margin="7,0,0,0" FontSize="8.5" TextWrapping="Wrap" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource Muted}">
-                                <Run Text="运行说明" FontWeight="SemiBold" />
-                                <Run Text="　服务由管理器启动 / 停止，日志位于 services\tts\logs\server.log；CPU 推理速度约为实时的 0.3 倍，长文本请先在管理页合成再播放。" />
-                            </TextBlock>
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
+                                    </StackPanel>
             </Border>
         </StackPanel>
     </ScrollViewer>
