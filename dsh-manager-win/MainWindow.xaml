@@ -890,11 +890,201 @@
                                        Foreground="{DynamicResource Subtle}" />
                         </StackPanel>
 
-                        <!-- 备份与恢复（下一步接入计划/历史/WebDAV） -->
+                        <!-- 备份与恢复 -->
                         <StackPanel x:Name="PbPanelBackup" Visibility="Collapsed" Margin="16,12,16,16">
-                            <TextBlock Text="备份计划" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Text}" />
-                            <TextBlock Text="备份计划、历史与 WebDAV 将在下一步接入。" FontSize="8.5" Margin="0,6,0,0"
-                                       Foreground="{DynamicResource Subtle}" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <Button x:Name="PbBakTabLocal" Content="本地备份" Style="{StaticResource PbTabBtn}"
+                                        Padding="10,6,10,6" Tag="local" Click="OnPbBackupSubTab" />
+                                <Button x:Name="PbBakTabDav" Content="WebDAV" Style="{StaticResource PbTabBtn}"
+                                        Padding="10,6,10,6" Margin="4,0,0,0" Tag="webdav" Click="OnPbBackupSubTab" />
+                            </StackPanel>
+
+                            <StackPanel x:Name="PbBakLocal">
+                                <Border CornerRadius="10" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                        Background="{DynamicResource CardSolid}" Padding="14,12">
+                                    <StackPanel>
+                                        <Grid>
+                                            <TextBlock Text="备份计划" FontSize="11" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource Text}" VerticalAlignment="Center" />
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <CheckBox x:Name="PbPlanEnabled" Content="启用自动备份" FontSize="9"
+                                                          VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="备份频率" FontSize="8" Foreground="{DynamicResource Subtle}" />
+                                                <ComboBox x:Name="PbPlanFreq" Height="32" Margin="0,4,8,0" FontSize="9"
+                                                          Style="{StaticResource TtsCombo}"
+                                                          ItemContainerStyle="{StaticResource TtsComboItem}"
+                                                          SelectionChanged="OnPbPlanFreqChanged">
+                                                    <ComboBoxItem Content="每天" Tag="daily" />
+                                                    <ComboBoxItem Content="每周" Tag="weekly" />
+                                                    <ComboBoxItem Content="每隔 N 小时" Tag="hours" />
+                                                </ComboBox>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="执行时间" FontSize="8" Foreground="{DynamicResource Subtle}" />
+                                                <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                                        Background="{DynamicResource Card}" Padding="10,7" Margin="0,4,8,0">
+                                                    <TextBox x:Name="PbPlanTime" FontSize="9" BorderThickness="0"
+                                                             Background="Transparent" Text="03:00" />
+                                                </Border>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="备份范围" FontSize="8" Foreground="{DynamicResource Subtle}" />
+                                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                    <RadioButton x:Name="PbScopeAll" Content="全部项目" IsChecked="True"
+                                                                 FontSize="9" GroupName="planScope" />
+                                                    <RadioButton x:Name="PbScopeSelected" Content="仅选定的项目" FontSize="9"
+                                                                 Margin="12,0,0,0" GroupName="planScope" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="90" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="保存到" FontSize="8" Foreground="{DynamicResource Subtle}" />
+                                                <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                                        Background="{DynamicResource Card}" Padding="10,7" Margin="0,4,8,0">
+                                                    <TextBox x:Name="PbPlanDir" FontSize="9" BorderThickness="0" Background="Transparent" />
+                                                </Border>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="浏览" Style="{StaticResource BtnSecondary}"
+                                                    Height="32" Padding="14,0" FontSize="9" Margin="0,18,14,0"
+                                                    Click="OnPbPlanBrowse" />
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="每个项目保留份数" FontSize="8" Foreground="{DynamicResource Subtle}" />
+                                                <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                                        Background="{DynamicResource Card}" Padding="10,7" Margin="0,4,0,0">
+                                                    <TextBox x:Name="PbPlanKeep" FontSize="9" BorderThickness="0"
+                                                             Background="Transparent" Text="1" />
+                                                </Border>
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid Margin="0,10,0,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <CheckBox x:Name="PbPlanDays" Content="同时最多保留" FontSize="9" />
+                                                <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                                        Background="{DynamicResource Card}" Padding="8,5" Margin="6,0,4,0" Width="52">
+                                                    <TextBox x:Name="PbPlanDaysValue" FontSize="9" BorderThickness="0"
+                                                             Background="Transparent" Text="30" />
+                                                </Border>
+                                                <TextBlock Text="天" FontSize="9" VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource Muted}" />
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <CheckBox x:Name="PbPlanSessions" Content="会话历史" FontSize="9" IsChecked="True" />
+                                                <CheckBox x:Name="PbPlanFiles" Content="项目文件" FontSize="9" IsChecked="True" Margin="10,0,0,0" />
+                                                <CheckBox x:Name="PbPlanAttach" Content="引用附件" FontSize="9" IsChecked="True" Margin="10,0,0,0" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid Margin="0,10,0,0">
+                                            <TextBlock x:Name="PbPlanNext" Text="" FontSize="8.5" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource Subtle}" />
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <TextBlock x:Name="PbPlanSaved" Text="" FontSize="8.5" Margin="0,0,10,0"
+                                                           VerticalAlignment="Center" Foreground="{DynamicResource Success}" />
+                                                <Button Content="保存计划" Style="{StaticResource BtnPrimary}" Height="30"
+                                                        Padding="16,0" FontSize="9" Click="OnPbPlanSave" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+
+                                <Grid Margin="0,14,0,6">
+                                    <TextBlock Text="备份历史" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource Text}" />
+                                    <Button Content="立即备份" Style="{StaticResource BtnCompact}" Height="26" Padding="10,0"
+                                            FontSize="8.5" HorizontalAlignment="Right" Click="OnPbBackupNow" />
+                                </Grid>
+                                <TextBlock x:Name="PbHistoryEmpty" Text="还没有备份" FontSize="9" Margin="2,8,0,8"
+                                           Foreground="{DynamicResource Subtle}" Visibility="Collapsed" />
+                                <ItemsControl x:Name="PbHistoryList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Margin="0,0,0,6" CornerRadius="9" BorderThickness="1"
+                                                    BorderBrush="{DynamicResource InnerBorder}"
+                                                    Background="{DynamicResource CardSolid}" Padding="10,8">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Title}" FontSize="9.5" FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource Text}" />
+                                                        <TextBlock Text="{Binding Meta}" FontSize="8" Margin="0,2,0,0"
+                                                                   Foreground="{DynamicResource Muted}" />
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding StatusText}" FontSize="8.5"
+                                                                   Foreground="{DynamicResource Success}" VerticalAlignment="Center"
+                                                                   Margin="0,0,10,0" />
+                                                        <Button Content="恢复" Style="{StaticResource BtnCompact}" Height="26"
+                                                                Padding="10,0" FontSize="8.5" Tag="{Binding File}"
+                                                                Click="OnPbHistoryRestore" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <StackPanel x:Name="PbBakDav" Visibility="Collapsed">
+                                <Border CornerRadius="10" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                        Background="{DynamicResource CardSolid}" Padding="14,12">
+                                    <StackPanel>
+                                        <TextBlock Text="WebDAV 连接" FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource Text}" />
+                                        <Grid Margin="0,8,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                                    Background="{DynamicResource Card}" Padding="10,7">
+                                                <TextBox x:Name="PbDavUrl" FontSize="9" BorderThickness="0"
+                                                         Background="Transparent" />
+                                            </Border>
+                                            <Button Grid.Column="1" Content="测试连接" Style="{StaticResource BtnSecondary}"
+                                                    Height="32" Padding="14,0" FontSize="9" Margin="8,0,0,0"
+                                                    Click="OnPbDavTest" />
+                                        </Grid>
+                                        <TextBlock x:Name="PbDavStatus" Text="" FontSize="8.5" Margin="0,6,0,0"
+                                                   Foreground="{DynamicResource Muted}" />
+                                        <Grid Margin="0,8,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                                    Background="{DynamicResource Card}" Padding="10,7" Margin="0,0,8,0">
+                                                <TextBox x:Name="PbDavUser" FontSize="9" BorderThickness="0"
+                                                         Background="Transparent" Text="用户名" Foreground="{DynamicResource Subtle}" />
+                                            </Border>
+                                            <Border Grid.Column="1" CornerRadius="8" BorderThickness="1"
+                                                    BorderBrush="{DynamicResource InnerBorder}"
+                                                    Background="{DynamicResource Card}" Padding="10,7">
+                                                <TextBox x:Name="PbDavPass" FontSize="9" BorderThickness="0"
+                                                         Background="Transparent" Text="密码" Foreground="{DynamicResource Subtle}" />
+                                            </Border>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Text="WebDAV 上传将在下一轮接入（先把连接测试跑通）。" FontSize="8.5"
+                                           Margin="2,10,0,0" Foreground="{DynamicResource Subtle}" />
+                            </StackPanel>
                         </StackPanel>
 
                         <!-- 任务日志 -->

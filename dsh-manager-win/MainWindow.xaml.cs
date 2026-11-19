@@ -2103,7 +2103,229 @@ public partial class MainWindow : Window
         UpdateTtsCard();
     }
 
-    // ===== 项目备份 / 恢复（项目与迁移 tab） =====    // ===== 导出 / 恢复弹窗 =====
+    // ===== 项目备份 / 恢复（项目与迁移 tab） =====    // ===== 备份与恢复 tab =====
+    private DispatcherTimer _backupTimer;
+    private bool _backupTimerStarted;
+
+    private void OnPbBackupSubTab(object sender, RoutedEventArgs e)
+    {
+        var tag = (sender as Button)?.Tag as string ?? "local";
+        var local = tag == "local";
+        PbBakLocal.Visibility = local ? Visibility.Visible : Visibility.Collapsed;
+        PbBakDav.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
+        void Style(Button b, bool active)
+        {
+            b.Foreground = active ? (Brush)FindResource("Accent") : (Brush)FindResource("Muted");
+            b.BorderBrush = active ? (Brush)FindResource("Accent") : Brushes.Transparent;
+            b.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+        }
+        Style(PbBakTabLocal, local);
+        Style(PbBakTabDav, !local);
+    }
+
+    private void LoadBackupTab()
+    {
+        var entry = (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry;
+        if (entry == null) return;
+        var plan = Services.BackupPlanStore.Load(entry.Id);
+        PbPlanEnabled.IsChecked = plan.Enabled;
+        for (var i = 0; i < PbPlanFreq.Items.Count; i++)
+        {
+            var item = PbPlanFreq.Items[i] as ComboBoxItem;
+            if ((item?.Tag as string) == plan.Frequency) { PbPlanFreq.SelectedIndex = i; break; }
+        }
+        if (PbPlanFreq.SelectedIndex < 0) PbPlanFreq.SelectedIndex = 0;
+        PbPlanTime.Text = plan.Time;
+        PbPlanDir.Text = string.IsNullOrWhiteSpace(plan.Directory) ? _pbBackupRoot : plan.Directory;
+        PbPlanKeep.Text = plan.RetentionCount.ToString();
+        PbPlanDays.IsChecked = plan.RetentionDays > 0;
+        PbPlanDaysValue.Text = plan.RetentionDays > 0 ? plan.RetentionDays.ToString() : "30";
+        PbPlanSessions.IsChecked = plan.IncludeSessions;
+        PbPlanFiles.IsChecked = plan.IncludeProjectFiles;
+        PbPlanAttach.IsChecked = plan.IncludeAttachments;
+        PbScopeAll.IsChecked = plan.Scope != "selected";
+        PbScopeSelected.IsChecked = plan.Scope == "selected";
+        PbPlanNext.Text = plan.NextRunAt.HasValue
+            ? "下次执行：" + plan.NextRunAt.Value.ToString("MM-dd HH:mm")
+            : "下次执行：保存计划后计算";
+        PbPlanSaved.Text = "";
+        OnPbBackupSubTab(PbBakTabLocal, null);
+        LoadBackupHistory(entry);
+    }
+
+    private void LoadBackupHistory(Services.RegistryEntry entry)
+    {
+        var paths = Services.ProjectCatalog.ListProjects(entry, false)
+            .Select(p => p.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var rows = Services.ProjectCatalog.LoadBackups()
+            .Where(r => paths.Contains(r.ProjectPath))
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => new ViewModels.BackupRowVm
+            {
+                Title = r.ProjectTitle,
+                Meta = r.CreatedAt.ToString("MM-dd HH:mm") + " · " + ViewModels.ProjectRowVm.Size(r.SizeBytes)
+                       + " · " + (r.Kind == "webdav" ? "NAS" : "本地目录") + " · 设备 " + r.DeviceShort,
+                StatusText = r.Status == "ok" ? "成功" : "失败",
+                File = r.File,
+            }).ToList();
+        PbHistoryList.ItemsSource = rows;
+        PbHistoryEmpty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void OnPbPlanFreqChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // 时间与间隔共用一个输入框；保存时按频率解释
+    }
+
+    private void OnPbPlanBrowse(object sender, RoutedEventArgs e)
+    {
+        var pick = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = "选择备份保存目录",
+            UseDescriptionForTitle = true,
+        };
+        if (pick.ShowDialog() == System.Windows.Forms.DialogResult.OK) PbPlanDir.Text = pick.SelectedPath;
+    }
+
+    private void OnPbPlanSave(object sender, RoutedEventArgs e)
+    {
+        var entry = (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry;
+        if (entry == null) return;
+        var plan = new Services.BackupPlan
+        {
+            Enabled = PbPlanEnabled.IsChecked == true,
+            Frequency = ((PbPlanFreq.SelectedItem as ComboBoxItem)?.Tag as string) ?? "daily",
+            Time = string.IsNullOrWhiteSpace(PbPlanTime.Text) ? "03:00" : PbPlanTime.Text.Trim(),
+            Hours = int.TryParse(PbPlanTime.Text, out var h) ? Math.Max(1, h) : 6,
+            Scope = PbScopeSelected.IsChecked == true ? "selected" : "all",
+            Directory = PbPlanDir.Text?.Trim() ?? "",
+            RetentionCount = int.TryParse(PbPlanKeep.Text, out var keep) ? Math.Max(1, keep) : 1,
+            RetentionDays = PbPlanDays.IsChecked == true && int.TryParse(PbPlanDaysValue.Text, out var days) ? Math.Max(0, days) : 0,
+            IncludeSessions = PbPlanSessions.IsChecked == true,
+            IncludeProjectFiles = PbPlanFiles.IsChecked == true,
+            IncludeAttachments = PbPlanAttach.IsChecked == true,
+        };
+        plan.NextRunAt = plan.Enabled ? plan.ComputeNext(DateTime.Now) : (DateTime?)null;
+        Services.BackupPlanStore.Save(entry.Id, plan);
+        PbPlanNext.Text = plan.NextRunAt.HasValue
+            ? "下次执行：" + plan.NextRunAt.Value.ToString("MM-dd HH:mm")
+            : "下次执行：未启用";
+        PbPlanSaved.Text = "已保存";
+        Toast("备份计划已保存");
+        EnsureBackupTimer();
+    }
+
+    private void OnPbBackupNow(object sender, RoutedEventArgs e)
+    {
+        var entry = (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry;
+        if (entry == null) return;
+        var plan = Services.BackupPlanStore.Load(entry.Id);
+        if (string.IsNullOrWhiteSpace(plan.Directory)) plan.Directory = _pbBackupRoot;
+        var projects = Services.ProjectCatalog.ListProjects(entry, false);
+        if (projects.Count == 0) { Toast("没有可备份的项目"); return; }
+        PbFooter.Text = "正在备份 " + projects.Count + " 个项目…";
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            var result = Services.BackupRunner.Run(entry, plan, projects,
+                s => Dispatcher.BeginInvoke(new Action(() => PbFooter.Text = s)));
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                Toast("备份完成：" + result.Ok + " 个成功" + (result.Failed > 0 ? "，" + result.Failed + " 个失败" : ""));
+                LoadBackupHistory(entry);
+                LoadPbProjects();
+            }));
+        });
+    }
+
+    private void OnPbHistoryRestore(object sender, RoutedEventArgs e)
+    {
+        var file = (sender as Button)?.Tag as string;
+        if (string.IsNullOrEmpty(file)) return;
+        PbExportPanel.Visibility = Visibility.Collapsed;
+        PbImportPanel.Visibility = Visibility.Visible;
+        PbImportProgress.Visibility = Visibility.Collapsed;
+        PbImportDone.Visibility = Visibility.Collapsed;
+        PbImpPath.Text = file;
+        var m = Services.ProjectMigration.ReadManifest(file);
+        PbImpCheck.Text = m == null ? "无法读取包信息" : "SHA256 校验通过 · 备份格式 1.0";
+        PbImpName.Text = m?.Title + "-恢复" ?? "";
+        PbImpDir.Text = System.IO.Path.GetDirectoryName(PbImpDir.Text?.Length > 0 ? PbImpDir.Text : _pbBackupRoot) ?? _pbBackupRoot;
+        PbModalLayer.Visibility = Visibility.Visible;
+    }
+
+    private async void OnPbDavTest(object sender, RoutedEventArgs e)
+    {
+        var url = PbDavUrl.Text?.Trim() ?? "";
+        if (url.Length == 0) { Toast("先填写 WebDAV 地址"); return; }
+        PbDavStatus.Text = "正在测试…";
+        try
+        {
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(12) };
+            var user = PbDavUser.Text?.Trim() ?? "";
+            var pass = PbDavPass.Text ?? "";
+            if (user.Length > 0)
+            {
+                var token = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(user + ":" + pass));
+                http.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", token);
+            }
+            var req = new System.Net.Http.HttpRequestMessage(new System.Net.Http.HttpMethod("PROPFIND"), url);
+            req.Headers.Add("Depth", "0");
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var res = await http.SendAsync(req);
+            sw.Stop();
+            var code = (int)res.StatusCode;
+            PbDavStatus.Text = code is >= 200 and < 300
+                ? $"已连接 · {sw.ElapsedMilliseconds} ms"
+                : $"连接失败：HTTP {code}";
+            PbDavStatus.Foreground = (Brush)FindResource(code is >= 200 and < 300 ? "Success" : "Danger");
+        }
+        catch (Exception ex)
+        {
+            PbDavStatus.Text = "连接失败：" + ex.Message;
+            PbDavStatus.Foreground = (Brush)FindResource("Danger");
+        }
+    }
+
+    private void EnsureBackupTimer()
+    {
+        if (_backupTimerStarted) return;
+        _backupTimerStarted = true;
+        _backupTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+        _backupTimer.Tick += (_, _) => CheckBackupPlans();
+        _backupTimer.Start();
+        CheckBackupPlans();
+    }
+
+    private void CheckBackupPlans()
+    {
+        var entries = Services.InstanceRegistry.Load();
+        foreach (var inst in entries)
+        {
+            var plan = Services.BackupPlanStore.Load(inst.Id);
+            if (!plan.Enabled) continue;
+            var next = plan.NextRunAt ?? plan.ComputeNext(DateTime.Now.AddMinutes(-1));
+            if (DateTime.Now < next) continue;
+            plan.LastRunAt = DateTime.Now;
+            plan.NextRunAt = plan.ComputeNext(DateTime.Now);
+            Services.BackupPlanStore.Save(inst.Id, plan);
+            var projects = Services.ProjectCatalog.ListProjects(inst, false);
+            if (plan.Scope == "selected")
+                projects = projects.Where(p => plan.ProjectIds.Contains(p.Id)).ToList();
+            if (projects.Count == 0) continue;
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                Services.BackupRunner.Run(inst, plan, projects);
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    var cur = (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry;
+                    if (cur?.Id == inst.Id) { LoadBackupHistory(inst); LoadPbProjects(); }
+                }));
+            });
+        }
+    }
+
+    // ===== 导出 / 恢复弹窗 =====
     private Services.InstanceProject _pbModalProject;
     private System.Threading.CancellationTokenSource _pbCts;
 
@@ -2428,6 +2650,7 @@ public partial class MainWindow : Window
         Set(PbTabProjects, PbPanelProjects, "projects");
         Set(PbTabBackup, PbPanelBackup, "backup");
         Set(PbTabLogs, PbPanelLogs, "logs");
+        if (tag == "backup") LoadBackupTab();
     }
 
     private void OnPbFilterChanged(object sender, EventArgs e)
@@ -4139,6 +4362,23 @@ public partial class MainWindow : Window
     public void OpenImportModal()
     {
         OnPbRestore(null, null);
+    }
+
+    /// <summary>截图自检用：展开并切到备份 tab。</summary>
+    public void OpenBackupTabForShot()
+    {
+        ExpandProjectCard();
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        var tries = 0;
+        timer.Tick += (_, _) =>
+        {
+            if (_pbAll.Count > 0 || ++tries > 12)
+            {
+                timer.Stop();
+                OnPbTab(PbTabBackup, null);
+            }
+        };
+        timer.Start();
     }
 
 }

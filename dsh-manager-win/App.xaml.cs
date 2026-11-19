@@ -43,6 +43,26 @@ public partial class App : Application
             MessageBox.Show(ex.Exception.Message, "DeepSeek Harness 管理器");
         };
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => Log("domain: " + ex.ExceptionObject);
+        // 调试专用：--backup-run <实例标签>
+        var br = Array.IndexOf(e.Args, "--backup-run");
+        if (br >= 0 && br + 1 < e.Args.Length)
+        {
+            AttachConsole(-1);
+            var label = e.Args[br + 1];
+            var inst = Services.InstanceRegistry.Load()
+                .FirstOrDefault(x => x.Label.Equals(label, StringComparison.OrdinalIgnoreCase));
+            if (inst == null) { Console.WriteLine("instance not found: " + label); Shutdown(2); return; }
+            var plan = Services.BackupPlanStore.Load(inst.Id);
+            if (string.IsNullOrWhiteSpace(plan.Directory))
+                plan.Directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "dsh-backup");
+            var projects = Services.ProjectCatalog.ListProjects(inst, false);
+            var result = Services.BackupRunner.Run(inst, plan, projects, Console.WriteLine);
+            Console.WriteLine($"ok={result.Ok} failed={result.Failed}");
+            foreach (var m in result.Messages) Console.WriteLine("  " + m);
+            Shutdown(0);
+            return;
+        }
+
         // 调试专用：--list-projects [实例标签|all]
         var lp = Array.IndexOf(e.Args, "--list-projects");
         if (lp >= 0)
@@ -398,6 +418,7 @@ public partial class App : Application
                 var modal = Environment.GetCommandLineArgs().SkipWhile(a => a != "--modal").Skip(1).FirstOrDefault();
                 if (modal == "export") win.OpenFirstProjectExport();
                 else if (modal == "import") win.OpenImportModal();
+                else if (modal == "backup") win.OpenBackupTabForShot();
             }
         }
         var delayMs = Environment.GetCommandLineArgs().Contains("--modal") ? 2600 : 900;

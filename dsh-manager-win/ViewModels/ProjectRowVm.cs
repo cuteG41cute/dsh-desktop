@@ -4,6 +4,15 @@ using System.Windows;
 
 namespace DshManager.ViewModels;
 
+/// <summary>备份历史行。</summary>
+public sealed class BackupRowVm
+{
+    public string Title { get; init; } = "";
+    public string Meta { get; init; } = "";
+    public string StatusText { get; init; } = "成功";
+    public string File { get; init; } = "";
+}
+
 /// <summary>项目列表行（UI 绑定用）。</summary>
 public sealed class ProjectRowVm
 {
