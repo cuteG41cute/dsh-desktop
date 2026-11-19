@@ -986,6 +986,41 @@
                         </StackPanel>
                     </Grid>
 
+                    <!-- 项目迁移 -->
+                    <Border Height="1" Background="{DynamicResource InnerBorder}" Margin="0,18,0,0" />
+                    <StackPanel Margin="0,14,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="项目迁移" FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Text}" />
+                            <TextBlock Text="把项目（目录 + 会话记录）打包带走，在另一台机器的 DSH 里导入"
+                                       FontSize="8" Margin="8,0,0,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Subtle}" />
+                        </StackPanel>
+
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox x:Name="MigProjectCombo" Grid.Column="0" Height="32" FontSize="9"
+                                      Style="{StaticResource TtsCombo}" ItemContainerStyle="{StaticResource TtsComboItem}" />
+                            <Button Grid.Column="1" Content="导出…" Style="{StaticResource BtnSecondary}"
+                                    Height="32" Padding="14,0" FontSize="9" Margin="8,0,0,0" Click="OnMigrateExport" />
+                            <Button Grid.Column="2" Content="导入…" Style="{StaticResource BtnSecondary}"
+                                    Height="32" Padding="14,0" FontSize="9" Margin="8,0,0,0" Click="OnMigrateImport" />
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <CheckBox x:Name="MigIncludeFiles" Content="包含项目文件" IsChecked="True" FontSize="8.5"
+                                      Foreground="{DynamicResource Muted}" />
+                            <TextBlock Text="（跳过 node_modules / .git / bin / obj / dist）" FontSize="8"
+                                       Margin="6,0,0,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Subtle}" />
+                        </StackPanel>
+                        <TextBlock x:Name="MigStatus" Text="" FontSize="8.5" Margin="0,6,0,0"
+                                   TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
+                    </StackPanel>
+
                     <!-- 运行说明 -->
                     <Border Background="{DynamicResource AccentSoft}" Padding="20,11">
                         <StackPanel Orientation="Horizontal">

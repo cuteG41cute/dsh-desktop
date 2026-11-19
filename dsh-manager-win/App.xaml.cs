@@ -43,6 +43,31 @@ public partial class App : Application
             MessageBox.Show(ex.Exception.Message, "DeepSeek Harness 管理器");
         };
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => Log("domain: " + ex.ExceptionObject);
+        // 调试专用：--migrate-export <标题片段> <out.dshproj> / --migrate-import <包> <目标目录>
+        var mi = Array.IndexOf(e.Args, "--migrate-export");
+        if (mi >= 0 && mi + 2 < e.Args.Length)
+        {
+            AttachConsole(-1);
+            var needle = e.Args[mi + 1];
+            var outFile = e.Args[mi + 2];
+            var p = Services.ProjectMigration.ListProjects()
+                .FirstOrDefault(x => x.Title.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0);
+            if (p == null) { Console.WriteLine("project not found: " + needle); Shutdown(2); return; }
+            var (ok, msg) = Services.ProjectMigration.Export(p, outFile, false, Console.WriteLine);
+            Console.WriteLine("ok=" + ok + " msg=" + msg);
+            Shutdown(ok ? 0 : 1);
+            return;
+        }
+        var mj = Array.IndexOf(e.Args, "--migrate-import");
+        if (mj >= 0 && mj + 2 < e.Args.Length)
+        {
+            AttachConsole(-1);
+            var (ok, msg) = Services.ProjectMigration.Import(e.Args[mj + 1], e.Args[mj + 2], Console.WriteLine);
+            Console.WriteLine("ok=" + ok + " msg=" + msg);
+            Shutdown(ok ? 0 : 1);
+            return;
+        }
+
         // 调试专用：--tts-addvoice <名字> <wav路径> 测试音色写入
         var ai = Array.IndexOf(e.Args, "--tts-addvoice");
         if (ai >= 0 && ai + 2 < e.Args.Length)

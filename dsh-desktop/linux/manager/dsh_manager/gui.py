@@ -29,6 +29,7 @@ except ImportError:       # pragma: no cover
 from . import plugins as plug  # noqa: E402
 from . import tts as tts_svc  # noqa: E402
 from . import audio_backend as acpp  # noqa: E402
+from . import project_migration as mig  # noqa: E402
 from .core import (DEFAULT_DSH, DEFAULT_NODE, MANAGER_LIB, MANAGER_VERSION,  # noqa: E402
                    FALLBACK_DSH_VERSIONS, FALLBACK_NODE_VERSIONS,
                    Manager, append_manager_log, config_dir, load_settings,
@@ -2355,6 +2356,30 @@ class ManagerWindow(Gtk.Window):
         synth.pack_start(play_row, False, False, 0)
         page.pack_start(synth, False, False, 0)
 
+        # ---- 项目迁移卡 ----
+        migcard = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        migcard.get_style_context().add_class('card')
+        migcard.set_margin_top(16)
+        migcard.pack_start(self._label('项目迁移', 'card-label'), False, False, 0)
+        migcard.pack_start(self._label('把项目（目录 + 会话记录）打包，在另一台机器的 DSH 里导入',
+                                       'card-sub'), False, False, 0)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        row.set_margin_top(10)
+        self.mig_combo = Gtk.ComboBoxText()
+        self.mig_combo.set_hexpand(True)
+        row.pack_start(self.mig_combo, True, True, 0)
+        row.pack_start(self._button('', '导出…', 'btn', 'btn-secondary',
+                                    handler=self.on_mig_export), False, False, 0)
+        row.pack_start(self._button('', '导入…', 'btn', 'btn-secondary',
+                                    handler=self.on_mig_import), False, False, 0)
+        migcard.pack_start(row, False, False, 0)
+        self.lbl_mig_status = self._label('', 'field-hint')
+        self.lbl_mig_status.set_margin_top(6)
+        migcard.pack_start(self.lbl_mig_status, False, False, 0)
+        page.pack_start(migcard, False, False, 0)
+
+
+
         GLib.timeout_add(2500, lambda: (self._refresh_tts(), True)[1])
         return sw
 
@@ -2388,6 +2413,8 @@ class ManagerWindow(Gtk.Window):
 
     def _refresh_tts(self):
         try:
+            if hasattr(self, 'mig_combo'):
+                self._refresh_mig()
             backend = self._active_backend()
             running = acpp.running() if backend == 'audiocpp' else tts_svc.running()
             self.lbl_tts_state.set_text('运行中' if running else '已停止')

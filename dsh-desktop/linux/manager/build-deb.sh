@@ -10,7 +10,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # dsh-desktop/linux/manag
 MANAGER_DIR="$HERE"
 LINUX_DIR="$(cd "$HERE/.." && pwd)"                    # dsh-desktop/linux
 DESKTOP_DIR="$(cd "$LINUX_DIR/.." && pwd)"             # dsh-desktop
-VERSION="3.5.0"
+VERSION="3.6.0"
 OUT="$HERE"
 
 while [ $# -gt 0 ]; do
@@ -54,6 +54,7 @@ cp -f "$MANAGER_DIR"/dsh_manager/icons/*.png "$STAGE/usr/lib/dsh-manager/dsh_man
 install -m 0644 "$MANAGER_DIR/dsh_manager/plugins.py"  "$STAGE/usr/lib/dsh-manager/dsh_manager/"
 install -m 0644 "$MANAGER_DIR/dsh_manager/tts.py"      "$STAGE/usr/lib/dsh-manager/dsh_manager/"
 install -m 0644 "$MANAGER_DIR/dsh_manager/audio_backend.py" "$STAGE/usr/lib/dsh-manager/dsh_manager/"
+install -m 0644 "$MANAGER_DIR/dsh_manager/project_migration.py" "$STAGE/usr/lib/dsh-manager/dsh_manager/"
 # 随包带的 audio.cpp 运行时（自编译，静态 eSpeak：英文 Kokoro 音色需要）
 if [ -f "$LINUX_DIR/share/audio-cpp/audiocpp_server" ]; then
     mkdir -p "$STAGE/usr/lib/dsh-manager/audio-cpp"

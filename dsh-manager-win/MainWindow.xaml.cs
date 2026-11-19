@@ -1906,6 +1906,7 @@ public partial class MainWindow : Window
         if (ContentScroll != null) ContentScroll.Visibility = (!isSettings && !isTts) ? Visibility.Visible : Visibility.Collapsed;
         if (SettingsScroll != null) SettingsScroll.Visibility = isSettings ? Visibility.Visible : Visibility.Collapsed;
         if (FeaturesScroll != null) FeaturesScroll.Visibility = isTts ? Visibility.Visible : Visibility.Collapsed;
+        if (isTts) RefreshMigProjects();
         if (Breadcrumb != null)
             Breadcrumb.Text = isSettings ? "管理器设置" : (isTts ? "管理器功能" : "实例概览");
 
@@ -2100,6 +2101,86 @@ public partial class MainWindow : Window
         }
         catch { }
         UpdateTtsCard();
+    }
+
+    private void RefreshMigProjects()
+    {
+        try
+        {
+            if (MigProjectCombo == null) return;
+            MigProjectCombo.Items.Clear();
+            foreach (var p in Services.ProjectMigration.ListProjects())
+                MigProjectCombo.Items.Add(p.Title + "  (" + p.SessionCount + " 会话)");
+            if (MigProjectCombo.Items.Count > 0) MigProjectCombo.SelectedIndex = 0;
+        }
+        catch { }
+    }
+
+    private void OnMigrateExport(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var projects = Services.ProjectMigration.ListProjects();
+            var idx = MigProjectCombo?.SelectedIndex ?? -1;
+            if (idx < 0 || idx >= projects.Count) { Toast("先选一个项目"); return; }
+            var project = projects[idx];
+            var dlg = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "导出项目包",
+                Filter = "DSH 项目包 (*.dshproj)|*.dshproj",
+                FileName = project.Title + ".dshproj",
+            };
+            if (dlg.ShowDialog() != true) return;
+            var path = dlg.FileName;
+            var include = MigIncludeFiles?.IsChecked == true;
+            if (MigStatus != null) MigStatus.Text = "正在导出…";
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                var (ok, msg) = Services.ProjectMigration.Export(project, path, include,
+                    s => Dispatcher.BeginInvoke(new Action(() => { if (MigStatus != null) MigStatus.Text = s; })));
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (MigStatus != null) MigStatus.Text = msg;
+                    Toast(msg);
+                }));
+            });
+        }
+        catch (Exception ex) { Toast("导出失败：" + ex.Message); }
+    }
+
+    private void OnMigrateImport(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var open = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "选择 DSH 项目包",
+                Filter = "DSH 项目包 (*.dshproj)|*.dshproj|所有文件 (*.*)|*.*",
+            };
+            if (open.ShowDialog() != true) return;
+
+            var pick = new System.Windows.Forms.FolderBrowserDialog
+            {
+                Description = "选择项目要放到哪个目录（会在其中新建项目文件夹）",
+                UseDescriptionForTitle = true,
+            };
+            if (pick.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+            var dest = pick.SelectedPath;
+            if (MigStatus != null) MigStatus.Text = "正在导入…";
+            var bundle = open.FileName;
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                var (ok, msg) = Services.ProjectMigration.Import(bundle, dest,
+                    s => Dispatcher.BeginInvoke(new Action(() => { if (MigStatus != null) MigStatus.Text = s; })));
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (MigStatus != null) MigStatus.Text = msg;
+                    Toast(msg);
+                    RefreshMigProjects();
+                }));
+            });
+        }
+        catch (Exception ex) { Toast("导入失败：" + ex.Message); }
     }
 
     private void OnTtsOpenWebUi(object sender, RoutedEventArgs e)
