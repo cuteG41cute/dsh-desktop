@@ -2840,8 +2840,11 @@ public partial class MainWindow : Window
 
     private void OnPbCreateFromBackup(object sender, RoutedEventArgs e)
     {
-        // 向导（W6）尚未接入，先用同一套导入流程
-        OnPbRestore(sender, e);
+        var entry = (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry;
+        if (entry == null) { Toast("先选择一个实例"); return; }
+        var wizard = new RestoreWizardWindow(entry) { Owner = this };
+        wizard.ShowDialog();
+        LoadPbProjects();
     }
 
 

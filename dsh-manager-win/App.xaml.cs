@@ -43,6 +43,49 @@ public partial class App : Application
             MessageBox.Show(ex.Exception.Message, "DeepSeek Harness 管理器");
         };
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => Log("domain: " + ex.ExceptionObject);
+        // 调试专用：--wizard <实例标签> 打开从备份新建向导
+        var wz = Array.IndexOf(e.Args, "--wizard");
+        if (wz >= 0 && wz + 1 < e.Args.Length)
+        {
+            var label = e.Args[wz + 1];
+            var inst = Services.InstanceRegistry.Load()
+                .FirstOrDefault(x => x.Label.Equals(label, StringComparison.OrdinalIgnoreCase));
+            if (inst == null) { Shutdown(2); return; }
+            try { Services.ThemeService.Init(); } catch { }
+            RestoreWizardWindow win;
+            try { win = new RestoreWizardWindow(inst); }
+            catch (Exception ex)
+            {
+                File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "wizard-error.txt"), ex.ToString());
+                Shutdown(3);
+                return;
+            }
+            var shotPath = e.Args.SkipWhile(a => a != "--shot").Skip(1).FirstOrDefault();
+            win.Loaded += async (_, _) =>
+            {
+                await System.Threading.Tasks.Task.Delay(1200);
+                if (!string.IsNullOrEmpty(shotPath))
+                {
+                    try
+                    {
+                        var w = (int)Math.Round(win.ActualWidth);
+                        var h = (int)Math.Round(win.ActualHeight);
+                        var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(w, h, 96, 96,
+                            System.Windows.Media.PixelFormats.Pbgra32);
+                        rtb.Render(win);
+                        var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                        enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
+                        using (var fs = File.Create(Path.GetFullPath(shotPath))) enc.Save(fs);
+                    }
+                    catch { }
+                }
+                win.Close();
+                Shutdown();
+            };
+            win.Show();
+            return;
+        }
+
         // 调试专用：--backup-run <实例标签>
         var br = Array.IndexOf(e.Args, "--backup-run");
         if (br >= 0 && br + 1 < e.Args.Length)

@@ -1,0 +1,250 @@
+<Window x:Class="DshManager.RestoreWizardWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="从备份新建" Height="720" Width="1100" WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource Bg}" FontFamily="{StaticResource UiFont}">
+    <Grid Margin="18">
+        <Border CornerRadius="20" Background="{DynamicResource App}" BorderThickness="1"
+                BorderBrush="{DynamicResource Border}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- 标题 -->
+                <Grid Grid.Row="0" Margin="26,20,26,10">
+                    <StackPanel>
+                        <TextBlock Text="PROJECT BACKUP / RESTORE" FontSize="8" FontWeight="Bold"
+                                   Foreground="{DynamicResource Accent}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <TextBlock Text="从备份新建" FontSize="22" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Text}" />
+                            <Border CornerRadius="9" Padding="8,3" Margin="10,0,0,0"
+                                    Background="{DynamicResource SuccessSoft}" VerticalAlignment="Center">
+                                <TextBlock Text="目标实例已确认" FontSize="8" Foreground="{DynamicResource Success}" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Text="为刚才选择的实例创建新项目，现有项目保持不变。" FontSize="9" Margin="0,6,0,0"
+                                   Foreground="{DynamicResource Muted}" />
+                    </StackPanel>
+                    <Button Content="返回备份 / 恢复" Style="{StaticResource BtnSecondary}" Height="32" Padding="14,0"
+                            FontSize="9" HorizontalAlignment="Right" VerticalAlignment="Top" Click="OnCloseWizard" />
+                </Grid>
+
+                <!-- 目标实例卡 -->
+                <Border Grid.Row="1" Margin="26,4,26,10" CornerRadius="12" BorderThickness="1"
+                        BorderBrush="{DynamicResource InnerBorder}" Background="{DynamicResource CardSolid}" Padding="14,10">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border Width="36" Height="36" CornerRadius="10" Background="{DynamicResource AccentSoft}">
+                            <TextBlock x:Name="TargetInitial" Text="D" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Accent}" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                            <TextBlock x:Name="TargetLabel" Text="dsh-test" FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Text}" />
+                            <TextBlock Text="新项目只会写入这个实例的项目注册表。" FontSize="8" Margin="0,2,0,0"
+                                       Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <TextBlock x:Name="TargetMeta" Text="" FontSize="8.5" HorizontalAlignment="Right"
+                                       Foreground="{DynamicResource Muted}" />
+                            <TextBlock x:Name="TargetHome" Text="" FontSize="8" Margin="0,2,0,0"
+                                       HorizontalAlignment="Right" Foreground="{DynamicResource Subtle}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- 步骤条 -->
+                <Border Grid.Row="1" Margin="26,0,26,0" VerticalAlignment="Bottom" Height="44"
+                        BorderThickness="0,1,0,0" BorderBrush="{DynamicResource InnerBorder}" />
+
+                <!-- 主内容 -->
+                <ScrollViewer Grid.Row="2" Margin="26,8,26,8" VerticalScrollBarVisibility="Auto">
+                    <Grid>
+                        <StackPanel x:Name="Step1Panel">
+                            <TextBlock Text="选择来源" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Text}" />
+                            <TextBlock Text="从本地目录或 WebDAV 选择备份包。" FontSize="9" Margin="0,5,0,12"
+                                       Foreground="{DynamicResource Muted}" />
+                            <RadioButton x:Name="SourceLocal" Content="本地目录" IsChecked="True" FontSize="10" />
+                            <RadioButton x:Name="SourceDav" Content="WebDAV 远端" FontSize="10" Margin="0,8,0,0" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="Step2Panel" Visibility="Collapsed">
+                            <TextBlock Text="选择备份" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Text}" />
+                            <Grid Margin="0,8,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                        Background="{DynamicResource CardSolid}" Padding="10,7">
+                                    <TextBox x:Name="Step2Dir" FontSize="9" BorderThickness="0" Background="Transparent" />
+                                </Border>
+                                <Button Grid.Column="1" Content="浏览…" Style="{StaticResource BtnSecondary}" Height="32"
+                                        Padding="14,0" FontSize="9" Margin="8,0,0,0" Click="OnBrowseSource" />
+                            </Grid>
+                            <TextBlock x:Name="Step2Sel" Text="尚未选择备份" FontSize="8.5"
+                                       Foreground="{DynamicResource Subtle}" />
+                            <StackPanel x:Name="BundleList" Margin="0,8,0,0" />
+                            <TextBlock x:Name="BundleEmpty" Text="这个目录里没有 .dshproj 备份包" FontSize="9"
+                                       Margin="2,10,0,0" Foreground="{DynamicResource Subtle}" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="Step3Panel" Visibility="Collapsed">
+                            <TextBlock Text="确认项目和目标目录" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Text}" />
+                            <TextBlock Text="备份已通过完整性校验，将作为新项目写入" FontSize="9" Margin="0,5,0,10"
+                                       Foreground="{DynamicResource Muted}" />
+                            <Border CornerRadius="10" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                    Background="{DynamicResource CardSolid}" Padding="14,10">
+                                <StackPanel>
+                                    <Grid>
+                                        <TextBlock Text="项目" FontSize="8" Foreground="{DynamicResource Subtle}" />
+                                        <TextBlock x:Name="PrevProject" Text="项目" FontSize="10" FontWeight="SemiBold"
+                                                   HorizontalAlignment="Right" Foreground="{DynamicResource Text}" />
+                                    </Grid>
+                                    <Grid Margin="0,6,0,0">
+                                        <TextBlock Text="目标实例" FontSize="8" Foreground="{DynamicResource Subtle}" />
+                                        <TextBlock x:Name="Step3Target" Text="" FontSize="9.5" HorizontalAlignment="Right"
+                                                   Foreground="{DynamicResource Muted}" />
+                                    </Grid>
+                                    <Grid Margin="0,6,0,0">
+                                        <TextBlock Text="来源设备 · 时间" FontSize="8" Foreground="{DynamicResource Subtle}" />
+                                        <TextBlock x:Name="PrevInfo" Text="" FontSize="9" HorizontalAlignment="Right"
+                                                   Foreground="{DynamicResource Muted}" />
+                                    </Grid>
+                                    <Grid Margin="0,6,0,0">
+                                        <TextBlock Text="写入方式" FontSize="8" Foreground="{DynamicResource Subtle}" />
+                                        <TextBlock Text="仅新增，不覆盖" FontSize="9" HorizontalAlignment="Right"
+                                                   Foreground="{DynamicResource Muted}" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Text="新项目名称" FontSize="8" Margin="2,12,0,4" Foreground="{DynamicResource Subtle}" />
+                            <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                    Background="{DynamicResource CardSolid}" Padding="10,7">
+                                <TextBox x:Name="Step3Name" FontSize="9" BorderThickness="0" Background="Transparent" />
+                            </Border>
+                            <TextBlock Text="目标目录" FontSize="8" Margin="2,10,0,4" Foreground="{DynamicResource Subtle}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                        Background="{DynamicResource CardSolid}" Padding="10,7">
+                                    <TextBox x:Name="Step3Dir" FontSize="9" BorderThickness="0" Background="Transparent" />
+                                </Border>
+                                <Button Grid.Column="1" Content="浏览" Style="{StaticResource BtnSecondary}" Height="32"
+                                        Padding="14,0" FontSize="9" Margin="8,0,0,0" Click="OnBrowseTarget" />
+                            </Grid>
+                            <TextBlock x:Name="PrevDir" Text="" FontSize="8" Margin="2,6,0,0"
+                                       Foreground="{DynamicResource Subtle}" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="Step4Panel" Visibility="Collapsed">
+                            <TextBlock Text="正在导入" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Text}" />
+                            <TextBlock Text="请保持管理器运行，当前项目不会被重复写入。" FontSize="9" Margin="0,5,0,12"
+                                       Foreground="{DynamicResource Muted}" />
+                            <ProgressBar x:Name="ImportProgress" Height="8" Minimum="0" Maximum="100"
+                                         Foreground="{DynamicResource Accent}" Background="{DynamicResource InnerBorder}" />
+                            <TextBlock x:Name="ImportStage" Text="准备中…" FontSize="9" Margin="2,8,0,0"
+                                       Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="Step5Panel" Visibility="Collapsed">
+                            <TextBlock Text="项目已导入" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Success}" />
+                            <TextBlock x:Name="DoneText" Text="" FontSize="9" Margin="0,6,0,0" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource Muted}" />
+                            <TextBlock Text="重启实例后即可在 DSH 中看到并继续对话。" FontSize="9" Margin="0,6,0,0"
+                                       Foreground="{DynamicResource Subtle}" />
+                            <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                <Button Content="稍后" Style="{StaticResource BtnSecondary}" Height="32" Padding="16,0"
+                                        FontSize="9" Click="OnCloseWizard" />
+                                <Button Content="立即重启实例" Style="{StaticResource BtnPrimary}" Height="32" Padding="18,0"
+                                        FontSize="9" Margin="8,0,0,0" Click="OnRestart" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+
+                <!-- 步骤指示 + 按钮 -->
+                <Grid Grid.Row="3" Margin="26,6,26,20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel Orientation="Horizontal">
+                            <Border x:Name="Dot1" Width="26" Height="26" CornerRadius="13" Background="{DynamicResource Accent}">
+                                <TextBlock x:Name="Label1" Text="1" FontSize="9" Foreground="{DynamicResource OnAccent}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <TextBlock Text="选择来源" FontSize="8" Margin="6,0,14,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Border x:Name="Dot2" Width="26" Height="26" CornerRadius="13" Background="{DynamicResource InnerBorder}">
+                                <TextBlock x:Name="Label2" Text="2" FontSize="9" Foreground="{DynamicResource Muted}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <TextBlock Text="选择备份" FontSize="8" Margin="6,0,14,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Border x:Name="Dot3" Width="26" Height="26" CornerRadius="13" Background="{DynamicResource InnerBorder}">
+                                <TextBlock x:Name="Label3" Text="3" FontSize="9" Foreground="{DynamicResource Muted}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <TextBlock Text="预览与目录" FontSize="8" Margin="6,0,14,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Border x:Name="Dot4" Width="26" Height="26" CornerRadius="13" Background="{DynamicResource InnerBorder}">
+                                <TextBlock x:Name="Label4" Text="4" FontSize="9" Foreground="{DynamicResource Muted}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <TextBlock Text="导入" FontSize="8" Margin="6,0,14,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Border x:Name="Dot5" Width="26" Height="26" CornerRadius="13" Background="{DynamicResource InnerBorder}">
+                                <TextBlock x:Name="Label5" Text="5" FontSize="9" Foreground="{DynamicResource Muted}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <TextBlock Text="完成" FontSize="8" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <Button x:Name="BackBtn" Content="上一步" Style="{StaticResource BtnSecondary}" Height="32"
+                                Padding="16,0" FontSize="9" Margin="0,0,8,0" Click="OnBack" />
+                        <Button x:Name="NextBtn" Content="下一步" Style="{StaticResource BtnPrimary}" Height="32"
+                                Padding="18,0" FontSize="9" Click="OnNext" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- Toast -->
+                <Border x:Name="ToastBox" Grid.Row="3" Visibility="Collapsed" HorizontalAlignment="Center"
+                        VerticalAlignment="Bottom" Margin="0,0,0,72" CornerRadius="12" Padding="14,9"
+                        Background="{DynamicResource CardSolid}" BorderThickness="1"
+                        BorderBrush="{DynamicResource Border}">
+                    <TextBlock x:Name="ToastText" Text="" FontSize="9" Foreground="{DynamicResource Text}" />
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
