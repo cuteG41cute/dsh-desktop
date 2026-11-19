@@ -2402,7 +2402,36 @@ class ManagerWindow(Gtk.Window):
         pb.pack_start(self.pb_status, False, False, 0)
         page.pack_start(pb, False, False, 0)
         self._pb_home = os.environ.get('DSH_HOME') or os.path.expanduser('~/.dsh')
+
+        plan_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        plan_box.set_margin_top(10)
+        plan_box.pack_start(self._label('备份目录', 'field-hint'), False, False, 0)
+        self.pb_plan_dir = Gtk.Entry()
+        self.pb_plan_dir.set_hexpand(True)
+        plan_box.pack_start(self.pb_plan_dir, True, True, 0)
+        plan_box.pack_start(self._label('保留份数', 'field-hint'), False, False, 0)
+        self.pb_plan_keep = Gtk.SpinButton.new_with_range(1, 60, 1)
+        plan_box.pack_start(self.pb_plan_keep, False, False, 0)
+        self.pb_auto = Gtk.CheckButton(label='启用自动备份')
+        plan_box.pack_start(self.pb_auto, False, False, 0)
+        plan_box.pack_start(self._button('', '保存计划', 'btn', 'btn-secondary',
+                                         handler=self.on_pb_plan_save), False, False, 0)
+        pb.pack_start(plan_box, False, False, 0)
+
+        dav_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        dav_box.set_margin_top(8)
+        self.pb_dav_url = Gtk.Entry()
+        self.pb_dav_url.set_placeholder_text('WebDAV 地址（https://nas/dav）')
+        self.pb_dav_url.set_hexpand(True)
+        dav_box.pack_start(self.pb_dav_url, True, True, 0)
+        dav_box.pack_start(self._button('', '测试', 'btn', 'btn-secondary',
+                                        handler=self.on_pb_dav_test), False, False, 0)
+        dav_box.pack_start(self._button('', '上传全部', 'btn', 'btn-secondary',
+                                        handler=self.on_pb_dav_upload), False, False, 0)
+        pb.pack_start(dav_box, False, False, 0)
+
         self._pb_projects = []
+        self._pb_init_plan()
 
 
 
@@ -2949,6 +2978,25 @@ class ManagerWindow(Gtk.Window):
         p = tts_svc.paths()['root']
         os.makedirs(p, exist_ok=True)
         subprocess.Popen(['xdg-open', p], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def _pb_init_plan(self):
+        plan = pcat.load_plan('default')
+        self.pb_plan_dir.set_text(plan.get('directory') or os.path.join(os.path.expanduser('~'), 'dsh-backup'))
+        self.pb_plan_keep.set_value(int(plan.get('retentionCount') or 1))
+        self.pb_auto.set_active(bool(plan.get('enabled')))
+        GLib.timeout_add_seconds(60, self._pb_timer_tick)
+
+    def _pb_timer_tick(self):
+        try:
+            plan = pcat.load_plan('default')
+            if plan.get('enabled'):
+                projects = pcat.list_projects(self._pb_home)
+                if projects:
+                    pcat.run_backup('default', self._pb_home, projects, plan)
+                    self.pb_status.set_text('自动备份完成：%s' % time.strftime('%H:%M'))
+        except Exception:
+            pass
+        return True
 
     def on_tts_show_log(self, *_):
         path = os.path.join(tts_svc.paths()['logs'], 'server.log')
