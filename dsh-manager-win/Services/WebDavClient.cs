@@ -102,9 +102,20 @@ public sealed class WebDavClient : IDisposable
     {
         try
         {
-            var res = await _http.SendAsync(new HttpRequestMessage(new HttpMethod("MKCOL"), NormalizeUrl(url)));
-            var code = (int)res.StatusCode;
-            return (code is 200 or 201 or 405, "HTTP " + code);
+            var full = NormalizeUrl(url).TrimEnd('/');
+            var uri = new Uri(full);
+            var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var current = uri.GetLeftPart(UriPartial.Authority);
+            var codes = new List<int>();
+            foreach (var seg in segments)
+            {
+                current += "/" + Uri.EscapeDataString(seg);
+                var res = await _http.SendAsync(new HttpRequestMessage(new HttpMethod("MKCOL"), current));
+                codes.Add((int)res.StatusCode);
+            }
+            var last = codes.Count > 0 ? codes[^1] : 0;
+            // 201=新建，405=已存在，409=父目录问题（父级已建时不会出现）
+            return (last is 201 or 405 or 301 or 302 or 0, string.Join(",", codes));
         }
         catch (Exception ex) { return (false, ex.Message); }
     }

@@ -86,6 +86,60 @@ public partial class App : Application
             return;
         }
 
+        // 调试专用：--dav-test <url> <user> <pass> <projectTitle>：上传→列目录→下载→导入（临时 home）
+        var dt = Array.IndexOf(e.Args, "--dav-test");
+        if (dt >= 0 && dt + 4 < e.Args.Length)
+        {
+            AttachConsole(-1);
+            var url = e.Args[dt + 1];
+            var user = e.Args[dt + 2];
+            var pass = e.Args[dt + 3];
+            var title = e.Args[dt + 4];
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    using var dav = new Services.WebDavClient(user, pass);
+                    var (ok, msg, code) = dav.TestAsync(url).GetAwaiter().GetResult();
+                    Console.WriteLine($"test: ok={ok} {msg}");
+                    var entry = Services.InstanceRegistry.Load().First();
+                    var home = Services.ProjectCatalog.HomeFor(entry);
+                    var project = Services.ProjectCatalog.ListProjects(entry, false)
+                        .FirstOrDefault(p => p.Title.EndsWith(title, StringComparison.OrdinalIgnoreCase));
+                    if (project == null) { Console.WriteLine("project not found: " + title); return; }
+                    var tmp = Path.Combine(Path.GetTempPath(), "dav-" + Guid.NewGuid().ToString("N").Substring(0, 6) + ".dshproj");
+                    var exp = Services.ProjectMigration.Export(
+                        new Services.ProjectMigration.ProjectInfo(project.Id, project.Path, project.Title, project.Sessions),
+                        tmp, true, Console.WriteLine, home);
+                    Console.WriteLine("export: " + exp.Ok + " " + exp.Message);
+                    if (!exp.Ok) return;
+                    var remoteDir = url.TrimEnd('/') + "/dsh-backup/test-device";
+                    var mk = dav.EnsureCollectionAsync(remoteDir).GetAwaiter().GetResult();
+                    Console.WriteLine("mkcol: " + mk.Ok + " " + mk.Message);
+                    var remoteFile = remoteDir + "/" + Path.GetFileName(tmp);
+                    dav.UploadAsync(tmp, remoteFile).GetAwaiter().GetResult();
+                    Console.WriteLine("upload ok: " + remoteFile + " (" + new FileInfo(tmp).Length + " B)");
+                    var list = dav.ListAsync(remoteDir).GetAwaiter().GetResult();
+                    Console.WriteLine("list: " + string.Join(", ", list.Select(x => x.Name + "(" + x.Size + ")")));
+                    var back = Path.Combine(Path.GetTempPath(), "dav-back-" + Guid.NewGuid().ToString("N").Substring(0, 6) + ".dshproj");
+                    dav.DownloadAsync(remoteFile, back).GetAwaiter().GetResult();
+                    Console.WriteLine("download: " + new FileInfo(back).Length + " B");
+                    var tempHome = Path.Combine(Path.GetTempPath(), "dav-home-" + Guid.NewGuid().ToString("N").Substring(0, 6));
+                    Directory.CreateDirectory(Path.Combine(tempHome, "storages"));
+                    Directory.CreateDirectory(Path.Combine(tempHome, "sessions"));
+                    var dest = Path.Combine(Path.GetTempPath(), "dav-dest-" + Guid.NewGuid().ToString("N").Substring(0, 6));
+                    var imp = Services.ProjectMigration.Import(back, dest, Console.WriteLine, tempHome);
+                    Console.WriteLine("import: " + imp.Ok + " " + imp.Message);
+                    var ws = Path.Combine(tempHome, "storages", "workspace.json");
+                    Console.WriteLine("workspace exists: " + File.Exists(ws));
+                    try { File.Delete(tmp); File.Delete(back); } catch { }
+                }
+                catch (Exception ex) { Console.WriteLine("dav-test failed: " + ex); }
+            }).Wait(TimeSpan.FromMinutes(5));
+            Shutdown(0);
+            return;
+        }
+
         // 调试专用：--backup-run <实例标签>
         var br = Array.IndexOf(e.Args, "--backup-run");
         if (br >= 0 && br + 1 < e.Args.Length)
