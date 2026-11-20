@@ -185,6 +185,15 @@ public static class DshHost
             Directory.CreateDirectory(logs);
             Directory.CreateDirectory(tmp);
             Directory.CreateDirectory(appData);
+            // AppContainer 的 Node 会把 TMP 指到包虚拟目录，提前建好
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(appData, "Packages",
+                    AppContainerFence.ProfileNameFor(inst.Id), "AC", "Temp"));
+                Directory.CreateDirectory(Path.Combine(appData, "Packages",
+                    AppContainerFence.ProfileNameFor(inst.Id), "AC", "INetCache"));
+            }
+            catch { }
 
             var log = Path.Combine(logs, "server.log");
             // 源码实例优先用已构建的 lib/bin.js（避开 tsx 在 AppContainer 下的解析问题）
@@ -200,7 +209,11 @@ public static class DshHost
             var cmd = new StringBuilder();
             cmd.Append('"').Append(inst.NodeExe).Append('"')
                .Append(" --preserve-symlinks --preserve-symlinks-main ");
-            if (tsx) cmd.Append("--import tsx/esm ");
+            if (tsx)
+            {
+                var loader = Path.Combine(inst.Dir ?? fenceRoot, "app", "node_modules", "tsx", "dist", "loader.mjs");
+                cmd.Append("--import \"").Append(new Uri(loader).AbsoluteUri).Append("\" ");
+            }
             cmd.Append('"').Append(entry).Append('"');
             cmd.Append(" web --no-open --port ").Append(inst.Port);
             foreach (var addr in LanAddresses())
