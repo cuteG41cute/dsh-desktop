@@ -142,6 +142,24 @@ public partial class App : Application
             return;
         }
 
+        // 调试/自动化：--fence-create <label> <name>
+        var fc = Array.IndexOf(e.Args, "--fence-create");
+        if (fc >= 0 && fc + 2 < e.Args.Length)
+        {
+            AttachConsole(-1);
+            var label = e.Args[fc + 1];
+            var name = e.Args[fc + 2];
+            var list = Services.DshDiscovery.Scan().ToList();
+            Services.DshDiscovery.AttachRunning(list);
+            Services.DshDiscovery.ApplyRegistryPorts(list);
+            var inst = list.FirstOrDefault(i => i.Label.Equals(label, StringComparison.OrdinalIgnoreCase));
+            if (inst == null) { Console.WriteLine("instance not found: " + label); Shutdown(2); return; }
+            var (fok, fmsg) = Services.FenceWorkspace.CreateAsync(inst, name).GetAwaiter().GetResult();
+            Console.WriteLine("fence-create=" + fok + " " + fmsg);
+            Shutdown(fok ? 0 : 1);
+            return;
+        }
+
         // 调试专用：--ac-debug <label> <commandLine> [env|noenv]
         var ac = Array.IndexOf(e.Args, "--ac-debug");
         if (ac >= 0 && ac + 2 < e.Args.Length)

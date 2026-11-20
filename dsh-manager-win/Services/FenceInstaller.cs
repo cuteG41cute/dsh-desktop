@@ -54,17 +54,6 @@ public static class FenceInstaller
                 File.WriteAllText(patchPath, patch, new UTF8Encoding(false));
             }
 
-            // 用户级实例：审批策略收紧为 never（堵掉“申请更大权限”）
-            if (!patch.Contains("policy: never", StringComparison.Ordinal))
-            {
-                if (!patch.EndsWith("\n")) patch += "\n";
-                patch += "\n# dsh-fence: 用户级实例禁止提权审批\n" +
-                         "- id: approval\n" +
-                         "  config:\n" +
-                         "    policy: never\n";
-                File.WriteAllText(patchPath, patch, new UTF8Encoding(false));
-            }
-
             return (true, "围栏插件就绪：" + target);
         }
         catch (Exception ex) { return (false, "围栏插件安装失败：" + ex.Message); }

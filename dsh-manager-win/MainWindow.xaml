@@ -460,7 +460,12 @@
                                                            Foreground="{DynamicResource Muted}" />
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                                <Button Style="{StaticResource BtnCompact}" Click="OnRestartService">
+                                                <Button x:Name="FenceWsBtn" Style="{StaticResource BtnCompact}"
+                                                        Click="OnFenceWorkspace" Visibility="Collapsed"
+                                                        ToolTip="用户级实例：只填名称，自动建在实例围栏内">
+                                                    <TextBlock Text="新建工作区" Margin="2,0,2,0" />
+                                                </Button>
+                                                <Button Style="{StaticResource BtnCompact}" Click="OnRestartService" Margin="6,0,0,0">
                                                     <StackPanel Orientation="Horizontal">
                                                         <Path Width="13" Height="13" Data="{StaticResource Icon.restart}"
                                                               Style="{StaticResource IconPath}" />

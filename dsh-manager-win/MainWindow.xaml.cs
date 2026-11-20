@@ -952,6 +952,30 @@ public partial class MainWindow : Window
             StatusBadgeDot.Background = (Brush)FindResource(inst.Running ? "Success" : "Subtle");
         StatusBadge.Background = (Brush)FindResource(inst.Running ? "SuccessSoft" : "AccentSoft");
         StatusBadgeText.Foreground = (Brush)FindResource(inst.Running ? "Success" : "Muted");
+        if (FenceWsBtn != null)
+        {
+            var tier = "system";
+            try
+            {
+                var reg = Services.InstanceRegistry.Load().FirstOrDefault(r =>
+                    string.Equals(System.IO.Path.GetFullPath(r.Dir ?? ""),
+                        System.IO.Path.GetFullPath(inst.Dir ?? ""), StringComparison.OrdinalIgnoreCase));
+                tier = reg?.Tier ?? "system";
+            }
+            catch { }
+            FenceWsBtn.Visibility = tier == "user" ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    private async void OnFenceWorkspace(object sender, RoutedEventArgs e)
+    {
+        if (_current == null) { Toast("先选一个实例"); return; }
+        if (!_current.Running) { Toast("实例未运行，先启动"); return; }
+        var name = PromptText("新建工作区", "工作区名称（会自动建在实例围栏内）", "");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var (ok, msg) = await Services.FenceWorkspace.CreateAsync(_current, name.Trim());
+        Toast(msg);
+        if (ok) { ReloadInstances(); }
     }
 
     private void BuildSampleLogs()
