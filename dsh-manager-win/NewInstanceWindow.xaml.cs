@@ -306,7 +306,8 @@ public partial class NewInstanceWindow : Window
         var gitRef = (DshVersionBox.Text ?? "").Trim();
         if (string.IsNullOrWhiteSpace(gitRef)) gitRef = "master";
         var existedBefore = Directory.Exists(dir);
-        var (ok, msg) = await InstanceInstaller.InstallSourceAsync(dir, nodeVer, AppendLog, port, gitRef);
+        var (ok, msg) = await InstanceInstaller.InstallSourceAsync(dir, nodeVer, AppendLog, port, gitRef,
+            flatNodeModules: TierUser?.IsChecked == true);
         if (!ok && !existedBefore)
         {
             // 半成品目录留着会挡住下一次创建（我们的「目录必须为空」校验）

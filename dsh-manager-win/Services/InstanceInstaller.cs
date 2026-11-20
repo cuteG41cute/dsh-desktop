@@ -254,7 +254,8 @@ public static class InstanceInstaller
     }
 
     public static async Task<(bool Ok, string Message)> InstallSourceAsync(
-        string dir, string nodeVersion, Action<string> log, int port, string gitRef = "master")
+        string dir, string nodeVersion, Action<string> log, int port, string gitRef = "master",
+        bool flatNodeModules = false)
     {
         if (!TryEnter(dir))
             return (false, "这个目录已经有一次安装在跑，等它结束再试（别同时点两次创建）");
@@ -372,6 +373,7 @@ public static class InstanceInstaller
                 var iargs = new System.Collections.Generic.List<string>
                 {
                     pnpmCjs, "install", "--config.store-dir=" + store,
+                    "--config.node-linker=" + (flatNodeModules ? "hoisted" : "isolated"),
                 };
                 AddPnpmNetworkArgs(iargs, log);
                 var (iok, imsg) = await RunAsync(node, iargs.ToArray(), app, log, TimeSpan.FromMinutes(60), node);

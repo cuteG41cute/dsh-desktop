@@ -225,6 +225,8 @@ public static class DshHost
             var launchCwd = inst.Entry.EndsWith(".ts", StringComparison.OrdinalIgnoreCase)
                 ? Path.Combine(inst.Dir ?? fenceRoot, "app")
                 : fenceRoot;
+            AppendRaw(Path.Combine(logs, "launcher.log"), "[dsh-manager] cwd=" + launchCwd);
+            AppendRaw(Path.Combine(logs, "launcher.log"), "[dsh-manager] cmd=" + cmd);
             var (ok, pid, msg) = AppContainerFence.Start(profileName, cmd.ToString(), launchCwd, true,
                 envBlock.ToString(), stdio);
             logStream.Dispose();
