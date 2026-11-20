@@ -187,11 +187,21 @@ public static class DshHost
             Directory.CreateDirectory(appData);
 
             var log = Path.Combine(logs, "server.log");
+            // 源码实例优先用已构建的 lib/bin.js（避开 tsx 在 AppContainer 下的解析问题）
+            var entry = inst.Entry;
+            var tsx = false;
+            if (entry.EndsWith(".ts", StringComparison.OrdinalIgnoreCase))
+            {
+                var compiled = entry.Replace("\\src\\", "\\lib\\").Replace("/src/", "/lib/")
+                    .Replace(".ts", ".js");
+                if (File.Exists(compiled)) entry = compiled;
+                else tsx = true;
+            }
             var cmd = new StringBuilder();
             cmd.Append('"').Append(inst.NodeExe).Append('"')
                .Append(" --preserve-symlinks --preserve-symlinks-main ");
-            if (inst.Entry.EndsWith(".ts", StringComparison.OrdinalIgnoreCase)) cmd.Append("--import tsx/esm ");
-            cmd.Append('"').Append(inst.Entry).Append('"');
+            if (tsx) cmd.Append("--import tsx/esm ");
+            cmd.Append('"').Append(entry).Append('"');
             cmd.Append(" web --no-open --port ").Append(inst.Port);
             foreach (var addr in LanAddresses())
                 cmd.Append(" --trusted-host ").Append(addr).Append(':').Append(BridgePort);
