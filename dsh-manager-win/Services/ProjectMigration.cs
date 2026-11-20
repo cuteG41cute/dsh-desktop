@@ -113,7 +113,9 @@ public static class ProjectMigration
                 AddText(tar, "manifest.json", JsonSerializer.Serialize(manifest,
                     new JsonSerializerOptions { WriteIndented = true }));
 
-                var json = JsonNode.Parse(File.ReadAllText(wsFile));
+                var wsText = File.ReadAllText(wsFile);
+                if (wsText.Length > 0 && wsText[0] == '\uFEFF') wsText = wsText.Substring(1);
+                var json = JsonNode.Parse(wsText);
                 var entry = json?["tables"]?["workspaces"]?[project.Id];
                 if (entry != null) AddText(tar, "state/workspace-entry.json", entry.ToJsonString());
                 var sessionIds = entry?["sessionIds"]?.AsArray()?
@@ -293,7 +295,11 @@ public static class ProjectMigration
             // 3) 注册表
             JsonNode root;
             if (File.Exists(wsFile))
-                root = JsonNode.Parse(File.ReadAllText(wsFile)) ?? new JsonObject();
+            {
+                var wsText = File.ReadAllText(wsFile);
+                if (wsText.Length > 0 && wsText[0] == '\uFEFF') wsText = wsText.Substring(1);
+                root = JsonNode.Parse(wsText) ?? new JsonObject();
+            }
             else
             {
                 root = new JsonObject
@@ -347,6 +353,19 @@ public static class ProjectMigration
             if (File.Exists(wsFile)) File.Copy(wsFile, backup, true);
             File.WriteAllText(wsFile, root.ToJsonString(),
                 new UTF8Encoding(false));
+
+            // 写后自检：解析失败则用刚做的备份恢复，避免把注册表写成不可读
+            try
+            {
+                var verifyText = File.ReadAllText(wsFile);
+                if (verifyText.Length > 0 && verifyText[0] == '\uFEFF') verifyText = verifyText.Substring(1);
+                _ = JsonNode.Parse(verifyText);
+            }
+            catch (Exception ex)
+            {
+                try { if (File.Exists(backup)) File.Copy(backup, wsFile, true); } catch { }
+                return (false, "写入注册表后校验失败，已恢复备份：" + ex.Message);
+            }
 
             try { Directory.Delete(work, true); } catch { }
             return (true, $"已导入「{title}」到 {destProject}；重启实例后出现在项目列表里");

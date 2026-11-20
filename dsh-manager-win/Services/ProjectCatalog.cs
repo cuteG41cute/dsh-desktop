@@ -63,7 +63,9 @@ public static class ProjectCatalog
         JsonObject? workspaces = null;
         try
         {
-            workspaces = JsonNode.Parse(File.ReadAllText(wsFile))?["tables"]?["workspaces"]?.AsObject();
+            var wsText = File.ReadAllText(wsFile);
+            if (wsText.Length > 0 && wsText[0] == '\uFEFF') wsText = wsText.Substring(1);
+            workspaces = JsonNode.Parse(wsText)?["tables"]?["workspaces"]?.AsObject();
         }
         catch { }
         if (workspaces == null) return list;

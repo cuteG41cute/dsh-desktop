@@ -113,7 +113,7 @@ def list_projects(home):
     if not os.path.isfile(ws_file):
         return []
     try:
-        with open(ws_file, encoding='utf-8') as fh:
+        with open(ws_file, encoding='utf-8-sig') as fh:
             data = json.load(fh)
         workspaces = (data.get('tables') or {}).get('workspaces') or {}
     except (OSError, ValueError):

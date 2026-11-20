@@ -49,7 +49,7 @@ def list_projects():
     if not os.path.isfile(path):
         return []
     try:
-        with open(path, encoding='utf-8') as fh:
+        with open(path, encoding='utf-8-sig') as fh:
             data = json.load(fh)
         ws = (data.get('tables') or {}).get('workspaces') or {}
         out = []
@@ -172,7 +172,7 @@ def import_bundle(bundle_path, dest_root, log=None, dsh_home=None):
 
         wf = workspace_file() if not dsh_home else os.path.join(dsh_home, 'storages', 'workspace.json')
         if os.path.isfile(wf):
-            with open(wf, encoding='utf-8') as fh:
+            with open(wf, encoding='utf-8-sig') as fh:
                 data = json.load(fh)
         else:
             data = {'unit': {'name': 'workspace', 'version': 2},

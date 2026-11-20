@@ -140,6 +140,31 @@ public partial class App : Application
             return;
         }
 
+        // 调试专用：--storage-check [home] / --storage-repair [home]
+        var sc = Array.IndexOf(e.Args, "--storage-check");
+        var sr = Array.IndexOf(e.Args, "--storage-repair");
+        if (sc >= 0 || sr >= 0)
+        {
+            AttachConsole(-1);
+            var home = e.Args.SkipWhile(a => a != (sc >= 0 ? "--storage-check" : "--storage-repair")).Skip(1)
+                .FirstOrDefault() ?? Services.ProjectCatalog.HomeFor(
+                    Services.InstanceRegistry.Load().FirstOrDefault() ?? new Services.RegistryEntry());
+            if (!Directory.Exists(Path.Combine(home, "storages")))
+                home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh");
+            Console.WriteLine("home: " + home);
+            foreach (var r in Services.StorageHealth.Check(home))
+            {
+                Console.WriteLine($"  {Path.GetFileName(r.Path)}  bom={r.HasBom} parses={r.Parses}  {r.Message}");
+                if (sr >= 0 && r.HasBom)
+                {
+                    var (ok, msg) = Services.StorageHealth.RepairBom(r.Path);
+                    Console.WriteLine("    repair: " + msg);
+                }
+            }
+            Shutdown(0);
+            return;
+        }
+
         // 调试专用：--backup-run <实例标签>
         var br = Array.IndexOf(e.Args, "--backup-run");
         if (br >= 0 && br + 1 < e.Args.Length)
