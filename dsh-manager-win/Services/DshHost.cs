@@ -46,6 +46,27 @@ public static class DshHost
             return true;
         }
 
+        // 实例等级：user 级需要围栏插件 + 受限权限 + 围栏工作目录
+        RegistryEntry? regEntry = null;
+        try
+        {
+            regEntry = InstanceRegistry.Load().FirstOrDefault(r =>
+                string.Equals(System.IO.Path.GetFullPath(r.Dir ?? ""),
+                    System.IO.Path.GetFullPath(inst.Dir ?? ""), StringComparison.OrdinalIgnoreCase));
+        }
+        catch { }
+        var userTier = string.Equals(regEntry?.Tier, "user", StringComparison.OrdinalIgnoreCase);
+        var fenceRoot = userTier
+            ? (string.IsNullOrWhiteSpace(regEntry?.FenceRoot) ? (inst.Dir ?? "") : regEntry!.FenceRoot)
+            : "";
+        if (userTier)
+        {
+            if (!string.IsNullOrEmpty(fenceRoot)) Directory.CreateDirectory(fenceRoot);
+            var fence = FenceInstaller.Ensure(regEntry!, inst.Home);
+            AppendRaw(LogPathFor(inst), "[dsh-manager] 用户级实例：" + fence.Message);
+            if (!fence.Ok) message = "围栏插件安装失败：" + fence.Message;
+        }
+
         inst.Port = PickPort(inst.Port);
         // 记住这次分配的端口（管理器创建的实例），下次启动/界面显示都用它
         var reg = InstanceRegistry.Load().FirstOrDefault(r => string.Equals(
@@ -88,6 +109,12 @@ public static class DshHost
             };
             psi.Arguments = "/c \"" + runCmd + "\"";
             psi.Environment["DSH_HOME"] = inst.Home;
+            if (userTier && !string.IsNullOrEmpty(fenceRoot))
+            {
+                psi.Environment["DSH_FENCE_ROOT"] = fenceRoot;
+                psi.Environment["DSH_PERMISSION_MODE"] = "workspace-write";
+                if (!isSource) psi.WorkingDirectory = fenceRoot;
+            }
 
             AppendRaw(log, "[dsh-manager] 启动 " + inst.NodeExe + " " + inst.Entry
                            + " web --no-open --port " + inst.Port);

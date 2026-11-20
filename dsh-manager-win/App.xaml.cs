@@ -140,6 +140,41 @@ public partial class App : Application
             return;
         }
 
+        // 调试专用：--set-tier <label> <system|user>：设置实例等级
+        var st = Array.IndexOf(e.Args, "--set-tier");
+        if (st >= 0 && st + 2 < e.Args.Length)
+        {
+            AttachConsole(-1);
+            var label = e.Args[st + 1];
+            var tier = e.Args[st + 2].ToLowerInvariant();
+            var reg = Services.InstanceRegistry.Load()
+                .FirstOrDefault(r => r.Label.Equals(label, StringComparison.OrdinalIgnoreCase));
+            if (reg == null) { Console.WriteLine("instance not found: " + label); Shutdown(2); return; }
+            reg.Tier = tier == "user" ? "user" : "system";
+            reg.FenceRoot = tier == "user" ? reg.Dir : "";
+            Services.InstanceRegistry.Add(reg);
+            Console.WriteLine($"tier={reg.Tier} fence={reg.FenceRoot}");
+            Shutdown(0);
+            return;
+        }
+
+        // 调试专用：--instance-start <label>：按管理器逻辑启动实例
+        var si = Array.IndexOf(e.Args, "--instance-start");
+        if (si >= 0 && si + 1 < e.Args.Length)
+        {
+            AttachConsole(-1);
+            var label = e.Args[si + 1];
+            var list = Services.DshDiscovery.Scan().ToList();
+            Services.DshDiscovery.AttachRunning(list);
+            Services.DshDiscovery.ApplyRegistryPorts(list);
+            var inst = list.FirstOrDefault(i => i.Label.Equals(label, StringComparison.OrdinalIgnoreCase));
+            if (inst == null) { Console.WriteLine("instance not found: " + label); Shutdown(2); return; }
+            var ok = Services.DshHost.Start(inst, out var msg);
+            Console.WriteLine("start=" + ok + " " + msg + " port=" + inst.Port);
+            Shutdown(ok ? 0 : 1);
+            return;
+        }
+
         // 调试专用：--storage-check [home] / --storage-repair [home]
         var sc = Array.IndexOf(e.Args, "--storage-check");
         var sr = Array.IndexOf(e.Args, "--storage-repair");

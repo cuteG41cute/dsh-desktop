@@ -860,8 +860,17 @@ public partial class MainWindow : Window
                 Text = inst.Label, FontSize = 11.5, FontWeight = FontWeights.SemiBold,
                 Foreground = (Brush)FindResource("Text"), TextTrimming = TextTrimming.CharacterEllipsis,
             });
+            var tier = "system";
+            try
+            {
+                var reg = Services.InstanceRegistry.Load().FirstOrDefault(r =>
+                    string.Equals(System.IO.Path.GetFullPath(r.Dir ?? ""),
+                        System.IO.Path.GetFullPath(inst.Dir ?? ""), StringComparison.OrdinalIgnoreCase));
+                tier = reg?.Tier ?? "system";
+            }
+            catch { }
             var subtitle = "dsh " + (string.IsNullOrEmpty(inst.DshVersion) ? "?" : inst.DshVersion)
-                           + " · " + inst.Source;
+                           + " · " + inst.Source + (tier == "user" ? " · 用户级围栏" : "");
             if (inst.Running && inst.Pid > 0) subtitle += " · PID " + inst.Pid;
             copy.Children.Add(new TextBlock
             {

@@ -39,6 +39,8 @@
     <EmbeddedResource Include="runtime\audiocpp_server.exe" Condition="Exists('runtime\audiocpp_server.exe')" />
     <EmbeddedResource Include="runtime\espeak-ng-data.bin" Condition="Exists('runtime\espeak-ng-data.bin')" />
     <EmbeddedResource Include="runtime\ganyu.wav" Condition="Exists('runtime\ganyu.wav')" />
+    <EmbeddedResource Include="plugins\dsh-fence\package.json" LogicalName="dsh-fence.package.json" />
+    <EmbeddedResource Include="plugins\dsh-fence\lib\index.js" LogicalName="dsh-fence.lib.index.js" />
   </ItemGroup>
 
   <ItemGroup>

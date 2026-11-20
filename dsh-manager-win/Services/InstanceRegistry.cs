@@ -16,6 +16,12 @@ public sealed class RegistryEntry
     /// <summary>实例自带的 Node 版本（空/&quot;system&quot; = 用系统 node）。</summary>
     public string NodeVersion { get; set; } = "";
     public string CreatedAt { get; set; } = "";
+
+    /// <summary>实例等级：system = 不受围栏影响；user = 用户级沙盒（只能使用实例目录）。</summary>
+    public string Tier { get; set; } = "system";
+
+    /// <summary>用户级实例的围栏根（默认 = 实例安装目录）；系统级为空。</summary>
+    public string FenceRoot { get; set; } = "";
 }
 
 public static class InstanceRegistry

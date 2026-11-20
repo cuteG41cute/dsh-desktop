@@ -347,6 +347,24 @@ public partial class NewInstanceWindow : Window
         }
         if (ok)
         {
+            // 记录等级：一经创建不可更改；既有实例默认系统级
+            try
+            {
+                var reg = InstanceRegistry.Load().FirstOrDefault(r =>
+                    string.Equals(Path.GetFullPath(r.Dir ?? ""), Path.GetFullPath(dir),
+                        StringComparison.OrdinalIgnoreCase));
+                if (reg != null)
+                {
+                    var userTier = TierUser?.IsChecked == true;
+                    reg.Tier = userTier ? "user" : "system";
+                    reg.FenceRoot = userTier ? dir : "";
+                    InstanceRegistry.Add(reg);
+                    AppendLog(userTier
+                        ? "实例等级：用户级（围栏 " + dir + "）"
+                        : "实例等级：系统级（不受围栏影响）");
+                }
+            }
+            catch (Exception ex) { AppendLog("写入实例等级失败：" + ex.Message); }
             CreatedDir = dir;
             Created?.Invoke(dir);
             Close();

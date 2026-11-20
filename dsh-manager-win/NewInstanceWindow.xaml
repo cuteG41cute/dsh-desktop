@@ -62,6 +62,20 @@
                             Padding="12,0" Click="OnBrowse" Content="浏览…" />
                 </Grid>
 
+                <TextBlock Text="实例等级" FontSize="9" FontWeight="SemiBold" Margin="0,14,0,7"
+                           Foreground="{DynamicResource Muted}" />
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton x:Name="TierSystem" Content="系统级（不受围栏影响）" IsChecked="True"
+                                 GroupName="InstanceTier" FontSize="10"
+                                 Foreground="{DynamicResource Text}" />
+                    <RadioButton x:Name="TierUser" Content="用户级（围栏：实例目录）" Margin="18,0,0,0"
+                                 GroupName="InstanceTier" FontSize="10"
+                                 Foreground="{DynamicResource Text}" />
+                </StackPanel>
+                <TextBlock Text="等级在创建后不可更改。用户级实例只能把工作区建在实例目录内；即使选择「完全权限」，读写也不能突破该目录。"
+                           FontSize="8" Margin="0,7,0,0" Foreground="{DynamicResource Subtle}"
+                           TextWrapping="Wrap" />
+
                 <Grid Margin="0,14,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
