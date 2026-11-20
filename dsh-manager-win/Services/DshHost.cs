@@ -67,6 +67,11 @@ public static class DshHost
             if (!fence.Ok) message = "围栏插件安装失败：" + fence.Message;
         }
 
+        if (userTier && OperatingSystem.IsWindows() && !string.IsNullOrEmpty(fenceRoot))
+        {
+            return StartFenced(inst, fenceRoot, out message);
+        }
+
         inst.Port = PickPort(inst.Port);
         // 记住这次分配的端口（管理器创建的实例），下次启动/界面显示都用它
         var reg = InstanceRegistry.Load().FirstOrDefault(r => string.Equals(
@@ -158,6 +163,87 @@ public static class DshHost
         catch (Exception ex)
         {
             message = "启动失败：" + ex.Message;
+            return false;
+        }
+    }
+
+    /// <summary>用户级实例：以 AppContainer 受限令牌启动（Windows）。</summary>
+    private static bool StartFenced(DshInstance inst, string fenceRoot, out string message)
+    {
+        message = "";
+        try
+        {
+            var profileName = AppContainerFence.ProfileNameFor(inst.Id);
+            var ensure = AppContainerFence.EnsureProfile(profileName);
+            if (!ensure.Ok) { message = ensure.Message; return false; }
+            var granted = AppContainerFence.GrantDirectory(fenceRoot, ensure.Sid);
+            if (!granted.Ok) { message = "围栏目录授权失败：" + granted.Message; return false; }
+
+            var logs = Path.Combine(fenceRoot, "logs");
+            var tmp = Path.Combine(fenceRoot, "tmp");
+            var appData = Path.Combine(fenceRoot, "appdata");
+            Directory.CreateDirectory(logs);
+            Directory.CreateDirectory(tmp);
+            Directory.CreateDirectory(appData);
+
+            var log = Path.Combine(logs, "server.log");
+            var cmd = new StringBuilder();
+            cmd.Append('"').Append(inst.NodeExe).Append('"')
+               .Append(" --preserve-symlinks --preserve-symlinks-main ");
+            if (inst.Entry.EndsWith(".ts", StringComparison.OrdinalIgnoreCase)) cmd.Append("--import tsx/esm ");
+            cmd.Append('"').Append(inst.Entry).Append('"');
+            cmd.Append(" web --no-open --port ").Append(inst.Port);
+            foreach (var addr in LanAddresses())
+                cmd.Append(" --trusted-host ").Append(addr).Append(':').Append(BridgePort);
+
+            var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["SystemRoot"] = Environment.GetEnvironmentVariable("SystemRoot") ?? "C:\\Windows",
+                ["windir"] = Environment.GetEnvironmentVariable("windir") ?? "C:\\Windows",
+                ["SystemDrive"] = Environment.GetEnvironmentVariable("SystemDrive") ?? "C:",
+                ["ComSpec"] = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"),
+                ["PATH"] = Path.GetDirectoryName(inst.NodeExe) + ";" +
+                           Environment.GetFolderPath(Environment.SpecialFolder.System) + ";" +
+                           Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0"),
+                ["TEMP"] = tmp,
+                ["TMP"] = tmp,
+                ["USERPROFILE"] = fenceRoot,
+                ["HOME"] = fenceRoot,
+                ["APPDATA"] = appData,
+                ["LOCALAPPDATA"] = appData,
+                ["DSH_HOME"] = inst.Home,
+                ["DSH_FENCE_ROOT"] = fenceRoot,
+                ["DSH_PERMISSION_MODE"] = "workspace-write",
+            };
+            var envBlock = new StringBuilder();
+            foreach (var kv in env) envBlock.Append(kv.Key).Append('=').Append(kv.Value).Append('\0');
+            envBlock.Append('\0');
+
+            var logStream = new FileStream(log, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+            IntPtr stdio = logStream.SafeFileHandle.DangerousGetHandle();
+            AppContainerFence.MakeInheritable(stdio);
+            var launchCwd = inst.Entry.EndsWith(".ts", StringComparison.OrdinalIgnoreCase)
+                ? Path.Combine(inst.Dir ?? fenceRoot, "app")
+                : fenceRoot;
+            var (ok, pid, msg) = AppContainerFence.Start(profileName, cmd.ToString(), launchCwd, true,
+                envBlock.ToString(), stdio);
+            logStream.Dispose();
+            if (!ok) { message = "AppContainer 启动失败：" + msg; return false; }
+
+            var proc = Process.GetProcessById(pid);
+            lock (Gate) Started[inst.Id] = new Running { Process = proc };
+            AppendRaw(Path.Combine(logs, "launcher.log"),
+                "[dsh-manager] AppContainer 启动 pid=" + pid + " profile=" + profileName);
+            var exempt = AppContainerFence.TryLoopbackExempt(profileName);
+            if (!exempt.Ok)
+                AppendRaw(Path.Combine(logs, "launcher.log"),
+                    "[dsh-manager] 回环豁免未成功（需要管理员）：" + exempt.Message);
+            message = "用户级围栏已启动（AppContainer，PID " + pid + "）";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            message = "用户级围栏启动失败：" + ex.Message;
             return false;
         }
     }

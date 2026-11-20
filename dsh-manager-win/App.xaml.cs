@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Text;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -137,6 +139,54 @@ public partial class App : Application
                 catch (Exception ex) { Console.WriteLine("dav-test failed: " + ex); }
             }).Wait(TimeSpan.FromMinutes(5));
             Shutdown(0);
+            return;
+        }
+
+        // 调试专用：--ac-debug <label> <commandLine> [env|noenv]
+        var ac = Array.IndexOf(e.Args, "--ac-debug");
+        if (ac >= 0 && ac + 2 < e.Args.Length)
+        {
+            AttachConsole(-1);
+            var label = e.Args[ac + 1];
+            var cmd = e.Args[ac + 2];
+            var useEnv = ac + 3 >= e.Args.Length || e.Args[ac + 3] != "noenv";
+            var inst = Services.DshDiscovery.Scan().FirstOrDefault(x =>
+                x.Label.Equals(label, StringComparison.OrdinalIgnoreCase));
+            var reg = Services.InstanceRegistry.Load().FirstOrDefault(r =>
+                r.Label.Equals(label, StringComparison.OrdinalIgnoreCase));
+            if (inst == null || reg == null) { Console.WriteLine("instance not found"); Shutdown(2); return; }
+            var fence = string.IsNullOrWhiteSpace(reg.FenceRoot) ? inst.Dir : reg.FenceRoot;
+            var profile = Services.AppContainerFence.ProfileNameFor(inst.Id);
+            var en = Services.AppContainerFence.EnsureProfile(profile);
+            Console.WriteLine("profile " + en.Ok + " " + en.Sid);
+            var gr = Services.AppContainerFence.GrantDirectory(fence, en.Sid);
+            Console.WriteLine("grant " + gr.Ok + " " + gr.Message);
+            string envBlock = null;
+            if (useEnv)
+            {
+                var tmp = Path.Combine(fence, "tmp");
+                Directory.CreateDirectory(tmp);
+                var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["SystemRoot"] = Environment.GetEnvironmentVariable("SystemRoot") ?? "C:\\Windows",
+                    ["windir"] = Environment.GetEnvironmentVariable("windir") ?? "C:\\Windows",
+                    ["SystemDrive"] = Environment.GetEnvironmentVariable("SystemDrive") ?? "C:",
+                    ["ComSpec"] = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"),
+                    ["PATH"] = Environment.GetFolderPath(Environment.SpecialFolder.System),
+                    ["TEMP"] = tmp, ["TMP"] = tmp,
+                    ["USERPROFILE"] = fence, ["HOME"] = fence,
+                    ["DSH_HOME"] = inst.Home,
+                    ["DSH_FENCE_ROOT"] = fence,
+                    ["DSH_PERMISSION_MODE"] = "workspace-write",
+                };
+                var sb = new StringBuilder();
+                foreach (var kv in env) sb.Append(kv.Key).Append('=').Append(kv.Value).Append('\0');
+                sb.Append('\0');
+                envBlock = sb.ToString();
+            }
+            var r = Services.AppContainerFence.Start(profile, cmd, fence, true, envBlock, IntPtr.Zero);
+            Console.WriteLine($"start={r.Ok} pid={r.Pid} {r.Message}");
+            Shutdown(r.Ok ? 0 : 1);
             return;
         }
 
