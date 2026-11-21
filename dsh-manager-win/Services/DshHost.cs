@@ -193,6 +193,28 @@ public static class DshHost
             var granted = UserFence.GrantDirectory(fenceRoot);
             if (!granted.Ok) { message = "围栏目录授权失败：" + granted.Message; return false; }
 
+            // 服务端强制工作区只能落在围栏内
+            try
+            {
+                var regForFence = InstanceRegistry.Load().FirstOrDefault(r =>
+                    !string.IsNullOrWhiteSpace(r.Dir) && !string.IsNullOrWhiteSpace(inst.Dir)
+                    && string.Equals(System.IO.Path.GetFullPath(r.Dir),
+                        System.IO.Path.GetFullPath(inst.Dir), StringComparison.OrdinalIgnoreCase));
+                if (regForFence != null)
+                {
+                    var fence = FenceInstaller.Ensure(regForFence, inst.Home);
+                    Directory.CreateDirectory(Path.Combine(fenceRoot, "logs"));
+                    File.AppendAllText(Path.Combine(fenceRoot, "logs", "launcher.log"),
+                        "[dsh-manager] 围栏插件：" + fence.Message + "\n");
+                    if (!fence.Ok) { message = "围栏插件安装失败：" + fence.Message; return false; }
+                }
+            }
+            catch (Exception ex)
+            {
+                message = "围栏插件安装失败：" + ex.Message;
+                return false;
+            }
+
             var logs = Path.Combine(fenceRoot, "logs");
             var tmp = Path.Combine(fenceRoot, "tmp");
             var appData = Path.Combine(fenceRoot, "appdata");
