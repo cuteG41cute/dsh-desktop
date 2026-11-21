@@ -104,7 +104,37 @@ public static class VersionCatalog
             }
             log?.Invoke("GitHub tag 候选 " + (list.Count - 1) + " 个");
         }
-        catch (Exception ex) { log?.Invoke("GitHub tag 列表失败（只用 master）：" + ex.Message); }
+        catch (Exception ex)
+        {
+            log?.Invoke("GitHub tag 列表失败：" + ex.Message + "，尝试 Gitee 镜像 …");
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo("git")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                psi.ArgumentList.Add("ls-remote");
+                psi.ArgumentList.Add("--tags");
+                psi.ArgumentList.Add("https://gitee.com/mirrors/deepseek-harness.git");
+                using var p = System.Diagnostics.Process.Start(psi)!;
+                var output = p.StandardOutput.ReadToEnd();
+                p.WaitForExit(30000);
+                foreach (var line in output.Split('\n'))
+                {
+                    var idx = line.IndexOf("refs/tags/", StringComparison.Ordinal);
+                    if (idx < 0) continue;
+                    var name = line[(idx + "refs/tags/".Length)..].Trim();
+                    if (name.EndsWith("^{}", StringComparison.Ordinal)) name = name[..^3];
+                    if (name.Length == 0 || list.Contains(name)) continue;
+                    list.Add(name);
+                }
+                log?.Invoke("Gitee 镜像 tag 候选 " + (list.Count - 1) + " 个");
+            }
+            catch (Exception ex2) { log?.Invoke("Gitee 镜像也不可用（只用 master）：" + ex2.Message); }
+        }
         return list;
     }
 
@@ -136,7 +166,21 @@ public static class VersionCatalog
     {
         try
         {
-            var text = await Http.GetStringAsync("https://nodejs.org/dist/index.json");
+            string text = null;
+            foreach (var url in new[]
+                     {
+                         "https://nodejs.org/dist/index.json",
+                         "https://npmmirror.com/mirrors/node/index.json",
+                     })
+            {
+                try
+                {
+                    text = await Http.GetStringAsync(url);
+                    if (!string.IsNullOrWhiteSpace(text)) break;
+                }
+                catch (Exception ex) { log?.Invoke("取 Node 版本列表失败（" + url + "）：" + ex.Message); }
+            }
+            if (string.IsNullOrWhiteSpace(text)) { log?.Invoke("所有 Node 版本源都不可用（用内置列表）"); return FallbackNode.ToList(); }
             using var doc = JsonDocument.Parse(text);
             var list = new List<string> { SystemNode, "latest" };
             foreach (var el in doc.RootElement.EnumerateArray())
@@ -190,19 +234,26 @@ public static class VersionCatalog
             var zip = Path.Combine(Path.GetTempPath(), "dsh-node-" + v + "-win-x64.zip");
             if (!File.Exists(Path.Combine(target, "node.exe")))
             {
-                var url = "https://nodejs.org/dist/v" + v + "/node-v" + v + "-win-x64.zip";
-                var ok = false;
-                for (var attempt = 1; attempt <= 2 && !ok; attempt++)
+                var urls = new[]
                 {
+                    "https://nodejs.org/dist/v" + v + "/node-v" + v + "-win-x64.zip",
+                    "https://npmmirror.com/mirrors/node/v" + v + "/node-v" + v + "-win-x64.zip",
+                };
+                var ok = false;
+                foreach (var url in urls)
+                {
+                    for (var attempt = 1; attempt <= 2 && !ok; attempt++)
+                    {
                     try
                     {
-                        log("下载 Node v" + v + "（win-x64）" + (attempt > 1 ? "（重试 " + attempt + "）" : "") + "…");
+                        log("下载 Node v" + v + "（win-x64）"
+                            + (url.Contains("npmmirror") ? "（国内镜像）" : "")
+                            + (attempt > 1 ? "（重试 " + attempt + "）" : "") + "…");
                         using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
                         if (!resp.IsSuccessStatusCode)
                         {
                             log("HTTP " + (int)resp.StatusCode + " " + url);
-                            if (attempt == 2) return (false, "下载失败：" + (int)resp.StatusCode + " " + url);
-                            continue;
+                            break;
                         }
                         var total = resp.Content.Headers.ContentLength ?? 0;
                         await using var fs = File.Create(zip);
@@ -231,10 +282,12 @@ public static class VersionCatalog
                     catch (Exception ex)
                     {
                         log("下载出错：" + ex.Message);
-                        if (attempt == 2) return (false, "下载 Node 失败：" + ex.Message);
+                        if (attempt == 2) break;
                         await Task.Delay(1500);
                     }
+                    }
                 }
+                if (!ok) return (false, "下载 Node 失败：官方源和国内镜像都不可用");
                 log("下载完成：" + new FileInfo(zip).Length / (1024 * 1024) + " MB，解压…");
                 var staging = Path.Combine(dir, "node-staging");
                 if (Directory.Exists(staging)) Directory.Delete(staging, true);

@@ -133,6 +133,10 @@ public static class InstanceInstaller
 
     public const string SourceRepo = "https://github.com/deepseek-ai/deepseek-harness.git";
     public const string PnpmVersion = "11.28.5";
+    /// <summary>国内 npm 镜像（官方源失败时自动切换）。</summary>
+    public const string NpmMirror = "https://registry.npmmirror.com";
+    /// <summary>官方仓库的国内镜像（GitHub 克隆失败时自动切换）。</summary>
+    public const string GitMirrorRepo = "https://gitee.com/mirrors/deepseek-harness.git";
 
     /// <summary>源码实例的入口（repo 里的 CLI，用 tsx 直接跑 TS）。</summary>
     public static string SourceEntry(string dir) =>
@@ -297,6 +301,12 @@ public static class InstanceInstaller
                 };
                 AddPnpmNetworkArgs(pargs, log, npmStyle: true);
                 var (pok, pmsg) = await RunAsync(npm, pargs.ToArray(), dir, log, TimeSpan.FromMinutes(20), node);
+                if (!pok)
+                {
+                    log("pnpm 安装失败（" + pmsg + "），改用国内镜像重试 …");
+                    pargs.Add("--registry=" + NpmMirror);
+                    (pok, pmsg) = await RunAsync(npm, pargs.ToArray(), dir, log, TimeSpan.FromMinutes(20), node);
+                }
                 if (!pok) { log("pnpm 安装失败：" + pmsg); return false; }
                 if (!File.Exists(pnpmCjs)) { log("pnpm 没装上：" + pnpmCjs); return false; }
                 return true;
@@ -352,6 +362,19 @@ public static class InstanceInstaller
                         msgClone = "工作区不完整";
                     }
                 }
+                if (!okClone)
+                {
+                    TryDelete(app, log);
+                    log("GitHub 克隆失败，尝试国内镜像：" + GitMirrorRepo);
+                    var margs = new System.Collections.Generic.List<string>
+                    {
+                        "-c", "http.version=HTTP/1.1",
+                        "clone", "--depth", "1", "--branch", reference, GitMirrorRepo, app,
+                    };
+                    var (mok, mmsg) = await RunAsync("git", margs.ToArray(), dir, log, TimeSpan.FromMinutes(30));
+                    okClone = mok;
+                    msgClone = mmsg;
+                }
                 if (!okClone) { log("git clone 失败：" + msgClone); return false; }
                 if (!IsUsableCheckout(app))
                 {
@@ -375,6 +398,11 @@ public static class InstanceInstaller
                     pnpmCjs, "install", "--config.store-dir=" + store,
                     "--config.node-linker=" + (flatNodeModules ? "hoisted" : "isolated"),
                 };
+                if (attempt > 1)
+                {
+                    iargs.Add("--registry=" + NpmMirror);
+                    log("依赖安装走国内镜像：" + NpmMirror);
+                }
                 AddPnpmNetworkArgs(iargs, log);
                 var (iok, imsg) = await RunAsync(node, iargs.ToArray(), app, log, TimeSpan.FromMinutes(60), node);
                 installed = iok;
