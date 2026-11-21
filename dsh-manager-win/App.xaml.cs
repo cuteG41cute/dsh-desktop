@@ -142,6 +142,21 @@ public partial class App : Application
             return;
         }
 
+        // 提权助手：--fence-user-setup <user> <password>（创建专用围栏用户）
+        var fu = Array.IndexOf(e.Args, "--fence-user-setup");
+        if (fu >= 0 && fu + 2 < e.Args.Length)
+        {
+            var r = Services.UserFence.CreateUser(e.Args[fu + 1], e.Args[fu + 2]);
+            try
+            {
+                System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                    "dsh-fence-user-setup.txt"), (r.Ok ? "OK" : "FAIL") + "\n" + r.Message);
+            }
+            catch { }
+            Shutdown(r.Ok ? 0 : 1);
+            return;
+        }
+
         // 提权助手：--fence-exempt <profileName>（由 UAC 拉起，做 AppContainer 回环豁免）
         var fx = Array.IndexOf(e.Args, "--fence-exempt");
         if (fx >= 0 && fx + 1 < e.Args.Length)

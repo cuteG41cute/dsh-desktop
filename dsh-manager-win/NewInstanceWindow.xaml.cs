@@ -283,6 +283,21 @@ public partial class NewInstanceWindow : Window
             }
         }
 
+        // 用户级实例用专用低权限用户运行；该用户无法进入本机用户目录，
+        // 所以围栏目录必须放在共享位置（默认 C:\dsh-fences\<实例名>）。
+        if (TierUser?.IsChecked == true)
+        {
+            var leaf = Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (dir.StartsWith(profile, StringComparison.OrdinalIgnoreCase)
+                || dir.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), StringComparison.OrdinalIgnoreCase))
+            {
+                dir = Path.Combine("C:\\dsh-fences", string.IsNullOrWhiteSpace(leaf) ? name : leaf);
+                SetDirSilently(dir);
+                AppendLog("用户级实例的围栏目录改到共享位置：" + dir);
+            }
+        }
+
         _busy = true;
         CreateBtn.IsEnabled = false;
         CancelBtn.IsEnabled = false;

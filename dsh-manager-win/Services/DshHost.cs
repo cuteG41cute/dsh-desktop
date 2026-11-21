@@ -169,19 +169,28 @@ public static class DshHost
     }
 
     /// <summary>用户级实例：以 AppContainer 受限令牌启动（Windows）。</summary>
+    /// <summary>用户级实例：以专用低权限 Windows 用户运行（NTFS 隔离 + 回环正常）。</summary>
     private static bool StartFenced(DshInstance inst, string fenceRoot, out string message)
     {
         message = "";
-        void TraceF(string m) { try { File.AppendAllText(@"C:\\dshbuild\\fenced.log", DateTime.Now.ToString("HH:mm:ss") + " " + m + "\n"); } catch { } }
-        TraceF("enter fence=" + fenceRoot);
         try
         {
-            var profileName = AppContainerFence.ProfileNameFor(inst.Id);
-            var ensure = AppContainerFence.EnsureProfile(profileName);
-            TraceF("profile ok=" + ensure.Ok + " sid=" + ensure.Sid + " msg=" + ensure.Message);
-            if (!ensure.Ok) { message = ensure.Message; return false; }
-            var granted = AppContainerFence.GrantDirectory(fenceRoot, ensure.Sid);
-            TraceF("grant ok=" + granted.Ok + " msg=" + granted.Message);
+            var (user, pass) = UserFence.Credentials();
+            // 用户不存在则弹一次 UAC 创建
+            var check = InstanceRegistry.Load(); // 无副作用，占位
+            var netProbe = new ProcessStartInfo("net.exe", "user " + user)
+            { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+            using (var np = Process.Start(netProbe)!)
+            {
+                np.StandardOutput.ReadToEnd();
+                np.WaitForExit(15000);
+                if (np.ExitCode != 0)
+                {
+                    var cr = UserFence.CreateUserElevated(user, pass);
+                    if (!cr.Ok) { message = "创建围栏用户失败：" + cr.Message; return false; }
+                }
+            }
+            var granted = UserFence.GrantDirectory(fenceRoot);
             if (!granted.Ok) { message = "围栏目录授权失败：" + granted.Message; return false; }
 
             var logs = Path.Combine(fenceRoot, "logs");
@@ -190,39 +199,26 @@ public static class DshHost
             Directory.CreateDirectory(logs);
             Directory.CreateDirectory(tmp);
             Directory.CreateDirectory(appData);
-            // AppContainer 的 Node 会把 TMP 指到包虚拟目录，提前建好
-            try
-            {
-                Directory.CreateDirectory(Path.Combine(appData, "Packages",
-                    AppContainerFence.ProfileNameFor(inst.Id), "AC", "Temp"));
-                Directory.CreateDirectory(Path.Combine(appData, "Packages",
-                    AppContainerFence.ProfileNameFor(inst.Id), "AC", "INetCache"));
-            }
-            catch { }
 
-            var log = Path.Combine(logs, "server.log");
-            // 源码实例优先用已构建的 lib/bin.js（避开 tsx 在 AppContainer 下的解析问题）
             var entry = inst.Entry;
-            var tsx = false;
-            if (entry.EndsWith(".ts", StringComparison.OrdinalIgnoreCase))
-            {
-                var compiled = entry.Replace("\\src\\", "\\lib\\").Replace("/src/", "/lib/")
-                    .Replace(".ts", ".js");
-                if (File.Exists(compiled)) entry = compiled;
-                else tsx = true;
-            }
-            var cmd = new StringBuilder();
-            cmd.Append('"').Append(inst.NodeExe).Append('"')
-               .Append(" --preserve-symlinks --preserve-symlinks-main ");
+            var tsx = entry.EndsWith(".ts", StringComparison.OrdinalIgnoreCase);
             if (tsx)
             {
-                var loader = Path.Combine(inst.Dir ?? fenceRoot, "app", "node_modules", "tsx", "dist", "loader.mjs");
-                cmd.Append("--import \"").Append(new Uri(loader).AbsoluteUri).Append("\" ");
+                var compiled = entry.Replace("\\src\\", "\\lib\\").Replace("/src/", "/lib/").Replace(".ts", ".js");
+                if (File.Exists(compiled)) { entry = compiled; tsx = false; }
             }
-            cmd.Append('"').Append(entry).Append('"');
-            cmd.Append(" web --no-open --port ").Append(inst.Port);
+            var runCmd = Path.Combine(logs, "run.cmd");
+            var sb = new StringBuilder();
+            sb.AppendLine("@echo off");
+            sb.AppendLine("chcp 65001>nul");
+            sb.Append('"').Append(inst.NodeExe).Append('"').Append(" --preserve-symlinks --preserve-symlinks-main ");
+            if (tsx) sb.Append("\"--import\" \"file:///").Append(Path.Combine(inst.Dir ?? fenceRoot, "app", "node_modules", "tsx", "dist", "loader.mjs").Replace('\\', '/')).Append("\" ");
+            sb.Append('"').Append(entry).Append('"');
+            sb.Append(" web --no-open --port ").Append(inst.Port);
             foreach (var addr in LanAddresses())
-                cmd.Append(" --trusted-host ").Append(addr).Append(':').Append(BridgePort);
+                sb.Append(" --trusted-host ").Append(addr).Append(':').Append(BridgePort);
+            sb.Append(" >> ").Append('"').Append(Path.Combine(logs, "server.log")).Append('"').Append(" 2>&1").AppendLine();
+            File.WriteAllText(runCmd, sb.ToString(), new UTF8Encoding(false));
 
             var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -233,12 +229,9 @@ public static class DshHost
                 ["PATH"] = Path.GetDirectoryName(inst.NodeExe) + ";" +
                            Environment.GetFolderPath(Environment.SpecialFolder.System) + ";" +
                            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0"),
-                ["TEMP"] = tmp,
-                ["TMP"] = tmp,
-                ["USERPROFILE"] = fenceRoot,
-                ["HOME"] = fenceRoot,
-                ["APPDATA"] = appData,
-                ["LOCALAPPDATA"] = appData,
+                ["TEMP"] = tmp, ["TMP"] = tmp,
+                ["USERPROFILE"] = fenceRoot, ["HOME"] = fenceRoot,
+                ["APPDATA"] = appData, ["LOCALAPPDATA"] = appData,
                 ["DSH_HOME"] = inst.Home,
                 ["DSH_FENCE_ROOT"] = fenceRoot,
                 ["DSH_PERMISSION_MODE"] = "workspace-write",
@@ -247,65 +240,19 @@ public static class DshHost
             foreach (var kv in env) envBlock.Append(kv.Key).Append('=').Append(kv.Value).Append('\0');
             envBlock.Append('\0');
 
-            var logStream = new FileStream(log, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
-            IntPtr stdio = logStream.SafeFileHandle.DangerousGetHandle();
-            AppContainerFence.MakeInheritable(stdio);
             var launchCwd = inst.Entry.EndsWith(".ts", StringComparison.OrdinalIgnoreCase)
-                ? Path.Combine(inst.Dir ?? fenceRoot, "app")
-                : fenceRoot;
-            AppendRaw(Path.Combine(logs, "launcher.log"), "[dsh-manager] cwd=" + launchCwd);
-            AppendRaw(Path.Combine(logs, "launcher.log"), "[dsh-manager] cmd=" + cmd);
-            TraceF("launching pid...");
-            var (ok, pid, msg) = AppContainerFence.Start(profileName, cmd.ToString(), launchCwd, true,
-                envBlock.ToString(), stdio);
-            TraceF("launched ok=" + ok + " pid=" + pid + " msg=" + msg);
-            logStream.Dispose();
-            if (!ok) { message = "AppContainer 启动失败：" + msg; return false; }
-
-            var proc = Process.GetProcessById(pid);
-            try
+                ? Path.Combine(inst.Dir ?? fenceRoot, "app") : fenceRoot;
+            var (ok, pid, msg) = UserFence.Start("cmd.exe /c \"" + runCmd + "\"", launchCwd, envBlock.ToString());
+            if (!ok)
             {
-                var exited = proc.WaitForExit(4000);
-                TraceF("early-exit=" + exited + (exited ? " code=0x" + proc.ExitCode.ToString("X8") : ""));
+                message = "专用用户启动失败：" + msg;
+                return false;
             }
-            catch (Exception ex) { TraceF("wait-ex: " + ex.Message); }
+            var proc = Process.GetProcessById(pid);
             lock (Gate) Started[inst.Id] = new Running { Process = proc };
             AppendRaw(Path.Combine(logs, "launcher.log"),
-                "[dsh-manager] AppContainer 启动 pid=" + pid + " profile=" + profileName);
-            var exempt = AppContainerFence.TryLoopbackExempt(profileName);
-            if (!exempt.Ok)
-            {
-                // 非管理员会话：弹一次 UAC，由提权后的自己完成回环豁免
-                AppendRaw(Path.Combine(logs, "launcher.log"),
-                    "[dsh-manager] 回环豁免需要管理员，正在请求 UAC…");
-                try
-                {
-                    var psi = new ProcessStartInfo(Environment.ProcessPath ?? "DshManager.exe")
-                    {
-                        UseShellExecute = true,
-                        Verb = "runas",
-                    };
-                    psi.ArgumentList.Add("--fence-exempt");
-                    psi.ArgumentList.Add(profileName);
-                    using var up = Process.Start(psi);
-                    if (up != null && up.WaitForExit(120000))
-                    {
-                        var resultFile = Path.Combine(Path.GetTempPath(), "dsh-fence-exempt-" + profileName + ".txt");
-                        var text = File.Exists(resultFile) ? File.ReadAllText(resultFile) : "(无结果文件)";
-                        AppendRaw(Path.Combine(logs, "launcher.log"), "[dsh-manager] UAC 豁免结果：" + text.Replace("\n", " "));
-                        exempt = (text.StartsWith("OK"), text);
-                    }
-                    else
-                    {
-                        AppendRaw(Path.Combine(logs, "launcher.log"), "[dsh-manager] UAC 未在 120 秒内完成");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    AppendRaw(Path.Combine(logs, "launcher.log"), "[dsh-manager] UAC 启动失败：" + ex.Message);
-                }
-            }
-            message = "用户级围栏已启动（AppContainer，PID " + pid + "）";
+                "[dsh-manager] 专用用户 " + user + " 启动 pid=" + pid);
+            message = "用户级围栏已启动（专用用户 " + user + "，PID " + pid + "）";
             return true;
         }
         catch (Exception ex)
