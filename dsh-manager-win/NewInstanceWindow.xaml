@@ -14,8 +14,6 @@
         <Grid Margin="24,20,24,20">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
@@ -34,8 +32,12 @@
                 </Button>
             </Grid>
 
+            <!-- 可滚动内容：表单 + 安装说明 + 日志（窗口矮时底部的创建按钮不会被挤掉） -->
+            <ScrollViewer Grid.Row="1" Margin="0,18,0,0" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled" Padding="0,0,6,0">
+                <StackPanel>
             <!-- 表单 -->
-            <StackPanel Grid.Row="1" Margin="0,18,0,0">
+            <StackPanel Margin="0,0,0,0">
                 <TextBlock Text="实例名称" FontSize="9" FontWeight="SemiBold" Margin="0,0,0,7"
                            Foreground="{DynamicResource Muted}" />
                 <Border BorderBrush="{DynamicResource InnerBorder}" BorderThickness="1" CornerRadius="10"
@@ -116,8 +118,8 @@
                            TextWrapping="Wrap" />
             </StackPanel>
 
-            <!-- 日志 -->
-            <StackPanel Grid.Row="2" Margin="0,16,0,0">
+            <!-- 安装方式说明 -->
+            <StackPanel Margin="0,16,0,0">
                 <Border Background="{DynamicResource CardSolid}" BorderBrush="{DynamicResource InnerBorder}"
                         BorderThickness="1" CornerRadius="10" Padding="12,10">
                     <StackPanel>
@@ -130,7 +132,7 @@
                 </Border>
             </StackPanel>
 
-            <Border x:Name="LogCard" Grid.Row="3" Margin="0,16,0,0" CornerRadius="10" Background="{DynamicResource CardSolid}"
+            <Border x:Name="LogCard" Margin="0,16,0,0" CornerRadius="10" Background="{DynamicResource CardSolid}"
                     BorderBrush="{DynamicResource InnerBorder}" BorderThickness="1" Visibility="Collapsed">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -148,9 +150,11 @@
                     </ScrollViewer>
                 </Grid>
             </Border>
+                </StackPanel>
+            </ScrollViewer>
 
-            <!-- 底部 -->
-            <Grid Grid.Row="4" Margin="0,14,0,0">
+            <!-- 底部（固定，不随内容滚动） -->
+            <Grid Grid.Row="2" Margin="0,14,0,0">
                 <TextBlock x:Name="StatusText" Text="" FontSize="10" VerticalAlignment="Center"
                            Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis"
                            MaxWidth="300" HorizontalAlignment="Left" />
