@@ -274,8 +274,37 @@ public static class DshHost
                 "[dsh-manager] AppContainer 启动 pid=" + pid + " profile=" + profileName);
             var exempt = AppContainerFence.TryLoopbackExempt(profileName);
             if (!exempt.Ok)
+            {
+                // 非管理员会话：弹一次 UAC，由提权后的自己完成回环豁免
                 AppendRaw(Path.Combine(logs, "launcher.log"),
-                    "[dsh-manager] 回环豁免未成功（需要管理员）：" + exempt.Message);
+                    "[dsh-manager] 回环豁免需要管理员，正在请求 UAC…");
+                try
+                {
+                    var psi = new ProcessStartInfo(Environment.ProcessPath ?? "DshManager.exe")
+                    {
+                        UseShellExecute = true,
+                        Verb = "runas",
+                    };
+                    psi.ArgumentList.Add("--fence-exempt");
+                    psi.ArgumentList.Add(profileName);
+                    using var up = Process.Start(psi);
+                    if (up != null && up.WaitForExit(120000))
+                    {
+                        var resultFile = Path.Combine(Path.GetTempPath(), "dsh-fence-exempt-" + profileName + ".txt");
+                        var text = File.Exists(resultFile) ? File.ReadAllText(resultFile) : "(无结果文件)";
+                        AppendRaw(Path.Combine(logs, "launcher.log"), "[dsh-manager] UAC 豁免结果：" + text.Replace("\n", " "));
+                        exempt = (text.StartsWith("OK"), text);
+                    }
+                    else
+                    {
+                        AppendRaw(Path.Combine(logs, "launcher.log"), "[dsh-manager] UAC 未在 120 秒内完成");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppendRaw(Path.Combine(logs, "launcher.log"), "[dsh-manager] UAC 启动失败：" + ex.Message);
+                }
+            }
             message = "用户级围栏已启动（AppContainer，PID " + pid + "）";
             return true;
         }

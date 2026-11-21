@@ -142,6 +142,23 @@ public partial class App : Application
             return;
         }
 
+        // 提权助手：--fence-exempt <profileName>（由 UAC 拉起，做 AppContainer 回环豁免）
+        var fx = Array.IndexOf(e.Args, "--fence-exempt");
+        if (fx >= 0 && fx + 1 < e.Args.Length)
+        {
+            var profile = e.Args[fx + 1];
+            var r = Services.AppContainerFence.TryLoopbackExempt(profile);
+            try
+            {
+                System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                    "dsh-fence-exempt-" + profile + ".txt"),
+                    (r.Ok ? "OK" : "FAIL") + "\n" + r.Message);
+            }
+            catch { }
+            Shutdown(r.Ok ? 0 : 1);
+            return;
+        }
+
         // 调试/自动化：--install-instance <dir> <port> <system|user>
         var ii = Array.IndexOf(e.Args, "--install-instance");
         if (ii >= 0 && ii + 3 < e.Args.Length)

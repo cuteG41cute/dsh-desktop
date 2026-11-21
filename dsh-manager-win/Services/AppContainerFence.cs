@@ -51,6 +51,9 @@ public static class AppContainerFence
     private static extern bool ConvertSidToStringSid(IntPtr sid, out IntPtr str);
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool ConvertStringSidToSid(string sid, out IntPtr pSid);
+    [DllImport("FirewallAPI.dll", SetLastError = true)]
+    private static extern uint NetworkIsolationSetAppContainerConfig(uint count,
+        [In] SID_AND_ATTRIBUTES[] entries);
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool InitializeProcThreadAttributeList(IntPtr list, int count, int flags, ref IntPtr size);
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -133,6 +136,17 @@ public static class AppContainerFence
     {
         try
         {
+            // 先给 AppContainer SID 做网络隔离豁免（未打包的 AppContainer 只认 SID，
+            // CheckNetIsolation -n=<name> 对它们无效）
+            var sidText = "";
+            if (DeriveAppContainerSidFromAppContainerName(profileName, out var appSid) == 0)
+            {
+                if (ConvertSidToStringSid(appSid, out var sidPtr)) sidText = Marshal.PtrToStringUni(sidPtr) ?? "";
+                var arr = new[] { new SID_AND_ATTRIBUTES { Sid = appSid, Attributes = 0 } };
+                var hr = NetworkIsolationSetAppContainerConfig(1, arr);
+                if (hr != 0)
+                    return (false, $"NetworkIsolationSetAppContainerConfig 失败：0x{hr:X8}（SID {sidText}）");
+            }
             var psi = new ProcessStartInfo("CheckNetIsolation")
             {
                 UseShellExecute = false,
