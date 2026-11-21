@@ -442,8 +442,8 @@ public static class DshDiscovery
         foreach (var inst in list)
         {
             if (inst.Running || inst.Port > 0) continue;
-            var reg = regs.FirstOrDefault(r => string.Equals(
-                Path.GetFullPath(r.Dir ?? ""), Path.GetFullPath(inst.Dir ?? ""), StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrWhiteSpace(inst.Dir)) continue;
+            var reg = regs.FirstOrDefault(r => !string.IsNullOrWhiteSpace(r.Dir) && PathEquals(r.Dir, inst.Dir));
             if (reg != null && reg.Port > 0) inst.Port = reg.Port;
         }
     }

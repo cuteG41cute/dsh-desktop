@@ -49,8 +49,16 @@ public static class InstanceInstaller
         string nodeVersion = VersionCatalog.SystemNode)
     {
         var npm = FindNpm();
-        if (string.IsNullOrEmpty(npm)) return (false, "PATH 上找不到 npm.cmd（先装 Node.js）");
         if (string.IsNullOrWhiteSpace(dir)) return (false, "没有指定安装目录");
+        if (string.IsNullOrEmpty(npm))
+        {
+            // 干净系统没有 Node：先下载便携 Node，用实例自带的 npm
+            log("系统里没有 npm，先安装便携 Node …");
+            var (nok0, nmsg0) = await VersionCatalog.InstallPortableNodeAsync(dir, "latest", log);
+            if (!nok0) return (false, "没有 npm，且便携 Node 安装失败：" + nmsg0);
+            npm = Path.Combine(dir, "node", "npm.cmd");
+            if (!File.Exists(npm)) return (false, "便携 Node 里找不到 npm.cmd：" + npm);
+        }
         var spec = string.IsNullOrWhiteSpace(version) || version == "latest"
             ? "@deepseek-ai/dsh@latest"
             : "@deepseek-ai/dsh@" + version.Trim();

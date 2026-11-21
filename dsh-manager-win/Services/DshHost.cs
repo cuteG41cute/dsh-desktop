@@ -51,8 +51,9 @@ public static class DshHost
         try
         {
             regEntry = InstanceRegistry.Load().FirstOrDefault(r =>
-                string.Equals(System.IO.Path.GetFullPath(r.Dir ?? ""),
-                    System.IO.Path.GetFullPath(inst.Dir ?? ""), StringComparison.OrdinalIgnoreCase));
+                !string.IsNullOrWhiteSpace(r.Dir) && !string.IsNullOrWhiteSpace(inst.Dir)
+                && string.Equals(System.IO.Path.GetFullPath(r.Dir),
+                    System.IO.Path.GetFullPath(inst.Dir), StringComparison.OrdinalIgnoreCase));
         }
         catch { }
         var userTier = string.Equals(regEntry?.Tier, "user", StringComparison.OrdinalIgnoreCase);
@@ -171,12 +172,16 @@ public static class DshHost
     private static bool StartFenced(DshInstance inst, string fenceRoot, out string message)
     {
         message = "";
+        void TraceF(string m) { try { File.AppendAllText(@"C:\\dshbuild\\fenced.log", DateTime.Now.ToString("HH:mm:ss") + " " + m + "\n"); } catch { } }
+        TraceF("enter fence=" + fenceRoot);
         try
         {
             var profileName = AppContainerFence.ProfileNameFor(inst.Id);
             var ensure = AppContainerFence.EnsureProfile(profileName);
+            TraceF("profile ok=" + ensure.Ok + " sid=" + ensure.Sid + " msg=" + ensure.Message);
             if (!ensure.Ok) { message = ensure.Message; return false; }
             var granted = AppContainerFence.GrantDirectory(fenceRoot, ensure.Sid);
+            TraceF("grant ok=" + granted.Ok + " msg=" + granted.Message);
             if (!granted.Ok) { message = "围栏目录授权失败：" + granted.Message; return false; }
 
             var logs = Path.Combine(fenceRoot, "logs");
@@ -250,12 +255,20 @@ public static class DshHost
                 : fenceRoot;
             AppendRaw(Path.Combine(logs, "launcher.log"), "[dsh-manager] cwd=" + launchCwd);
             AppendRaw(Path.Combine(logs, "launcher.log"), "[dsh-manager] cmd=" + cmd);
+            TraceF("launching pid...");
             var (ok, pid, msg) = AppContainerFence.Start(profileName, cmd.ToString(), launchCwd, true,
                 envBlock.ToString(), stdio);
+            TraceF("launched ok=" + ok + " pid=" + pid + " msg=" + msg);
             logStream.Dispose();
             if (!ok) { message = "AppContainer 启动失败：" + msg; return false; }
 
             var proc = Process.GetProcessById(pid);
+            try
+            {
+                var exited = proc.WaitForExit(4000);
+                TraceF("early-exit=" + exited + (exited ? " code=0x" + proc.ExitCode.ToString("X8") : ""));
+            }
+            catch (Exception ex) { TraceF("wait-ex: " + ex.Message); }
             lock (Gate) Started[inst.Id] = new Running { Process = proc };
             AppendRaw(Path.Combine(logs, "launcher.log"),
                 "[dsh-manager] AppContainer 启动 pid=" + pid + " profile=" + profileName);

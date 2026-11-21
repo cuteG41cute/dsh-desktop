@@ -142,6 +142,54 @@ public partial class App : Application
             return;
         }
 
+        // 调试/自动化：--install-instance <dir> <port> <system|user>
+        var ii = Array.IndexOf(e.Args, "--install-instance");
+        if (ii >= 0 && ii + 3 < e.Args.Length)
+        {
+            try { System.IO.File.WriteAllText(@"C:\\dshbuild\\cli-start.log", string.Join("|", e.Args)); } catch { }
+            try
+            {
+            AttachConsole(-1);
+            var dir = e.Args[ii + 1];
+            var port = int.Parse(e.Args[ii + 2]);
+            var tier = e.Args[ii + 3];
+            var logLines = new System.Collections.Concurrent.ConcurrentQueue<string>();
+            // WPF 启动线程上有同步上下文，直接 .GetResult() 会死锁；放到线程池跑
+            var (iok, imsg) = System.Threading.Tasks.Task.Run(() =>
+                Services.InstanceInstaller.InstallAsync(dir, "latest",
+                    m => logLines.Enqueue(m), port, "latest")).GetAwaiter().GetResult();
+            try
+            {
+                System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "install-cli.log"),
+                    string.Join("\n", logLines) + "\nRESULT: " + iok + " " + imsg + "\n");
+            }
+            catch { }
+            if (iok)
+            {
+                var entry = new Services.RegistryEntry
+                {
+                    Id = "inst-" + Guid.NewGuid().ToString("N").Substring(0, 8),
+                    Label = Path.GetFileName(dir.TrimEnd('\\')),
+                    Dir = dir, Port = port,
+                    Tier = tier == "user" ? "user" : "system",
+                    FenceRoot = tier == "user" ? dir : "",
+                    CreatedAt = DateTime.Now.ToString("o"),
+                };
+                Services.InstanceRegistry.Add(entry);
+            }
+            Console.WriteLine("install=" + iok + " " + imsg);
+            Shutdown(iok ? 0 : 1);
+            return;
+            }
+            catch (Exception ex)
+            {
+                try { System.IO.File.WriteAllText(@"C:\\dshbuild\\cli-error.log", ex.ToString()); } catch { }
+                Shutdown(3);
+                return;
+            }
+        }
+
         // 调试/自动化：--fence-create <label> <name>
         var fc = Array.IndexOf(e.Args, "--fence-create");
         if (fc >= 0 && fc + 2 < e.Args.Length)
@@ -230,6 +278,10 @@ public partial class App : Application
         var si = Array.IndexOf(e.Args, "--instance-start");
         if (si >= 0 && si + 1 < e.Args.Length)
         {
+            void Trace(string m) { try { System.IO.File.AppendAllText(@"C:\\dshbuild\\is-start.log", DateTime.Now.ToString("HH:mm:ss") + " " + m + "\n"); } catch { } }
+            Trace("args: " + string.Join("|", e.Args));
+            try
+            {
             AttachConsole(-1);
             var label = e.Args[si + 1];
             var list = Services.DshDiscovery.Scan().ToList();
@@ -237,10 +289,19 @@ public partial class App : Application
             Services.DshDiscovery.ApplyRegistryPorts(list);
             var inst = list.FirstOrDefault(i => i.Label.Equals(label, StringComparison.OrdinalIgnoreCase));
             if (inst == null) { Console.WriteLine("instance not found: " + label); Shutdown(2); return; }
+            Trace("found inst=" + inst.Label + " dir=" + inst.Dir + " node=" + inst.NodeExe + " entry=" + inst.Entry + " port=" + inst.Port);
             var ok = Services.DshHost.Start(inst, out var msg);
+            Trace("start=" + ok + " " + msg + " port=" + inst.Port);
             Console.WriteLine("start=" + ok + " " + msg + " port=" + inst.Port);
             Shutdown(ok ? 0 : 1);
             return;
+            }
+            catch (Exception ex)
+            {
+                Trace("EX: " + ex);
+                Shutdown(4);
+                return;
+            }
         }
 
         // 调试专用：--storage-check [home] / --storage-repair [home]
