@@ -71,7 +71,7 @@ DEFAULT_ROOT = os.path.expanduser('~/.local/opt')
 FALLBACK_DSH_VERSIONS = ['0.2.1-rc.5', '0.2.0-rc.2', '0.1.7-rc.2', '0.1.5-rc.3', '0.1.5-rc.1']
 FALLBACK_NODE_VERSIONS = ['26.13.0', '24.22.2', '22.23.4', '20.20.2']
 SYSTEM_SHARE = '/usr/lib/dsh-manager/share'      # deb 里随包带的窗口文件
-MANAGER_VERSION = '3.7.4'
+MANAGER_VERSION = '3.8.0'
 MANAGER_LIB = '/usr/lib/dsh-manager'             # 管理器自己的安装目录（deb）
 
 
@@ -213,6 +213,8 @@ class Instance:
         self.dsh_version = self.meta.get('dsh') or ''
         self.node_version = self.meta.get('node') or ''
         self.dsh_home = self.meta.get('dshHome') or os.path.join(self.prefix, 'dsh-home')
+        self.tier = self.meta.get('tier') or 'system'
+        self.fence_root = self.meta.get('fenceRoot') or self.prefix
         self.pidfile = os.path.join(self.prefix, 'logs', 'web.pid')
         self.logfile = os.path.join(self.prefix, 'logs', 'web.log')
 
@@ -355,6 +357,8 @@ class Instance:
             'dsh': self.dsh_version,
             'node': self.node_version,
             'dshHome': self.dsh_home,
+            'tier': self.tier,
+            'fenceRoot': self.fence_root,
             'status': self.status(),
             'pid': self.running_pid(),
         }
@@ -368,6 +372,9 @@ class Instance:
             os.path.join(self.prefix, 'tools', 'node_modules', '.bin'),
             env.get('PATH', ''))
         env['DSH_HOME'] = self.dsh_home
+        if self.tier == 'user':
+            env['DSH_FENCE_ROOT'] = self.fence_root
+            env['DSH_PERMISSION_MODE'] = 'workspace-write'
         env['DSH_PREFIX'] = self.prefix
         env['DSH_SHARE'] = self.share
         env['DSH_BIN'] = self.entry
@@ -383,9 +390,18 @@ class Instance:
             return True, '服务已在运行'
         os.makedirs(os.path.dirname(self.logfile), exist_ok=True)
         log = open(self.logfile, 'ab', buffering=0)
-        args = [self.node, self.entry, 'web', '--no-open', '--port', str(self.port)]
+        if self.tier == 'user':
+            from . import sandbox
+            if not sandbox.ensure_plugin(self, print):
+                log.write(b'[dsh-manager] fence plugin install failed\n')
+            args, env = sandbox.build_command(self)
+            cwd = self.fence_root
+        else:
+            args = [self.node, self.entry, 'web', '--no-open', '--port', str(self.port)]
+            env = self.env()
+            cwd = None
         proc = subprocess.Popen(args, stdout=log, stderr=log, stdin=subprocess.DEVNULL,
-                                env=self.env(), start_new_session=True)
+                                env=env, cwd=cwd, start_new_session=True)
         try:
             with open(self.pidfile, 'w', encoding='utf-8') as fh:
                 fh.write(str(proc.pid))
@@ -405,7 +421,16 @@ class Instance:
         if not pid:
             return False, '没有本管理器记录的运行中进程'
         try:
-            os.kill(pid, 15)
+            # 用户级实例的 pid 是 bwrap 启动器，真正的 node 在同一个进程组里；
+            # 必须按进程组杀，否则停掉 bwrap 后 node 会变成孤儿继续占端口。
+            if self.tier == 'user':
+                try:
+                    pgid = os.getpgid(pid)
+                    os.killpg(pgid, 15)
+                except OSError:
+                    os.kill(pid, 15)
+            else:
+                os.kill(pid, 15)
             for _ in range(20):
                 time.sleep(0.2)
                 try:
@@ -413,7 +438,11 @@ class Instance:
                 except OSError:
                     break
             else:
-                os.kill(pid, 9)
+                if self.tier == 'user':
+                    try: os.killpg(os.getpgid(pid), 9)
+                    except OSError: os.kill(pid, 9)
+                else:
+                    os.kill(pid, 9)
         except OSError as exc:
             return False, '停止失败：%s' % exc
         try:
@@ -704,6 +733,7 @@ class Manager:
         entries.append({
             'prefix': inst.prefix, 'label': inst.label, 'port': inst.port,
             'dsh': inst.dsh_version, 'node': inst.node_version, 'dshHome': inst.dsh_home,
+            'tier': inst.tier, 'fenceRoot': inst.fence_root,
         })
         self._write_registry(entries)
 
@@ -735,6 +765,15 @@ class Manager:
                         meta = {'label': name, 'port': 3080}
                     meta.setdefault('label', name)
                     found[prefix] = meta
+        # 登记表里可能没有 tier（老版本写的），以 install.json 为准合并一次
+        for prefix, meta in list(found.items()):
+            try:
+                with open(os.path.join(prefix, 'install.json'), 'r', encoding='utf-8') as fh:
+                    disk = json.load(fh)
+                disk.update(meta)
+                found[prefix] = disk
+            except Exception:
+                pass
         out = []
         for prefix, meta in sorted(found.items(), key=lambda kv: kv[0]):
             out.append(Instance(prefix, meta))
@@ -996,6 +1035,7 @@ class Manager:
             'prefix': inst.prefix, 'label': inst.label, 'port': inst.port,
             'dsh': inst.dsh_version, 'node': inst.node_version,
             'dshHome': inst.dsh_home, 'installedAt': now_iso(),
+            'tier': inst.tier, 'fenceRoot': inst.fence_root,
             'manager': MANAGER_VERSION,
         }
         with open(inst.install_json, 'w', encoding='utf-8') as fh:
@@ -1003,7 +1043,8 @@ class Manager:
         inst.meta = meta
         self._remember(inst)
 
-    def install(self, prefix, dsh_version=None, node_version=None, port=None, label=None):
+    def install(self, prefix, dsh_version=None, node_version=None, port=None, label=None,
+                tier='system'):
         """新建（或补齐）一个实例。返回 (ok, message, instance)。"""
         if dsh_version == 'latest':
             dsh_version = self.latest_dsh_version()
@@ -1019,7 +1060,9 @@ class Manager:
         inst = Instance(prefix, {'label': label or os.path.basename(prefix),
                                  'port': int(port or self.next_port()),
                                  'dsh': dsh_version, 'node': node_version,
-                                 'dshHome': os.path.join(prefix, 'dsh-home')})
+                                 'dshHome': os.path.join(prefix, 'dsh-home'),
+                                 'tier': 'user' if str(tier) == 'user' else 'system',
+                                 'fenceRoot': prefix})
         # 记录「这个目录是我们刚创建的」——失败时只清理自己造出来的，
         # 用户已有的目录（哪怕空的）绝不动。
         created_here = not os.path.exists(prefix)

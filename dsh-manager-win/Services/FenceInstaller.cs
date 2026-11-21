@@ -45,12 +45,15 @@ public static class FenceInstaller
             {
                 if (File.Exists(patchPath))
                     File.Copy(patchPath, patchPath + ".bak-fence-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"), true);
+                // 空 profile 的 patch 可能是「注释 + []」；直接追加 - insert 会变成
+                // 两个 YAML 文档，DSH 启动时解析失败。先去掉占位空数组行。
+                patch = string.Join("\n", patch.Split('\n').Where(l => l.Trim() != "[]"));
                 if (!patch.EndsWith("\n")) patch += "\n";
                 patch += "\n# ==== dsh-fence (installed by dsh-manager) ====\n" +
                          "- insert:\n" +
                          "    - id: " + PluginId + "\n" +
                          "      name: '" + PluginId + "'\n" +
-                         "      inject: [ workspaceRegistry ]\n";
+                         "      inject: [ workspaceRegistry, webServer ]\n";
                 File.WriteAllText(patchPath, patch, new UTF8Encoding(false));
             }
 

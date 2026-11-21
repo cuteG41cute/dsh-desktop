@@ -3467,7 +3467,7 @@ class ManagerWindow(Gtk.Window):
     def on_new(self, *_):
         dlg = Gtk.Dialog(title='新建实例', transient_for=self, modal=True)
         self._style_dialog(dlg, '新建实例', '在独立目录里安装一份 DeepSeek Harness（用系统 node/npm）')
-        dlg.set_default_size(560, 320)
+        dlg.set_default_size(560, 400)
         grid = Gtk.Grid(column_spacing=8, row_spacing=10, border_width=12)
         dlg.get_content_area().add(grid)
 
@@ -3579,17 +3579,28 @@ class ManagerWindow(Gtk.Window):
         grid.attach(field('端口', ent_port), 0, 2, 1, 1)
         grid.attach(field('dsh 版本', picker_dsh), 1, 2, 1, 1)
         grid.attach(field('Node 版本', picker_node), 0, 3, 2, 1)
-        grid.attach(box_ver, 0, 4, 2, 1)
+        rdo_sys = Gtk.RadioButton.new_with_label(None, '系统级（不受围栏影响）')
+        rdo_user = Gtk.RadioButton.new_with_label_from_widget(rdo_sys, '用户级（围栏：实例目录）')
+        box_tier = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+        box_tier.pack_start(rdo_sys, False, False, 0)
+        box_tier.pack_start(rdo_user, False, False, 0)
+        grid.attach(field('实例等级', box_tier), 0, 4, 2, 1)
+        tier_hint = Gtk.Label(xalign=0, wrap=True)
+        tier_hint.set_text('等级在创建后不可更改。用户级实例只能把工作区建在实例目录内；'
+                           '即使选择「完全权限」，读写也不能突破该目录。')
+        tier_hint.get_style_context().add_class('dim-label')
+        grid.attach(tier_hint, 0, 5, 2, 1)
+        grid.attach(box_ver, 0, 6, 2, 1)
         hint = Gtk.Label(xalign=0, wrap=True)
         hint.set_text('提示：latest = 最新的非 alpha 版本（由管理器联网解析）；每个实例自带 Node 与 dsh，'
                       '装在所选目录里，数据目录是该目录下的 dsh-home，不会动 ~/.dsh。'
                       '安装需要联网（下载 Node 与 npm 包）。')
         hint.get_style_context().add_class('dim-label')
-        grid.attach(hint, 0, 5, 2, 1)
+        grid.attach(hint, 0, 7, 2, 1)
         # 底部条（对齐 Windows）：细线 + 左侧「更新 dsh / Node 版本」+ 右侧 取消/创建实例
         sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
         sep.set_margin_top(10)
-        grid.attach(sep, 0, 6, 2, 1)
+        grid.attach(sep, 0, 8, 2, 1)
         foot = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         foot.set_margin_top(12)
         btn_upd = Gtk.Button(label='更新 dsh / Node 版本')
@@ -3607,7 +3618,7 @@ class ManagerWindow(Gtk.Window):
             b.set_size_request(-1, 32)
         foot.pack_end(btn_ok, False, False, 0)
         foot.pack_end(btn_cancel, False, False, 0)
-        grid.attach(foot, 0, 7, 2, 1)
+        grid.attach(foot, 0, 9, 2, 1)
         try:
             area_btn = dlg.get_action_area()
             for child in area_btn.get_children():
@@ -3652,8 +3663,9 @@ class ManagerWindow(Gtk.Window):
                 self.append_log('✘ 目录已存在且不为空（%s），请换一个目录'
                                 % ', '.join(foreign[:4]))
                 return
+        tier = 'user' if rdo_user.get_active() else 'system'
         self._run_async('安装 %s' % os.path.basename(prefix),
-                        lambda: self.manager.install(prefix, dsh, node, port, label))
+                        lambda: self.manager.install(prefix, dsh, node, port, label, tier=tier))
 
     # ------------------------------------------------------------ 管理器自身的设置
     def _copy(self, text):

@@ -1,0 +1,11 @@
+{
+  "name": "dsh-fence",
+  "version": "1.0.0",
+  "description": "dsh-manager 用户级实例的工作区围栏：服务端强制工作区只能创建在实例目录内。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  }
+}
