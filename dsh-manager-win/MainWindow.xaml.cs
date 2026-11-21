@@ -1861,7 +1861,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>删除实例：停服务 → 删目录 → 移出登记表（只对管理器创建的实例）。</summary>
-    private void OnDeleteInstance(object sender, RoutedEventArgs e)
+    private async void OnDeleteInstance(object sender, RoutedEventArgs e)
     {
         if (_current == null) { Toast("先选一个实例"); return; }
         var managed = InstanceActions.IsManaged(_current);
@@ -1879,7 +1879,11 @@ public partial class MainWindow : Window
             "删除实例", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
         if (ask != MessageBoxResult.OK) return;
         if (_current.Running) DshHost.Stop(_current, out _);
-        var (ok, msg) = InstanceActions.Uninstall(_current, deleteDir: true);
+        var target = _current;
+        Toast("正在删除实例目录…（大实例可能要几分钟，窗口不会卡住）");
+        // 删除是阻塞 IO（十几万文件），放到后台线程，UI 保持可响应
+        var (ok, msg) = await System.Threading.Tasks.Task.Run(
+            () => InstanceActions.Uninstall(target, deleteDir: true));
         ReloadInstances();
         Toast((ok ? "✔ " : "✘ ") + msg);
         if (!ok) MessageBox.Show(this, msg, "删除实例", MessageBoxButton.OK, MessageBoxImage.Warning);

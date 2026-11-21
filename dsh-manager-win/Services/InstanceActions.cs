@@ -114,38 +114,43 @@ public static class InstanceActions
     private static void DeleteDirectoryRobust(string dir)
     {
         var full = Path.GetFullPath(dir);
-        for (var attempt = 0; attempt < 4; attempt++)
-        {
-            try
-            {
-                foreach (var f in Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories))
-                {
-                    try
-                    {
-                        var attrs = File.GetAttributes(f);
-                        if ((attrs & FileAttributes.ReadOnly) != 0)
-                            File.SetAttributes(f, attrs & ~FileAttributes.ReadOnly);
-                    }
-                    catch { }
-                }
-            }
-            catch { }
-            try { Directory.Delete(full, true); return; }
-            catch
-            {
-                System.Threading.Thread.Sleep(700);
-            }
-        }
-        // 长路径兜底（node_modules 的嵌套路径很容易超过 MAX_PATH）
+        if (!Directory.Exists(full)) return;
+
+        // 大实例（node_modules + pnpm-store 十几万文件）优先用长路径一次删掉，
+        // 不要先全量枚举——之前 4 轮 EnumerateFiles 会把 UI 线程卡死好几分钟。
         var longPath = full.StartsWith(@"\\?\", StringComparison.Ordinal) ? full : @"\\?\" + full;
+        try { Directory.Delete(longPath, true); return; } catch { }
+
+        ClearReadOnly(longPath);
+        try { Directory.Delete(longPath, true); return; } catch { }
+
+        // 最后再用普通路径试一次，把异常留给调用方报告
+        Directory.Delete(full, true);
+    }
+
+    /// <summary>清掉只读属性（一次遍历，忽略无权限项）。</summary>
+    private static void ClearReadOnly(string path)
+    {
         try
         {
-            foreach (var f in Directory.EnumerateFiles(longPath, "*", SearchOption.AllDirectories))
+            var options = new EnumerationOptions
             {
-                try { File.SetAttributes(f, FileAttributes.Normal); } catch { }
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                AttributesToSkip = 0,
+            };
+            foreach (var f in Directory.EnumerateFiles(path, "*", options))
+            {
+                try
+                {
+                    var attrs = File.GetAttributes(f);
+                    if ((attrs & FileAttributes.ReadOnly) != 0)
+                        File.SetAttributes(f, attrs & ~FileAttributes.ReadOnly);
+                }
+                catch { }
             }
         }
         catch { }
-        Directory.Delete(longPath, true);
     }
+
 }
