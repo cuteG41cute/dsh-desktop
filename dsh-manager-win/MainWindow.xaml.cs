@@ -287,6 +287,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        LoadDavSettings();
         if (BrandVersion != null) BrandVersion.Text = "v" + AppVersion;
         Watchdog.Start();
         StartTtsWatcher();
@@ -2349,6 +2350,20 @@ public partial class MainWindow : Window
                 ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    private void LoadDavSettings()
+    {
+        var s = Services.WebDavSettings.Load();
+        if (s == null) return;
+        PbDavUrl.Text = s.Url ?? "";
+        PbDavUser.Text = s.User ?? "";
+        if (!string.IsNullOrEmpty(s.Password)) PbDavPass.Password = s.Password;
+    }
+
+    private void SaveDavSettings()
+    {
+        Services.WebDavSettings.Save(PbDavUrl.Text ?? "", PbDavUser.Text ?? "", PbDavPass.Password ?? "");
+    }
+
     private void RefreshDavProjects()
     {
         var rows = _pbAll.Select(p => new ViewModels.DavProjectVm
@@ -2372,6 +2387,7 @@ public partial class MainWindow : Window
     private async void OnPbDavUpload(object sender, RoutedEventArgs e)
     {
         if (DavBase.Length == 0) { Toast("先填写 WebDAV 地址"); return; }
+        SaveDavSettings();
         if (PbDavProjects.ItemsSource is not IEnumerable<ViewModels.DavProjectVm> rows) return;
         var selected = rows.Where(r => r.Checked).ToList();
         if (selected.Count == 0) { Toast("先勾选要备份的项目"); return; }
@@ -2501,6 +2517,7 @@ public partial class MainWindow : Window
                 ? $"已连接 · {sw.ElapsedMilliseconds} ms"
                 : $"连接失败：HTTP {code}";
             PbDavStatus.Foreground = (Brush)FindResource(code is >= 200 and < 300 ? "Success" : "Danger");
+            if (code is >= 200 and < 300) SaveDavSettings();
         }
         catch (Exception ex)
         {
