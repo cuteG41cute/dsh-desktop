@@ -1099,6 +1099,17 @@
                                                 </Grid>
                                             </Border>
                                         </Grid>
+                                        <Border CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
+                                                Background="{DynamicResource Card}" Padding="10,7" Margin="0,8,0,0">
+                                            <Grid>
+                                                <TextBox x:Name="PbDavPath" FontSize="9" BorderThickness="0"
+                                                         Background="Transparent" Foreground="{DynamicResource Text}"
+                                                         TextChanged="OnPbDavPathChanged" />
+                                                <TextBlock x:Name="PbDavPathHint" Text="路径（可选，如 /dsh backup）" FontSize="9"
+                                                           Foreground="{DynamicResource Subtle}"
+                                                           IsHitTestVisible="False" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
                                     </StackPanel>
                                 </Border>
                                 <Grid Margin="0,14,0,6">

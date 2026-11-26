@@ -12,6 +12,7 @@ public static class WebDavSettings
     public sealed class Model
     {
         public string Url { get; set; } = "";
+        public string Path { get; set; } = "";
         public string User { get; set; } = "";
         public string Password { get; set; } = "";
     }
@@ -35,18 +36,18 @@ public static class WebDavSettings
                 password = Encoding.UTF8.GetString(
                     ProtectedData.Unprotect(raw, null, DataProtectionScope.CurrentUser));
             }
-            return new Model { Url = stored.Url ?? "", User = stored.User ?? "", Password = password };
+            return new Model { Url = stored.Url ?? "", Path = stored.Path ?? "", User = stored.User ?? "", Password = password };
         }
         catch { return null; }
     }
 
-    public static void Save(string url, string user, string password)
+    public static void Save(string url, string path, string user, string password)
     {
         try
         {
             var dir = Path.GetDirectoryName(FilePath)!;
             Directory.CreateDirectory(dir);
-            var stored = new Stored { Url = url ?? "", User = user ?? "" };
+            var stored = new Stored { Url = url ?? "", Path = path ?? "", User = user ?? "" };
             if (!string.IsNullOrEmpty(password))
             {
                 var enc = ProtectedData.Protect(Encoding.UTF8.GetBytes(password), null,
@@ -63,6 +64,7 @@ public static class WebDavSettings
     private sealed class Stored
     {
         public string Url { get; set; }
+        public string Path { get; set; }
         public string User { get; set; }
         public string Password { get; set; }
     }

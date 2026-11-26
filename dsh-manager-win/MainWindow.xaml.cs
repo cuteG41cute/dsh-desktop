@@ -2311,7 +2311,19 @@ public partial class MainWindow : Window
     }
 
     // ===== WebDAV 备份 / 恢复 =====
-    private string DavBase => NormalizeDavUrl(PbDavUrl.Text);
+    private string DavBase
+    {
+        get
+        {
+            var baseUrl = NormalizeDavUrl(PbDavUrl.Text);
+            var path = (PbDavPath.Text ?? "").Trim();
+            if (path.Length == 0) return baseUrl;
+            var segs = path.Split('/')
+                .Where(s => s.Length > 0)
+                .Select(s => Uri.EscapeDataString(Uri.UnescapeDataString(s)));
+            return baseUrl + "/" + string.Join("/", segs);
+        }
+    }
 
     /// <summary>WebDAV 地址规范化：把路径里的空格/中文编码成 %XX，已是 %XX 的不重复编码。</summary>
     private static string NormalizeDavUrl(string raw)
@@ -2350,18 +2362,27 @@ public partial class MainWindow : Window
                 ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    private void OnPbDavPathChanged(object sender, RoutedEventArgs e)
+    {
+        if (PbDavPathHint != null)
+            PbDavPathHint.Visibility = string.IsNullOrEmpty(PbDavPath.Text)
+                ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void LoadDavSettings()
     {
         var s = Services.WebDavSettings.Load();
         if (s == null) return;
         PbDavUrl.Text = s.Url ?? "";
+        PbDavPath.Text = s.Path ?? "";
         PbDavUser.Text = s.User ?? "";
         if (!string.IsNullOrEmpty(s.Password)) PbDavPass.Password = s.Password;
     }
 
     private void SaveDavSettings()
     {
-        Services.WebDavSettings.Save(PbDavUrl.Text ?? "", PbDavUser.Text ?? "", PbDavPass.Password ?? "");
+        Services.WebDavSettings.Save(PbDavUrl.Text ?? "", PbDavPath.Text ?? "",
+            PbDavUser.Text ?? "", PbDavPass.Password ?? "");
     }
 
     private void RefreshDavProjects()
@@ -2493,7 +2514,7 @@ public partial class MainWindow : Window
 
     private async void OnPbDavTest(object sender, RoutedEventArgs e)
     {
-        var url = NormalizeDavUrl(PbDavUrl.Text);
+        var url = DavBase;
         if (url.Length == 0) { Toast("先填写 WebDAV 地址"); return; }
         PbDavStatus.Text = "正在测试…";
         try
