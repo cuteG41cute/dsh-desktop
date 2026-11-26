@@ -2341,6 +2341,14 @@ public partial class MainWindow : Window
                 ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    /// <summary>用户名占位提示：不再把「用户名」当真实文本塞进输入框。</summary>
+    private void OnPbDavUserChanged(object sender, RoutedEventArgs e)
+    {
+        if (PbDavUserHint != null)
+            PbDavUserHint.Visibility = string.IsNullOrEmpty(PbDavUser.Text)
+                ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void RefreshDavProjects()
     {
         var rows = _pbAll.Select(p => new ViewModels.DavProjectVm
