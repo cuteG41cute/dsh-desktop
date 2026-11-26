@@ -18,11 +18,12 @@ public sealed class WebDavClient : IDisposable
     private readonly string _user;
     private readonly string _pass;
 
-    public WebDavClient(string user, string pass, int timeoutSeconds = 60)
+    public WebDavClient(string user, string pass, int timeoutSeconds = 600)
     {
         _user = user ?? "";
         _pass = pass ?? "";
         _http = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
+        _http.DefaultRequestHeaders.ExpectContinue = false;
         if (_user.Length > 0)
         {
             var token = Convert.ToBase64String(Encoding.UTF8.GetBytes(_user + ":" + _pass));
@@ -86,7 +87,12 @@ public sealed class WebDavClient : IDisposable
         req.Content.Headers.ContentLength = info.Length;
         var res = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!res.IsSuccessStatusCode)
-            throw new IOException("上传失败：HTTP " + (int)res.StatusCode);
+        {
+            var body = "";
+            try { body = await res.Content.ReadAsStringAsync(ct); } catch { }
+            throw new IOException("上传失败：HTTP " + (int)res.StatusCode
+                + (string.IsNullOrWhiteSpace(body) ? "" : " · " + body.Substring(0, Math.Min(160, body.Length))));
+        }
         progress?.Invoke(info.Length, info.Length);
     }
 

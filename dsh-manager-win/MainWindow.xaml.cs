@@ -2420,6 +2420,20 @@ public partial class MainWindow : Window
         try
         {
             using var dav = new Services.WebDavClient(DavUser, DavPass);
+            // 先做一次极小的写入探测：只读 WebDAV 会在导出大文件前就被识别出来
+            var probe = System.IO.Path.Combine(System.IO.Path.GetTempPath(), ".dsh-dav-write-test");
+            try
+            {
+                File.WriteAllText(probe, "x");
+                await dav.UploadAsync(probe, DavBase + "/.dsh-write-test");
+            }
+            catch (Exception ex)
+            {
+                PbDavProgressText.Text = "远端不可写：" + ex.Message;
+                Toast("远端不可写（WebDAV 需要写权限）：" + ex.Message);
+                return;
+            }
+            finally { try { File.Delete(probe); } catch { } }
             await dav.EnsureCollectionAsync(devicesDir);
             var records = Services.ProjectCatalog.LoadBackups();
             foreach (var r in selected)
