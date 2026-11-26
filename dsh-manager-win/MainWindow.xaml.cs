@@ -2310,7 +2310,26 @@ public partial class MainWindow : Window
     }
 
     // ===== WebDAV 备份 / 恢复 =====
-    private string DavBase => (PbDavUrl.Text ?? "").Trim().TrimEnd('/');
+    private string DavBase => NormalizeDavUrl(PbDavUrl.Text);
+
+    /// <summary>WebDAV 地址规范化：把路径里的空格/中文编码成 %XX，已是 %XX 的不重复编码。</summary>
+    private static string NormalizeDavUrl(string raw)
+    {
+        raw = (raw ?? "").Trim().TrimEnd('/');
+        if (raw.Length == 0) return raw;
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri)) return raw;
+        try
+        {
+            var b = new UriBuilder(uri);
+            var segs = b.Path.Split('/')
+                .Select(s => string.IsNullOrEmpty(s)
+                    ? s
+                    : Uri.EscapeDataString(Uri.UnescapeDataString(s)));
+            b.Path = string.Join("/", segs);
+            return b.Uri.AbsoluteUri.TrimEnd('/');
+        }
+        catch { return raw; }
+    }
     private string DavUser => (PbDavUser.Text ?? "").Trim();
     private string DavPass => PbDavPass.Password ?? "";
 
@@ -2450,7 +2469,7 @@ public partial class MainWindow : Window
 
     private async void OnPbDavTest(object sender, RoutedEventArgs e)
     {
-        var url = PbDavUrl.Text?.Trim() ?? "";
+        var url = NormalizeDavUrl(PbDavUrl.Text);
         if (url.Length == 0) { Toast("先填写 WebDAV 地址"); return; }
         PbDavStatus.Text = "正在测试…";
         try
