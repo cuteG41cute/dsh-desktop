@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
@@ -2312,7 +2312,15 @@ public partial class MainWindow : Window
     // ===== WebDAV 备份 / 恢复 =====
     private string DavBase => (PbDavUrl.Text ?? "").Trim().TrimEnd('/');
     private string DavUser => (PbDavUser.Text ?? "").Trim();
-    private string DavPass => PbDavPass.Text ?? "";
+    private string DavPass => PbDavPass.Password ?? "";
+
+    /// <summary>密码框占位提示：有内容就隐藏，空的时候显示「密码」。</summary>
+    private void OnPbDavPassChanged(object sender, RoutedEventArgs e)
+    {
+        if (PbDavPassHint != null)
+            PbDavPassHint.Visibility = string.IsNullOrEmpty(PbDavPass.Password)
+                ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private void RefreshDavProjects()
     {
@@ -2449,7 +2457,7 @@ public partial class MainWindow : Window
         {
             using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(12) };
             var user = PbDavUser.Text?.Trim() ?? "";
-            var pass = PbDavPass.Text ?? "";
+            var pass = PbDavPass.Password ?? "";
             if (user.Length > 0)
             {
                 var token = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(user + ":" + pass));
