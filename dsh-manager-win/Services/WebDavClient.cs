@@ -130,7 +130,17 @@ public sealed class WebDavClient : IDisposable
     {
         url = (url ?? "").Trim();
         if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase)) url = "https://" + url;
-        return url;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return url;
+        try
+        {
+            // 文件名里可能有空格/中文（项目标题），必须逐段编码，否则 HttpClient 发不出请求
+            var b = new UriBuilder(uri);
+            var segs = b.Path.Split('/')
+                .Select(s => s.Length == 0 ? s : Uri.EscapeDataString(Uri.UnescapeDataString(s)));
+            b.Path = string.Join("/", segs);
+            return b.Uri.AbsoluteUri;
+        }
+        catch { return url; }
     }
 
     public void Dispose() => _http.Dispose();
