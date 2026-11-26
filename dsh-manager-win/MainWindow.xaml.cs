@@ -2614,6 +2614,7 @@ public partial class MainWindow : Window
         catch (Exception ex) { Toast("无法创建目录：" + ex.Message); return; }
 
         var includeFiles = PbExpFiles.IsChecked == true;
+        var includeAttachments = PbExpAttachments.IsChecked == true;
         var project = _pbModalProject;
         var home = Services.ProjectCatalog.HomeFor(
             (PbInstanceCombo.SelectedItem as ComboBoxItem)?.Tag as Services.RegistryEntry);
@@ -2639,7 +2640,7 @@ public partial class MainWindow : Window
                     PbExpStage.Text = s;
                     PbExpBar.Value = Math.Min(90, PbExpBar.Value + 12);
                     PbExpPercent.Text = (int)PbExpBar.Value + "%";
-                })), home, token, PbExpAttachments.IsChecked == true);
+                })), home, token, includeAttachments);
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (ok)
