@@ -110,7 +110,7 @@ public sealed class WebDavClient : IDisposable
         {
             var full = NormalizeUrl(url).TrimEnd('/');
             var uri = new Uri(full);
-            var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var segments = Uri.UnescapeDataString(uri.AbsolutePath).Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
             var current = uri.GetLeftPart(UriPartial.Authority);
             var codes = new List<int>();
             foreach (var seg in segments)

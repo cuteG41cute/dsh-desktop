@@ -752,10 +752,8 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 项目与迁移 -->
-                        <StackPanel x:Name="PbPanelProjects" Margin="16,12,16,16">
                             <Border CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource InnerBorder}"
-                                    Background="{DynamicResource CardSolid}" Padding="12,9" Margin="0,0,0,10">
+                                    Background="{DynamicResource CardSolid}" Padding="12,9" Margin="16,12,16,0">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -776,6 +774,9 @@
                                                VerticalAlignment="Center" Foreground="{DynamicResource Muted}" />
                                 </Grid>
                             </Border>
+
+                        <!-- 项目与迁移 -->
+                        <StackPanel x:Name="PbPanelProjects" Margin="16,12,16,16">
 
                             <Grid Margin="0,0,0,10">
                                 <Grid.ColumnDefinitions>
